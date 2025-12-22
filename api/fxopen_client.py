@@ -166,14 +166,12 @@ class FXOpenClient:
                     for snap in snapshots:
                         tick = self._parse_tick(snap)
                         if tick:
-                            print(f"Snapshot: {tick}")
                             if self.on_tick:
                                 await self._call_on_tick(tick)
 
                 elif response_type in ('Tick', 'FeedTick'):
                     tick = self._parse_tick(data.get('Result', {}))
                     if tick:
-                        print(f"Tick: {tick}")
                         if self.on_tick:
                             await self._call_on_tick(tick)
 
