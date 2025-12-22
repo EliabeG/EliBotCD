@@ -747,6 +747,204 @@ class FluxoInformacaoFisherNavier:
 
 
 # =============================================================================
+# FUNÇÕES DE VISUALIZAÇÃO
+# =============================================================================
+
+def plot_fifn_analysis(prices: np.ndarray, volume: np.ndarray = None,
+                        save_path: str = None):
+    """
+    Output e Visualização (Painel de Controle de Fluidos)
+
+    - Gráfico 1: Plotar o Re como um oscilador. Pintar a zona entre 2300 e 4000
+      de verde neon ("Kill Zone").
+    - Gráfico 2 (Vector Field): Use matplotlib.pyplot.quiver para desenhar setas
+      de fluxo sobre o gráfico de preço.
+    """
+    import matplotlib.pyplot as plt
+    from matplotlib.patches import Rectangle
+    from matplotlib.colors import Normalize
+    import matplotlib.cm as cm
+
+    # Criar indicador e analisar
+    fifn = FluxoInformacaoFisherNavier()
+    result = fifn.analyze(prices, volume)
+
+    # Criar figura
+    fig, axes = plt.subplots(4, 1, figsize=(16, 14),
+                             gridspec_kw={'height_ratios': [3, 2, 1, 1]})
+
+    time = np.arange(len(prices))
+    returns = fifn._calculate_returns(prices)
+
+    # =========================================================================
+    # Gráfico 1: Preço com Vector Field (Quiver Plot)
+    # =========================================================================
+    ax1 = axes[0]
+
+    # Plotar preço
+    ax1.plot(time, prices, 'b-', linewidth=1.5, label='Preço', zorder=1)
+
+    # Vector Field
+    vector_data = fifn.get_vector_field_data(prices, result['fisher_series'], subsample=8)
+
+    # Normalizar cores pela magnitude de Fisher
+    colors = vector_data['fisher_normalized']
+    norm = Normalize(vmin=0, vmax=1)
+
+    # Quiver plot
+    quiver = ax1.quiver(
+        vector_data['X'],
+        vector_data['Y'],
+        vector_data['U'] * 3,  # Escalar para visualização
+        vector_data['V'] * np.std(prices) * 5,  # Escalar Y para proporção
+        colors,
+        cmap='hot',
+        norm=norm,
+        alpha=0.8,
+        scale=50,
+        width=0.003,
+        headwidth=4,
+        headlength=5,
+        zorder=2
+    )
+
+    plt.colorbar(quiver, ax=ax1, label='Métrica de Fisher (normalizada)')
+
+    # Marcar sinal
+    signal = result['directional_signal']
+    if signal['signal'] != 0:
+        color = 'green' if signal['signal'] == 1 else 'red'
+        marker = '^' if signal['signal'] == 1 else 'v'
+        ax1.scatter([time[-1]], [prices[-1]], c=color, s=300, marker=marker,
+                   zorder=5, label=f'Sinal: {signal["signal_name"]}')
+
+    ax1.set_title('Fluxo de Informação Fisher-Navier (FIFN) - Campo Vetorial', fontsize=14)
+    ax1.set_ylabel('Preço')
+    ax1.legend(loc='upper left')
+    ax1.grid(True, alpha=0.3)
+
+    # Legenda do campo vetorial
+    ax1.text(0.98, 0.95, 'Seta pequena = Mercado estagnado\nSeta grande = Fluxo intenso',
+            transform=ax1.transAxes, fontsize=9, verticalalignment='top',
+            horizontalalignment='right',
+            bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.5))
+
+    # =========================================================================
+    # Gráfico 2: Número de Reynolds como Oscilador (Kill Zone)
+    # =========================================================================
+    ax2 = axes[1]
+
+    reynolds = result['reynolds_series']
+
+    # Plotar Reynolds
+    ax2.plot(time[1:], reynolds, 'purple', linewidth=1.5, label='Reynolds (Re)')
+
+    # Kill Zone (Sweet Spot) em verde neon
+    ax2.axhspan(fifn.reynolds_sweet_low, fifn.reynolds_sweet_high,
+               color='#39FF14', alpha=0.3, label='Kill Zone (Sweet Spot)')
+
+    # Zona Laminar
+    ax2.axhspan(0, fifn.reynolds_laminar, color='blue', alpha=0.1, label='Laminar (NÃO OPERAR)')
+
+    # Zona Turbulenta
+    ax2.axhspan(fifn.reynolds_turbulent, 10000, color='red', alpha=0.1, label='Turbulento (PERIGO)')
+
+    # Linhas de referência
+    ax2.axhline(y=fifn.reynolds_laminar, color='blue', linestyle='--', alpha=0.7)
+    ax2.axhline(y=fifn.reynolds_sweet_low, color='green', linestyle='--', alpha=0.7)
+    ax2.axhline(y=fifn.reynolds_sweet_high, color='green', linestyle='--', alpha=0.7)
+    ax2.axhline(y=fifn.reynolds_turbulent, color='red', linestyle='--', alpha=0.7)
+
+    # Marcar valor atual
+    current_re = reynolds[-1]
+    re_class = result['reynolds_classification']
+    ax2.scatter([time[-1]], [current_re], c=re_class['color'], s=150, zorder=5,
+               edgecolors='black', linewidths=2)
+
+    ax2.set_ylabel('Número de Reynolds')
+    ax2.set_title(f'Oscilador de Reynolds | Estado: {re_class["state"]} | Re = {current_re:.0f}', fontsize=12)
+    ax2.legend(loc='upper right', fontsize=8)
+    ax2.set_ylim(0, min(8000, np.max(reynolds) * 1.2))
+    ax2.grid(True, alpha=0.3)
+
+    # =========================================================================
+    # Gráfico 3: KL Divergence e Skewness
+    # =========================================================================
+    ax3 = axes[2]
+
+    # Calcular KL rolling
+    kl_values = np.zeros(len(returns))
+    skew_values = np.zeros(len(returns))
+
+    for i in range(fifn.window_size + fifn.kl_lookback, len(returns)):
+        returns_current = returns[i - fifn.window_size:i]
+        returns_past = returns[i - fifn.window_size - fifn.kl_lookback:i - fifn.kl_lookback]
+        kl_values[i] = fifn.calculate_kl_divergence(returns_current, returns_past)
+        skew_values[i] = fifn.calculate_skewness(returns_current)
+
+    ax3_twin = ax3.twinx()
+
+    ax3.plot(time[1:], kl_values, 'orange', linewidth=1.5, label='KL Divergence')
+    ax3_twin.plot(time[1:], skew_values, 'cyan', linewidth=1.5, label='Skewness')
+
+    # Threshold de skewness
+    ax3_twin.axhline(y=fifn.skewness_threshold, color='green', linestyle=':', alpha=0.7)
+    ax3_twin.axhline(y=-fifn.skewness_threshold, color='red', linestyle=':', alpha=0.7)
+
+    ax3.set_ylabel('KL Divergence', color='orange')
+    ax3_twin.set_ylabel('Skewness', color='cyan')
+    ax3.set_title('Divergência KL e Assimetria (Gatilho Direcional)', fontsize=12)
+    ax3.legend(loc='upper left', fontsize=8)
+    ax3_twin.legend(loc='upper right', fontsize=8)
+    ax3.grid(True, alpha=0.3)
+
+    # =========================================================================
+    # Gráfico 4: Pressão e Viscosidade
+    # =========================================================================
+    ax4 = axes[3]
+
+    ax4_twin = ax4.twinx()
+
+    ax4.plot(time[1:], result['pressure_series'], 'green', linewidth=1,
+            label='Pressão (Liquidez)', alpha=0.8)
+    ax4_twin.plot(time[1:], result['viscosity_series'], 'brown', linewidth=1,
+                  label='Viscosidade', alpha=0.8)
+
+    ax4.set_xlabel('Tempo')
+    ax4.set_ylabel('Pressão', color='green')
+    ax4_twin.set_ylabel('Viscosidade', color='brown')
+    ax4.set_title('Campos de Pressão e Viscosidade (Navier-Stokes)', fontsize=12)
+    ax4.legend(loc='upper left', fontsize=8)
+    ax4_twin.legend(loc='upper right', fontsize=8)
+    ax4.grid(True, alpha=0.3)
+
+    # =========================================================================
+    # Resumo
+    # =========================================================================
+    output = result['output_vector']
+    signal_info = result['directional_signal']
+
+    summary = (
+        f"FIFN Output: [Re={output[0]:.0f}, KL={output[1]:.4f}, ∇P={output[2]:.4f}] | "
+        f"Estado: {re_class['state']} | "
+        f"Sinal: {signal_info['signal_name']} (Confiança: {signal_info['confidence']:.2f}) | "
+        f"Skewness: {signal_info['skewness']:.3f}"
+    )
+
+    fig.text(0.5, 0.01, summary, fontsize=11, ha='center',
+            bbox=dict(boxstyle='round', facecolor='lightblue', alpha=0.8))
+
+    plt.tight_layout()
+    plt.subplots_adjust(bottom=0.06)
+
+    if save_path:
+        plt.savefig(save_path, dpi=150, bbox_inches='tight')
+        print(f"Gráfico salvo em: {save_path}")
+
+    return fig
+
+
+# =============================================================================
 # EXEMPLO DE USO
 # =============================================================================
 
@@ -835,3 +1033,18 @@ if __name__ == "__main__":
     else:
         print("ZONA DE TRANSICAO - Aguardando Sweet Spot.")
     print("=" * 80)
+
+    # Gerar visualização
+    try:
+        import matplotlib
+        matplotlib.use('Agg')
+        import matplotlib.pyplot as plt
+
+        print("\nGerando visualizacao...")
+        fig = plot_fifn_analysis(prices, save_path='fifn_analysis.png')
+        print("Visualizacao salva como 'fifn_analysis.png'")
+        plt.close()
+    except Exception as e:
+        print(f"\nNao foi possivel gerar visualizacao: {e}")
+        import traceback
+        traceback.print_exc()
