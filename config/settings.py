@@ -2,9 +2,12 @@
 Configuracoes do EliBotCD
 """
 import os
+from pathlib import Path
 from dotenv import load_dotenv
 
-load_dotenv()
+# Carrega .env do diretorio raiz do projeto
+ROOT_DIR = Path(__file__).parent.parent
+load_dotenv(ROOT_DIR / ".env")
 
 # Credenciais FX Open
 WEB_API_ID = os.getenv("FX_WEB_API_ID", "")

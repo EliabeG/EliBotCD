@@ -13,7 +13,7 @@ from datetime import datetime, timezone
 from typing import Optional, Callable, Dict, Any
 from dataclasses import dataclass
 
-import config
+from config import settings as config
 
 
 @dataclass
