@@ -13,6 +13,7 @@ Indicadores disponiveis:
 - RCTF: Riemannian Curvature Tensor Flow
 - BPHS: Betti-Persistence Homology Scanner
 - KdVSH: Korteweg-de Vries Soliton Hunter
+- FSIGE: Fisher-Shannon Information Gravity Engine
 """
 
 from .lsqpc_strategy import LSQPCStrategy
@@ -30,6 +31,9 @@ from .bphs_betti_persistence import BettiPersistenceHomologyScanner
 from .kdvsh_strategy import KdVSHStrategy
 from .kdvsh_korteweg_devries import KdVSolitonHunter
 
+from .fsige_strategy import FSIGEStrategy
+from .fsige_fisher_shannon import FisherShannonInformationGravityEngine
+
 __all__ = [
     'LSQPCStrategy',
     'LangevinSchrodingerQuantumIndicator',
@@ -41,4 +45,6 @@ __all__ = [
     'BettiPersistenceHomologyScanner',
     'KdVSHStrategy',
     'KdVSolitonHunter',
+    'FSIGEStrategy',
+    'FisherShannonInformationGravityEngine',
 ]
