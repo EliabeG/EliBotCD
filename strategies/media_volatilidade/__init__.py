@@ -16,6 +16,7 @@ Indicadores disponiveis:
 - FSIGE: Fisher-Shannon Information Gravity Engine
 - HJBNES: Hamilton-Jacobi-Bellman Nash Equilibrium Solver
 - MPSDEO: Marchenko-Pastur Spectral De-Noiser & Eigen-Entropic Oscillator
+- MVGKSD: Multiplex Visibility Graph & Kuramoto Synchronization Detector
 """
 
 from .lsqpc_strategy import LSQPCStrategy
@@ -42,6 +43,9 @@ from .hjbnes_hamilton_jacobi import HJBNashEquilibriumSolver
 from .mpsdeo_strategy import MPSDEOStrategy
 from .mpsdeo_marchenko_pastur import MarchenkoPasturSpectralDeNoiser
 
+from .mvgksd_strategy import MVGKSDStrategy
+from .mvgksd_visibility_kuramoto import MultiplexVisibilityKuramotoDetector
+
 __all__ = [
     'LSQPCStrategy',
     'LangevinSchrodingerQuantumIndicator',
@@ -59,4 +63,6 @@ __all__ = [
     'HJBNashEquilibriumSolver',
     'MPSDEOStrategy',
     'MarchenkoPasturSpectralDeNoiser',
+    'MVGKSDStrategy',
+    'MultiplexVisibilityKuramotoDetector',
 ]
