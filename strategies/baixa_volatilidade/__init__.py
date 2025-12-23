@@ -16,6 +16,7 @@ Indicadores disponiveis:
 - IP-CBM: Invasive Percolation & Capillary Breakthrough Monitor
 - GL-DMD: Gravitational Lensing & Dark Matter Detector
 - RD-ME: Turing-Gray-Scott Reaction-Diffusion Morphogenesis Engine
+- GMS-CS: Global Macro Spectral Coherence Scanner
 """
 
 from .gjfcp_strategy import GJFCPStrategy
@@ -42,6 +43,9 @@ from .gldmd_gravitational_lensing import GravitationalLensingDarkMatterDetector
 from .rdme_strategy import RDMEStrategy
 from .rdme_reaction_diffusion import TuringGrayScottReactionDiffusionMorphogenesisEngine
 
+from .gmscs_strategy import GMSCSStrategy
+from .gmscs_spectral_coherence import GlobalMacroSpectralCoherenceScanner
+
 __all__ = [
     'GJFCPStrategy',
     'GranularJammingForceChainPercolator',
@@ -59,4 +63,6 @@ __all__ = [
     'GravitationalLensingDarkMatterDetector',
     'RDMEStrategy',
     'TuringGrayScottReactionDiffusionMorphogenesisEngine',
+    'GMSCSStrategy',
+    'GlobalMacroSpectralCoherenceScanner',
 ]
