@@ -17,6 +17,7 @@ Indicadores disponiveis:
 - GL-DMD: Gravitational Lensing & Dark Matter Detector
 - RD-ME: Turing-Gray-Scott Reaction-Diffusion Morphogenesis Engine
 - GMS-CS: Global Macro Spectral Coherence Scanner
+- HBBP: Holographic AdS/CFT Bulk-Boundary Projector
 """
 
 from .gjfcp_strategy import GJFCPStrategy
@@ -46,6 +47,9 @@ from .rdme_reaction_diffusion import TuringGrayScottReactionDiffusionMorphogenes
 from .gmscs_strategy import GMSCSStrategy
 from .gmscs_spectral_coherence import GlobalMacroSpectralCoherenceScanner
 
+from .hbbp_strategy import HBBPStrategy
+from .hbbp_holographic_projector import HolographicAdSCFTBulkBoundaryProjector
+
 __all__ = [
     'GJFCPStrategy',
     'GranularJammingForceChainPercolator',
@@ -65,4 +69,6 @@ __all__ = [
     'TuringGrayScottReactionDiffusionMorphogenesisEngine',
     'GMSCSStrategy',
     'GlobalMacroSpectralCoherenceScanner',
+    'HBBPStrategy',
+    'HolographicAdSCFTBulkBoundaryProjector',
 ]
