@@ -11,6 +11,7 @@ Indicadores disponiveis:
 - GJFCP: Granular Jamming & Force Chain Percolator
 - PRSBD: Parisi Replica Symmetry Breaking Detector
 - QZD-LDT: Quantum Zeno Discord & Lindblad Decoherence Timer
+- RZ-CID: Riemann-Zeta Cryptanalytic Iceberg Decompiler
 """
 
 from .gjfcp_strategy import GJFCPStrategy
@@ -22,6 +23,9 @@ from .prsbd_parisi_replica import ParisiReplicaSymmetryBreakingDetector
 from .qzdldt_strategy import QZDLDTStrategy
 from .qzdldt_quantum_zeno import QuantumZenoDiscordLindbladTimer
 
+from .rzcid_strategy import RZCIDStrategy
+from .rzcid_riemann_zeta import RiemannZetaCryptanalyticIcebergDecompiler
+
 __all__ = [
     'GJFCPStrategy',
     'GranularJammingForceChainPercolator',
@@ -29,4 +33,6 @@ __all__ = [
     'ParisiReplicaSymmetryBreakingDetector',
     'QZDLDTStrategy',
     'QuantumZenoDiscordLindbladTimer',
+    'RZCIDStrategy',
+    'RiemannZetaCryptanalyticIcebergDecompiler',
 ]
