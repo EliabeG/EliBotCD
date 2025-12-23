@@ -1,11 +1,20 @@
 """
-Estratégias para Baixa Volatilidade
+Estrategias para Baixa Volatilidade
 
-Quando o mercado está em BAIXA volatilidade (< 0.238 pips em 5s):
-- Mercado em consolidação/range
+Quando o mercado esta em BAIXA volatilidade (< 0.238 pips em 5s):
+- Mercado em consolidacao/range
 - Menor risco, menor potencial
-- Bom para estratégias de reversão à média
+- Bom para estrategias de reversao a media
 - Aguardar breakout pode ser mais lucrativo
+
+Indicadores disponiveis:
+- GJFCP: Granular Jamming & Force Chain Percolator
 """
 
-# Estratégias serão importadas aqui conforme criadas
+from .gjfcp_strategy import GJFCPStrategy
+from .gjfcp_granular_jamming import GranularJammingForceChainPercolator
+
+__all__ = [
+    'GJFCPStrategy',
+    'GranularJammingForceChainPercolator',
+]
