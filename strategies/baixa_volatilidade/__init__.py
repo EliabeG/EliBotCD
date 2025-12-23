@@ -14,6 +14,7 @@ Indicadores disponiveis:
 - RZ-CID: Riemann-Zeta Cryptanalytic Iceberg Decompiler
 - NS-PPS: Neuromorphic Spiking Synaptic Pre-Potentiation Scanner
 - IP-CBM: Invasive Percolation & Capillary Breakthrough Monitor
+- GL-DMD: Gravitational Lensing & Dark Matter Detector
 """
 
 from .gjfcp_strategy import GJFCPStrategy
@@ -34,6 +35,9 @@ from .nspps_neuromorphic_spiking import NeuromorphicSpikingPrePotentiationScanne
 from .ipcbm_strategy import IPCBMStrategy
 from .ipcbm_invasive_percolation import InvasivePercolationCapillaryBreakthroughMonitor
 
+from .gldmd_strategy import GLDMDStrategy
+from .gldmd_gravitational_lensing import GravitationalLensingDarkMatterDetector
+
 __all__ = [
     'GJFCPStrategy',
     'GranularJammingForceChainPercolator',
@@ -47,4 +51,6 @@ __all__ = [
     'NeuromorphicSpikingPrePotentiationScanner',
     'IPCBMStrategy',
     'InvasivePercolationCapillaryBreakthroughMonitor',
+    'GLDMDStrategy',
+    'GravitationalLensingDarkMatterDetector',
 ]
