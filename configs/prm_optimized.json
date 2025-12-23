@@ -1,0 +1,33 @@
+{
+  "strategy": "PRM-RiemannMandelbrot",
+  "symbol": "EURUSD",
+  "periodicity": "H1",
+  "optimized_at": "2025-12-23T20:03:59.142549+00:00",
+  "optimization": {
+    "method": "ultra_fast_random_search",
+    "combinations_tested": 20000000,
+    "profitable_found": 3709255
+  },
+  "parameters": {
+    "min_prices": 30,
+    "stop_loss_pips": 46.9,
+    "take_profit_pips": 117.2,
+    "hmm_threshold": 0.68,
+    "lyapunov_threshold": 0.1249,
+    "curvature_threshold": 0.01,
+    "hmm_states_allowed": [
+      1,
+      2
+    ]
+  },
+  "performance": {
+    "total_trades": 7,
+    "winning_trades": 7,
+    "losing_trades": 0,
+    "win_rate": 1.0,
+    "profit_factor": 813256.4103,
+    "total_pnl_pips": 813.26,
+    "max_drawdown": 0.0,
+    "score": 0.785
+  }
+}

@@ -4,13 +4,14 @@ BACKTESTING MODULE
 Sistema de Backtesting para Estrategias de Trading
 ================================================================================
 
-Este modulo fornece ferramentas para testar estrategias em dados historicos.
+IMPORTANTE: Este modulo usa APENAS dados REAIS do mercado.
+Nenhuma simulacao ou dados sinteticos sao permitidos.
+Isso envolve dinheiro real, entao a precisao e crucial.
 
-Componentes planejados:
+Componentes:
 - BacktestEngine: Motor principal de backtesting
-- DataLoader: Carregador de dados historicos
-- PerformanceAnalyzer: Analisador de performance
-- ReportGenerator: Gerador de relatorios
+- HistoricalDataClient: Cliente de dados historicos reais
+- Backtests individuais por indicador
 
 Metricas calculadas:
 - Sharpe Ratio
@@ -19,12 +20,28 @@ Metricas calculadas:
 - Win Rate
 - Profit Factor
 - Calmar Ratio
-- Recovery Factor
 
-Modos de operacao:
-- Tick-by-tick (alta precisao, lento)
-- Candle-based (rapido, menos preciso)
-- Event-driven (realista)
+Backtests disponiveis:
+- backtest_prm.py: PRM (Protocolo Riemann-Mandelbrot)
+
+Uso:
+    python -m backtesting.backtest_prm --days 30 --symbol EURUSD
 """
 
-__all__ = []
+from .backtest_engine import (
+    BacktestEngine,
+    BacktestResult,
+    Trade,
+    Position,
+    PositionType,
+    run_backtest
+)
+
+__all__ = [
+    'BacktestEngine',
+    'BacktestResult',
+    'Trade',
+    'Position',
+    'PositionType',
+    'run_backtest'
+]
