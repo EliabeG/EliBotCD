@@ -15,6 +15,7 @@ Indicadores disponiveis:
 - NS-PPS: Neuromorphic Spiking Synaptic Pre-Potentiation Scanner
 - IP-CBM: Invasive Percolation & Capillary Breakthrough Monitor
 - GL-DMD: Gravitational Lensing & Dark Matter Detector
+- RD-ME: Turing-Gray-Scott Reaction-Diffusion Morphogenesis Engine
 """
 
 from .gjfcp_strategy import GJFCPStrategy
@@ -38,6 +39,9 @@ from .ipcbm_invasive_percolation import InvasivePercolationCapillaryBreakthrough
 from .gldmd_strategy import GLDMDStrategy
 from .gldmd_gravitational_lensing import GravitationalLensingDarkMatterDetector
 
+from .rdme_strategy import RDMEStrategy
+from .rdme_reaction_diffusion import TuringGrayScottReactionDiffusionMorphogenesisEngine
+
 __all__ = [
     'GJFCPStrategy',
     'GranularJammingForceChainPercolator',
@@ -53,4 +57,6 @@ __all__ = [
     'InvasivePercolationCapillaryBreakthroughMonitor',
     'GLDMDStrategy',
     'GravitationalLensingDarkMatterDetector',
+    'RDMEStrategy',
+    'TuringGrayScottReactionDiffusionMorphogenesisEngine',
 ]
