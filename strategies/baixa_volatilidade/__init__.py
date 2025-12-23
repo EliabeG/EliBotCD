@@ -12,6 +12,7 @@ Indicadores disponiveis:
 - PRSBD: Parisi Replica Symmetry Breaking Detector
 - QZD-LDT: Quantum Zeno Discord & Lindblad Decoherence Timer
 - RZ-CID: Riemann-Zeta Cryptanalytic Iceberg Decompiler
+- NS-PPS: Neuromorphic Spiking Synaptic Pre-Potentiation Scanner
 """
 
 from .gjfcp_strategy import GJFCPStrategy
@@ -26,6 +27,9 @@ from .qzdldt_quantum_zeno import QuantumZenoDiscordLindbladTimer
 from .rzcid_strategy import RZCIDStrategy
 from .rzcid_riemann_zeta import RiemannZetaCryptanalyticIcebergDecompiler
 
+from .nspps_strategy import NSPPSStrategy
+from .nspps_neuromorphic_spiking import NeuromorphicSpikingPrePotentiationScanner
+
 __all__ = [
     'GJFCPStrategy',
     'GranularJammingForceChainPercolator',
@@ -35,4 +39,6 @@ __all__ = [
     'QuantumZenoDiscordLindbladTimer',
     'RZCIDStrategy',
     'RiemannZetaCryptanalyticIcebergDecompiler',
+    'NSPPSStrategy',
+    'NeuromorphicSpikingPrePotentiationScanner',
 ]
