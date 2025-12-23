@@ -14,6 +14,7 @@ Indicadores disponiveis:
 - BPHS: Betti-Persistence Homology Scanner
 - KdVSH: Korteweg-de Vries Soliton Hunter
 - FSIGE: Fisher-Shannon Information Gravity Engine
+- HJBNES: Hamilton-Jacobi-Bellman Nash Equilibrium Solver
 """
 
 from .lsqpc_strategy import LSQPCStrategy
@@ -34,6 +35,9 @@ from .kdvsh_korteweg_devries import KdVSolitonHunter
 from .fsige_strategy import FSIGEStrategy
 from .fsige_fisher_shannon import FisherShannonInformationGravityEngine
 
+from .hjbnes_strategy import HJBNESStrategy
+from .hjbnes_hamilton_jacobi import HJBNashEquilibriumSolver
+
 __all__ = [
     'LSQPCStrategy',
     'LangevinSchrodingerQuantumIndicator',
@@ -47,4 +51,6 @@ __all__ = [
     'KdVSolitonHunter',
     'FSIGEStrategy',
     'FisherShannonInformationGravityEngine',
+    'HJBNESStrategy',
+    'HJBNashEquilibriumSolver',
 ]
