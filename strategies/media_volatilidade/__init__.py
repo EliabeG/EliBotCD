@@ -1,16 +1,17 @@
 """
-Estratégias para Média Volatilidade
+Estrategias para Media Volatilidade
 
-Quando o mercado está em MÉDIA volatilidade (0.238 - 0.385 pips em 5s):
-- Condições normais de mercado
-- Bom para estratégias de tendência
+Quando o mercado esta em MEDIA volatilidade (0.238 - 0.385 pips em 5s):
+- Condicoes normais de mercado
+- Bom para estrategias de tendencia
 - Stops e alvos moderados
-- Indicadores clássicos funcionam bem
+- Indicadores classicos funcionam bem
 
-Indicadores disponíveis:
-- LSQPC: Langevin-Schrödinger Quantum Probability Cloud
+Indicadores disponiveis:
+- LSQPC: Langevin-Schrodinger Quantum Probability Cloud
 - H2PLO: Hilbert-Huang Phase-Lock Oscillator
 - RCTF: Riemannian Curvature Tensor Flow
+- BPHS: Betti-Persistence Homology Scanner
 """
 
 from .lsqpc_strategy import LSQPCStrategy
@@ -22,6 +23,9 @@ from .h2plo_hilbert_huang import HilbertHuangPhaseLockOscillator
 from .rctf_strategy import RCTFStrategy
 from .rctf_riemannian_curvature import RiemannianCurvatureTensorFlow
 
+from .bphs_strategy import BPHSStrategy
+from .bphs_betti_persistence import BettiPersistenceHomologyScanner
+
 __all__ = [
     'LSQPCStrategy',
     'LangevinSchrodingerQuantumIndicator',
@@ -29,4 +33,6 @@ __all__ = [
     'HilbertHuangPhaseLockOscillator',
     'RCTFStrategy',
     'RiemannianCurvatureTensorFlow',
+    'BPHSStrategy',
+    'BettiPersistenceHomologyScanner',
 ]
