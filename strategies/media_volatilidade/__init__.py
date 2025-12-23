@@ -15,6 +15,7 @@ Indicadores disponiveis:
 - KdVSH: Korteweg-de Vries Soliton Hunter
 - FSIGE: Fisher-Shannon Information Gravity Engine
 - HJBNES: Hamilton-Jacobi-Bellman Nash Equilibrium Solver
+- MPSDEO: Marchenko-Pastur Spectral De-Noiser & Eigen-Entropic Oscillator
 """
 
 from .lsqpc_strategy import LSQPCStrategy
@@ -38,6 +39,9 @@ from .fsige_fisher_shannon import FisherShannonInformationGravityEngine
 from .hjbnes_strategy import HJBNESStrategy
 from .hjbnes_hamilton_jacobi import HJBNashEquilibriumSolver
 
+from .mpsdeo_strategy import MPSDEOStrategy
+from .mpsdeo_marchenko_pastur import MarchenkoPasturSpectralDeNoiser
+
 __all__ = [
     'LSQPCStrategy',
     'LangevinSchrodingerQuantumIndicator',
@@ -53,4 +57,6 @@ __all__ = [
     'FisherShannonInformationGravityEngine',
     'HJBNESStrategy',
     'HJBNashEquilibriumSolver',
+    'MPSDEOStrategy',
+    'MarchenkoPasturSpectralDeNoiser',
 ]
