@@ -17,6 +17,7 @@ Indicadores disponiveis:
 - HJBNES: Hamilton-Jacobi-Bellman Nash Equilibrium Solver
 - MPSDEO: Marchenko-Pastur Spectral De-Noiser & Eigen-Entropic Oscillator
 - MVGKSD: Multiplex Visibility Graph & Kuramoto Synchronization Detector
+- FKQPIP: Feynman-Kac Quantum Path Integral Propagator
 """
 
 from .lsqpc_strategy import LSQPCStrategy
@@ -46,6 +47,9 @@ from .mpsdeo_marchenko_pastur import MarchenkoPasturSpectralDeNoiser
 from .mvgksd_strategy import MVGKSDStrategy
 from .mvgksd_visibility_kuramoto import MultiplexVisibilityKuramotoDetector
 
+from .fkqpip_strategy import FKQPIPStrategy
+from .fkqpip_feynman_kac import FeynmanKacQuantumPathIntegralPropagator
+
 __all__ = [
     'LSQPCStrategy',
     'LangevinSchrodingerQuantumIndicator',
@@ -65,4 +69,6 @@ __all__ = [
     'MarchenkoPasturSpectralDeNoiser',
     'MVGKSDStrategy',
     'MultiplexVisibilityKuramotoDetector',
+    'FKQPIPStrategy',
+    'FeynmanKacQuantumPathIntegralPropagator',
 ]
