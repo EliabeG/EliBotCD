@@ -13,6 +13,7 @@ Indicadores disponiveis:
 - QZD-LDT: Quantum Zeno Discord & Lindblad Decoherence Timer
 - RZ-CID: Riemann-Zeta Cryptanalytic Iceberg Decompiler
 - NS-PPS: Neuromorphic Spiking Synaptic Pre-Potentiation Scanner
+- IP-CBM: Invasive Percolation & Capillary Breakthrough Monitor
 """
 
 from .gjfcp_strategy import GJFCPStrategy
@@ -30,6 +31,9 @@ from .rzcid_riemann_zeta import RiemannZetaCryptanalyticIcebergDecompiler
 from .nspps_strategy import NSPPSStrategy
 from .nspps_neuromorphic_spiking import NeuromorphicSpikingPrePotentiationScanner
 
+from .ipcbm_strategy import IPCBMStrategy
+from .ipcbm_invasive_percolation import InvasivePercolationCapillaryBreakthroughMonitor
+
 __all__ = [
     'GJFCPStrategy',
     'GranularJammingForceChainPercolator',
@@ -41,4 +45,6 @@ __all__ = [
     'RiemannZetaCryptanalyticIcebergDecompiler',
     'NSPPSStrategy',
     'NeuromorphicSpikingPrePotentiationScanner',
+    'IPCBMStrategy',
+    'InvasivePercolationCapillaryBreakthroughMonitor',
 ]
