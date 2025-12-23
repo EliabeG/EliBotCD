@@ -12,6 +12,7 @@ Indicadores disponiveis:
 - H2PLO: Hilbert-Huang Phase-Lock Oscillator
 - RCTF: Riemannian Curvature Tensor Flow
 - BPHS: Betti-Persistence Homology Scanner
+- KdVSH: Korteweg-de Vries Soliton Hunter
 """
 
 from .lsqpc_strategy import LSQPCStrategy
@@ -26,6 +27,9 @@ from .rctf_riemannian_curvature import RiemannianCurvatureTensorFlow
 from .bphs_strategy import BPHSStrategy
 from .bphs_betti_persistence import BettiPersistenceHomologyScanner
 
+from .kdvsh_strategy import KdVSHStrategy
+from .kdvsh_korteweg_devries import KdVSolitonHunter
+
 __all__ = [
     'LSQPCStrategy',
     'LangevinSchrodingerQuantumIndicator',
@@ -35,4 +39,6 @@ __all__ = [
     'RiemannianCurvatureTensorFlow',
     'BPHSStrategy',
     'BettiPersistenceHomologyScanner',
+    'KdVSHStrategy',
+    'KdVSolitonHunter',
 ]
