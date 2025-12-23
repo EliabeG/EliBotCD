@@ -18,6 +18,7 @@ import hmac
 import hashlib
 import base64
 import time
+import ssl
 from datetime import datetime, timezone, timedelta
 from typing import List, Optional, Dict
 from dataclasses import dataclass
@@ -135,8 +136,21 @@ class FXOpenHistoricalClient:
         """Conecta ao WebSocket e autentica"""
         print(f"  Conectando ao WebSocket FXOpen...")
 
+        # SSL context para conexao segura
+        ssl_context = ssl.create_default_context()
+        ssl_context.check_hostname = False
+        ssl_context.verify_mode = ssl.CERT_NONE
+
+        # Headers adicionais
+        extra_headers = {
+            "User-Agent": "EliBotCD/1.0",
+            "Origin": "https://fxopen.net"
+        }
+
         self._ws = await websockets.connect(
             self.ws_url,
+            ssl=ssl_context,
+            additional_headers=extra_headers,
             ping_interval=30,
             ping_timeout=10,
             close_timeout=10

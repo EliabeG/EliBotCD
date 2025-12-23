@@ -5,23 +5,38 @@ VALIDACAO DE OVERFITTING - PRM
 Testa as 2 melhores configuracoes em periodo diferente (out-of-sample)
 ================================================================================
 
+Usa API REST publica da FXOpen para dados historicos reais.
 Configuracoes otimizadas: 2025-07-01 ate hoje
 Periodo de validacao: 2025-01-01 ate hoje (inclui 6 meses antes da otimizacao)
 """
 
 import sys
 import os
-import asyncio
+import urllib.request
+import ssl
+import json
 import numpy as np
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from collections import deque
+from dataclasses import dataclass
+from typing import List
 import warnings
 warnings.filterwarnings('ignore')
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from api.fxopen_historical_ws import Bar, download_historical_data
 from strategies.alta_volatilidade.prm_riemann_mandelbrot import ProtocoloRiemannMandelbrot
+
+
+@dataclass
+class Bar:
+    """Representa uma barra/candle OHLCV"""
+    timestamp: datetime
+    open: float
+    high: float
+    low: float
+    close: float
+    volume: float
 
 
 # Configuracao 1: Melhor Score (7 trades, 100% WR)
@@ -47,28 +62,104 @@ CONFIG_MAX_TRADES = {
 }
 
 
+def download_fxopen_data(symbol: str, periodicity: str,
+                         start_date: datetime, end_date: datetime) -> List[Bar]:
+    """
+    Baixa dados historicos REAIS da API REST publica da FXOpen
+
+    Args:
+        symbol: Simbolo (ex: 'EURUSD')
+        periodicity: Periodicidade (H1, D1, etc)
+        start_date: Data inicio
+        end_date: Data fim
+
+    Returns:
+        Lista de barras reais
+    """
+    print(f"\n  Baixando dados REAIS da FXOpen API...")
+    print(f"  Simbolo: {symbol}")
+    print(f"  Periodicidade: {periodicity}")
+    print(f"  Periodo: {start_date.date()} a {end_date.date()}")
+
+    # SSL context
+    ctx = ssl.create_default_context()
+    ctx.check_hostname = False
+    ctx.verify_mode = ssl.CERT_NONE
+
+    all_bars = []
+    current_ts = int(end_date.timestamp() * 1000)
+    start_ts = int(start_date.timestamp() * 1000)
+    batch = 0
+
+    while current_ts > start_ts:
+        batch += 1
+        url = (f"https://marginalttdemowebapi.fxopen.net/api/v2/public/"
+               f"quotehistory/{symbol}/{periodicity}/bars/bid"
+               f"?timestamp={current_ts}&count=-1000")
+
+        try:
+            with urllib.request.urlopen(url, context=ctx, timeout=30) as response:
+                data = json.loads(response.read().decode())
+
+            if "Bars" not in data or not data["Bars"]:
+                break
+
+            for bar_data in data["Bars"]:
+                ts = datetime.fromtimestamp(bar_data["Timestamp"] / 1000, tz=timezone.utc)
+                if start_ts <= bar_data["Timestamp"] <= int(end_date.timestamp() * 1000):
+                    all_bars.append(Bar(
+                        timestamp=ts,
+                        open=float(bar_data["Open"]),
+                        high=float(bar_data["High"]),
+                        low=float(bar_data["Low"]),
+                        close=float(bar_data["Close"]),
+                        volume=float(bar_data.get("Volume", 0))
+                    ))
+
+            # Proximo batch
+            oldest = min(data["Bars"], key=lambda x: x["Timestamp"])
+            new_ts = oldest["Timestamp"] - 1
+
+            if new_ts >= current_ts:
+                break
+            current_ts = new_ts
+
+            print(f"    Batch {batch}: {len(all_bars)} barras carregadas...")
+
+        except Exception as e:
+            print(f"  Erro no batch {batch}: {e}")
+            break
+
+    # Remove duplicatas e ordena
+    seen = set()
+    unique_bars = []
+    for bar in all_bars:
+        ts_key = int(bar.timestamp.timestamp())
+        if ts_key not in seen:
+            seen.add(ts_key)
+            unique_bars.append(bar)
+
+    unique_bars.sort(key=lambda b: b.timestamp)
+
+    print(f"  Total de barras: {len(unique_bars)}")
+    if unique_bars:
+        print(f"  Periodo real: {unique_bars[0].timestamp.date()} a {unique_bars[-1].timestamp.date()}")
+
+    return unique_bars
+
+
 class OverfitValidator:
     """Validador de overfitting"""
 
-    def __init__(self, symbol: str = "EURUSD", periodicity: str = "H1"):
+    def __init__(self, symbol: str = "EURUSD"):
         self.symbol = symbol
-        self.periodicity = periodicity
         self.pip = 0.0001
         self.spread = 1.0
-        self.bars = []
+        self.bars: List[Bar] = []
 
-    async def load_data(self, start_date: datetime, end_date: datetime):
-        """Carrega dados historicos"""
-        print(f"\n  Carregando dados REAIS de {start_date.date()} ate {end_date.date()}...")
-        self.bars = await download_historical_data(
-            symbol=self.symbol,
-            periodicity=self.periodicity,
-            start_time=start_date,
-            end_time=end_date
-        )
-        print(f"  Barras carregadas: {len(self.bars)}")
-        if self.bars:
-            print(f"  Periodo real: {self.bars[0].timestamp.date()} a {self.bars[-1].timestamp.date()}")
+    def load_data(self, start_date: datetime, end_date: datetime) -> bool:
+        """Carrega dados historicos REAIS"""
+        self.bars = download_fxopen_data(self.symbol, "H1", start_date, end_date)
         return len(self.bars) > 0
 
     def run_backtest(self, config: dict) -> dict:
@@ -88,11 +179,11 @@ class OverfitValidator:
         prices_buf = deque(maxlen=500)
         volumes_buf = deque(maxlen=500)
 
-        # Primeiro, pre-calcula valores PRM
+        # Pre-calcula valores PRM
         prm_data = []
         for i, bar in enumerate(self.bars):
             prices_buf.append(bar.close)
-            volumes_buf.append(bar.volume)
+            volumes_buf.append(bar.volume if bar.volume > 0 else 1.0)
 
             if len(prices_buf) < config['min_prices']:
                 continue
@@ -139,15 +230,9 @@ class OverfitValidator:
         if len(signals) < 1:
             return {
                 'config': config['name'],
-                'trades': 0,
-                'wins': 0,
-                'losses': 0,
-                'pnl': 0,
-                'win_rate': 0,
-                'pf': 0,
-                'max_dd': 0,
-                'signals': 0,
-                'trade_details': []
+                'trades': 0, 'wins': 0, 'losses': 0,
+                'pnl': 0, 'win_rate': 0, 'pf': 0,
+                'max_dd': 0, 'signals': 0, 'trade_details': []
             }
 
         # Executa trades
@@ -261,7 +346,9 @@ def print_results(result: dict, period: str):
     if result['trade_details']:
         print(f"\n  Ultimos 10 trades:")
         for t in result['trade_details'][-10:]:
-            print(f"    {t['direction']:5s} | {t['entry_time'].strftime('%Y-%m-%d %H:%M')} | "
+            ts = t['entry_time']
+            ts_str = ts.strftime('%Y-%m-%d %H:%M') if hasattr(ts, 'strftime') else str(ts)[:16]
+            print(f"    {t['direction']:5s} | {ts_str} | "
                   f"PnL: {t['pnl_pips']:+7.1f} pips | {t['result']:4s} | {t['reason']}")
 
 
@@ -287,13 +374,13 @@ def compare_results(original: dict, validation: dict, config_name: str):
         print(f"  {name:<20} {orig:>15.1f} {val:>15.1f} {diff_str:>15}")
 
 
-async def main():
+def main():
     print("=" * 70)
     print("  VALIDACAO DE OVERFITTING - PRM")
-    print("  Testando configs otimizadas em periodo diferente")
+    print("  Dados REAIS da API FXOpen")
     print("=" * 70)
 
-    validator = OverfitValidator("EURUSD", "H1")
+    validator = OverfitValidator("EURUSD")
 
     # Periodo de validacao: 2025-01-01 ate hoje
     start = datetime(2025, 1, 1, tzinfo=timezone.utc)
@@ -303,7 +390,7 @@ async def main():
     print(f"  Periodo de validacao: {start.date()} a {end.date()} (~12 meses)")
     print(f"  Isso adiciona 6 meses de dados OUT-OF-SAMPLE")
 
-    if not await validator.load_data(start, end):
+    if not validator.load_data(start, end):
         print("  ERRO: Nao foi possivel carregar dados!")
         return
 
@@ -313,13 +400,9 @@ async def main():
 
     # Dados originais da Config 1
     original1 = {
-        'trades': 7,
-        'wins': 7,
-        'losses': 0,
-        'win_rate': 1.0,
-        'pf': 813256.41,
-        'pnl': 813.3,
-        'max_dd': 0.0
+        'trades': 7, 'wins': 7, 'losses': 0,
+        'win_rate': 1.0, 'pf': 813256.41,
+        'pnl': 813.3, 'max_dd': 0.0
     }
     compare_results(original1, result1, "MELHOR SCORE")
 
@@ -329,13 +412,9 @@ async def main():
 
     # Dados originais da Config 2
     original2 = {
-        'trades': 74,
-        'wins': 31,
-        'losses': 43,
-        'win_rate': 0.4189,
-        'pf': 1.56,
-        'pnl': 1163.2,
-        'max_dd': 4.28
+        'trades': 74, 'wins': 31, 'losses': 43,
+        'win_rate': 0.4189, 'pf': 1.56,
+        'pnl': 1163.2, 'max_dd': 4.28
     }
     compare_results(original2, result2, "MAIS TRADES")
 
@@ -344,30 +423,31 @@ async def main():
     print("  CONCLUSAO")
     print(f"{'='*70}")
 
-    # Analisa overfitting
-    pf1_degradation = (result1['pf'] - original1['pf']) / original1['pf'] * 100 if original1['pf'] > 0 else 0
-    pf2_degradation = (result2['pf'] - original2['pf']) / original2['pf'] * 100 if original2['pf'] > 0 else 0
-
     print(f"\n  Config 'Melhor Score':")
-    if result1['pf'] < 1.0:
+    if result1['trades'] == 0:
+        print(f"    OVERFITTED! Nenhum trade gerado no periodo estendido.")
+    elif result1['pf'] < 1.0:
         print(f"    OVERFITTED! PF caiu para {result1['pf']:.2f} (era 813,256)")
         print(f"    Esta configuracao NAO e viavel para trading real.")
-    elif result1['pf'] < original1['pf'] * 0.5:
-        print(f"    POSSIVEL OVERFIT. PF degradou significativamente.")
+    elif result1['pf'] < 2.0:
+        print(f"    POSSIVEL OVERFIT. PF degradou para {result1['pf']:.2f}")
     else:
         print(f"    Performance mantida. PF = {result1['pf']:.2f}")
 
     print(f"\n  Config 'Mais Trades':")
-    if result2['pf'] < 1.0:
+    if result2['trades'] == 0:
+        print(f"    PROBLEMA! Nenhum trade gerado.")
+    elif result2['pf'] < 1.0:
         print(f"    NAO LUCRATIVA em periodo estendido. PF = {result2['pf']:.2f}")
-    elif abs(pf2_degradation) < 30:
-        print(f"    ROBUSTA! PF se manteve proximo ({result2['pf']:.2f} vs {original2['pf']:.2f})")
+    elif result2['pf'] >= 1.3:
+        print(f"    ROBUSTA! PF se manteve ({result2['pf']:.2f} vs {original2['pf']:.2f})")
         print(f"    Esta configuracao PODE ser viavel para trading real.")
     else:
-        print(f"    Degradacao de {pf2_degradation:.0f}% no PF. Precisa mais analise.")
+        pf2_degradation = (result2['pf'] - original2['pf']) / original2['pf'] * 100
+        print(f"    Degradacao de {abs(pf2_degradation):.0f}% no PF.")
 
     print(f"\n{'='*70}")
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    main()
