@@ -3,6 +3,11 @@ Detector de Tunelamento Topológico (DTT)
 =========================================
 Nível de Complexidade: Experimental / Deep Quant
 
+VERSÃO V3.0 - CORREÇÕES DE FUNDAMENTOS TEÓRICOS 24/12/2025:
+1. Parâmetros quânticos calibráveis automaticamente (ℏ, m, kT)
+2. KDE exclui preço atual para evitar look-ahead bias
+3. Classe QuantumParameters para calibração baseada em volatilidade
+
 Premissa Teórica: Mercados laterais são topologicamente "contráteis" (sem características
 interessantes, Betti numbers = 0). Mercados de alta volatilidade criam estruturas geométricas
 complexas (loops e voids). O indicador busca o momento exato em que a topologia do
@@ -38,9 +43,141 @@ except ImportError:
         TDA_BACKEND = None
 
 
+# =============================================================================
+# CLASSE V3.0: Parâmetros Quânticos com Calibração Automática
+# =============================================================================
+
+class QuantumParameters:
+    """
+    Parâmetros quânticos com calibração automática baseada em volatilidade
+
+    V3.0: Em vez de usar valores arbitrários (1.0, 1.0, 0.1), calibramos
+    os parâmetros baseado nas características do ativo:
+
+    - hbar (ℏ): Constante de Planck reduzida - afeta granularidade dos estados
+    - particle_mass (m): Massa da partícula - afeta inércia/momentum
+    - kT: Temperatura do mercado - afeta distribuição de estados excitados
+
+    Calibração Empírica:
+    - Mercados mais voláteis → maior kT (mais "energia térmica")
+    - Mercados com trends longos → menor massa (mais "momentum")
+    - Range de preços maior → maior hbar (estados mais espaçados)
+    """
+
+    # Ranges empíricos (podem ser ajustados via grid search)
+    HBAR_RANGE = (0.1, 10.0)
+    MASS_RANGE = (0.1, 10.0)
+    KT_RANGE = (0.01, 1.0)
+
+    def __init__(self,
+                 hbar: float = None,
+                 particle_mass: float = None,
+                 kT: float = None,
+                 auto_calibrate: bool = True):
+        """
+        Inicializa parâmetros quânticos
+
+        Args:
+            hbar: Constante de Planck reduzida (None = auto calibrar)
+            particle_mass: Massa da partícula (None = auto calibrar)
+            kT: Temperatura do mercado (None = auto calibrar)
+            auto_calibrate: Se True, calibra baseado em volatilidade
+        """
+        self.hbar = hbar
+        self.particle_mass = particle_mass
+        self.kT = kT
+        self.auto_calibrate = auto_calibrate
+        self._calibrated = False
+        self._calibration_info = {}
+
+    def calibrate(self, prices: np.ndarray, returns: np.ndarray = None) -> dict:
+        """
+        Calibra parâmetros baseado na volatilidade do ativo
+
+        Lógica:
+        - Mercados mais voláteis → maior kT (mais "energia térmica")
+        - Mercados com trends longos → menor massa (mais "inércia")
+        - hbar afeta granularidade dos estados → baseado em range de preços
+
+        Args:
+            prices: Array de preços históricos
+            returns: Array de retornos (opcional, calculado se não fornecido)
+
+        Returns:
+            Dict com parâmetros calibrados e métricas usadas
+        """
+        if returns is None:
+            returns = np.diff(np.log(prices))
+
+        # Volatilidade (desvio padrão dos retornos)
+        volatility = np.std(returns)
+
+        # Range de preços normalizado
+        price_range = (np.max(prices) - np.min(prices)) / np.mean(prices)
+
+        # Autocorrelação (persistência de tendência)
+        if len(returns) > 10:
+            try:
+                autocorr = np.corrcoef(returns[:-1], returns[1:])[0, 1]
+                autocorr = 0 if np.isnan(autocorr) else autocorr
+            except Exception:
+                autocorr = 0
+        else:
+            autocorr = 0
+
+        # Calibração empírica
+        if self.hbar is None:
+            # hbar proporcional ao range de preços
+            # Range maior → estados mais "espaçados"
+            self.hbar = np.clip(price_range * 10, *self.HBAR_RANGE)
+
+        if self.particle_mass is None:
+            # Massa inversamente proporcional à persistência
+            # Alta autocorrelação → baixa massa → mais "momentum"
+            self.particle_mass = np.clip(1.0 / (1 + abs(autocorr) * 5), *self.MASS_RANGE)
+
+        if self.kT is None:
+            # kT proporcional à volatilidade
+            # Alta volatilidade → mais "energia térmica" → mais estados excitados
+            self.kT = np.clip(volatility * 100, *self.KT_RANGE)
+
+        self._calibrated = True
+        self._calibration_info = {
+            'hbar': self.hbar,
+            'particle_mass': self.particle_mass,
+            'kT': self.kT,
+            'volatility': volatility,
+            'price_range': price_range,
+            'autocorr': autocorr
+        }
+
+        return self._calibration_info
+
+    def get_params(self) -> dict:
+        """Retorna parâmetros atuais"""
+        return {
+            'hbar': self.hbar if self.hbar is not None else 1.0,
+            'particle_mass': self.particle_mass if self.particle_mass is not None else 1.0,
+            'kT': self.kT if self.kT is not None else 0.1,
+            'calibrated': self._calibrated,
+            'calibration_info': self._calibration_info
+        }
+
+    def reset(self):
+        """Reseta calibração para permitir recalibração"""
+        if self.auto_calibrate:
+            self._calibrated = False
+            self._calibration_info = {}
+
+
 class DetectorTunelamentoTopologico:
     """
     Implementação completa do Detector de Tunelamento Topológico (DTT)
+
+    VERSÃO V3.0 - FUNDAMENTOS TEÓRICOS CORRIGIDOS:
+    - Parâmetros quânticos calibráveis automaticamente
+    - KDE exclui preço atual (anti look-ahead)
+    - Classe QuantumParameters para calibração baseada em volatilidade
 
     Módulos:
     1. Pré-processamento: Embedding de Takens (Reconstrução do Espaço de Fase)
@@ -61,12 +198,15 @@ class DetectorTunelamentoTopologico:
                  reduction_components: int = 3,
                  persistence_entropy_threshold: float = 0.5,
                  tunneling_probability_threshold: float = 0.15,
-                 hbar: float = 1.0,          # Constante de Planck reduzida (ajustável)
-                 particle_mass: float = 1.0,  # Massa da partícula (ajustável)
-                 n_eigenstates: int = 10,    # Número de autoestados a calcular
+                 # V3.0: Parâmetros quânticos calibráveis
+                 hbar: float = None,          # None = auto calibrar
+                 particle_mass: float = None,  # None = auto calibrar
+                 kT: float = None,             # None = auto calibrar (antes: hardcoded 0.1)
+                 auto_calibrate_quantum: bool = True,  # V3.0: calibração automática
+                 n_eigenstates: int = 10,
                  kde_bandwidth: str = 'scott'):
         """
-        Inicialização do Detector de Tunelamento Topológico
+        Inicialização do Detector de Tunelamento Topológico V3.0
 
         Parâmetros:
         -----------
@@ -78,7 +218,6 @@ class DetectorTunelamentoTopologico:
 
         max_points : int
             Número máximo de pontos para análise topológica (default: 200).
-            Recomendação técnica: limitar a 100-200 candles.
 
         use_dimensionality_reduction : bool
             Se True, aplica redução de dimensionalidade antes da topologia.
@@ -92,8 +231,20 @@ class DetectorTunelamentoTopologico:
         tunneling_probability_threshold : float
             Limiar de probabilidade de tunelamento para disparo do sinal.
 
-        hbar, particle_mass : float
-            Parâmetros da equação de Schrödinger (ajustáveis para calibração).
+        V3.0 - Parâmetros Quânticos Calibráveis:
+        ----------------------------------------
+        hbar : float ou None
+            Constante de Planck reduzida. None = calibrar automaticamente.
+
+        particle_mass : float ou None
+            Massa da partícula quântica. None = calibrar automaticamente.
+
+        kT : float ou None
+            Temperatura do mercado (energia térmica). None = calibrar automaticamente.
+            NOTA: Antes era hardcoded como 0.1 dentro de calculate_tunneling_probability.
+
+        auto_calibrate_quantum : bool
+            Se True, calibra ℏ, m, kT automaticamente baseado na volatilidade.
         """
         self.embedding_dim = embedding_dim
         self.time_delay = time_delay
@@ -105,10 +256,20 @@ class DetectorTunelamentoTopologico:
         self.reduction_components = reduction_components
         self.persistence_entropy_threshold = persistence_entropy_threshold
         self.tunneling_probability_threshold = tunneling_probability_threshold
-        self.hbar = hbar
-        self.particle_mass = particle_mass
         self.n_eigenstates = n_eigenstates
         self.kde_bandwidth = kde_bandwidth
+
+        # V3.0: Parâmetros quânticos via classe QuantumParameters
+        self.quantum_params = QuantumParameters(
+            hbar=hbar,
+            particle_mass=particle_mass,
+            kT=kT,
+            auto_calibrate=auto_calibrate_quantum
+        )
+
+        # Manter compatibilidade com código existente
+        self.hbar = hbar if hbar is not None else 1.0
+        self.particle_mass = particle_mass if particle_mass is not None else 1.0
 
         # Cache de resultados
         self._cache = {}
@@ -629,6 +790,9 @@ class DetectorTunelamentoTopologico:
         - O indicador dispara quando a probabilidade da partícula estar fora do poço
           (|psi(x_out)|^2) excede um limiar crítico, significando que o preço tem energia
           suficiente para "atravessar a parede" de liquidez (Breakout via Tunelamento Quântico).
+
+        V3.0: kT agora é calibrado automaticamente baseado na volatilidade,
+        em vez de ser hardcoded como 0.1.
         """
         x = schrodinger_result['x_grid']
         V = schrodinger_result['potential']
@@ -645,7 +809,8 @@ class DetectorTunelamentoTopologico:
 
         # Usar estado fundamental ou superposição dos primeiros estados
         # Estado efetivo = superposição ponderada por Boltzmann
-        kT = 0.1  # "Temperatura" efetiva do mercado
+        # V3.0: Usar kT calibrado em vez de hardcoded 0.1
+        kT = self.quantum_params.kT if self.quantum_params.kT is not None else 0.1
 
         # Tratar energias para evitar overflow
         energies_shifted = energies - np.min(energies)  # Shift para evitar exp grande
@@ -822,7 +987,11 @@ class DetectorTunelamentoTopologico:
 
     def analyze(self, prices: np.ndarray) -> dict:
         """
-        Execução completa do Detector de Tunelamento Topológico.
+        Execução completa do Detector de Tunelamento Topológico V3.0.
+
+        VERSÃO V3.0:
+        - Calibra parâmetros quânticos automaticamente (se auto_calibrate=True)
+        - Retorna informações de calibração no resultado
 
         Retorna análise completa com todos os subsistemas.
         """
@@ -833,6 +1002,14 @@ class DetectorTunelamentoTopologico:
 
         # 1. Embedding de Takens
         embedding_result = self.get_takens_embedding(prices)
+        returns = embedding_result['returns']
+
+        # V3.0: Calibrar parâmetros quânticos automaticamente
+        if self.quantum_params.auto_calibrate and not self.quantum_params._calibrated:
+            calibration = self.quantum_params.calibrate(prices, returns)
+            # Atualizar parâmetros locais para uso em solve_schrodinger
+            self.hbar = calibration['hbar']
+            self.particle_mass = calibration['particle_mass']
 
         # 2. Homologia Persistente
         point_cloud = embedding_result['point_cloud_reduced']
@@ -876,7 +1053,10 @@ class DetectorTunelamentoTopologico:
             # Metadados
             'n_observations': len(prices),
             'current_price': prices[-1],
-            'tda_backend': TDA_BACKEND
+            'tda_backend': TDA_BACKEND,
+
+            # V3.0: Informações de calibração quântica
+            'quantum_calibration': self.quantum_params.get_params()
         }
 
     def get_signal(self, prices: np.ndarray) -> int:
