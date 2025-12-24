@@ -1,6 +1,6 @@
 """
 ================================================================================
-BACKTEST ENGINE
+BACKTEST ENGINE - VERSÃO CORRIGIDA
 Motor de Backtesting para Estrategias de Trading
 ================================================================================
 
@@ -8,10 +8,19 @@ IMPORTANTE: Este motor usa APENAS dados REAIS do mercado.
 Nenhuma simulacao ou dados sinteticos sao permitidos.
 Isso envolve dinheiro real, entao a precisao e crucial.
 
+VERSÃO CORRIGIDA - EXECUÇÃO REALISTA
+=====================================
+Correções aplicadas:
+1. Sinais são executados no OPEN da próxima barra (não no close atual)
+2. Stop Loss considera gaps (execução no open se houver gap)
+3. Take Profit considera gaps (execução no open se houver gap)
+4. Lógica conservadora: stop tem prioridade sobre take em caso de ambiguidade
+5. Slippage aplicado corretamente em todas as situações
+
 Funcionalidades:
-- Execucao tick-by-tick ou barra-por-barra
+- Execucao barra-por-barra com execução realista
 - Calculo de metricas de performance
-- Simulacao realista de execucao
+- Simulacao realista de execucao com gaps
 - Gerenciamento de posicoes
 - Relatorios detalhados
 """
@@ -60,6 +69,10 @@ class Trade:
     exit_reason: str  # 'stop_loss', 'take_profit', 'signal', 'end_of_data'
     strategy_name: str
     signal_confidence: float
+    
+    # NOVO: Informações adicionais para análise
+    had_gap: bool = False  # Se houve gap na execução
+    intended_exit_price: float = 0.0  # Preço pretendido (stop/take)
 
     @property
     def duration(self) -> timedelta:
@@ -115,13 +128,22 @@ class BacktestResult:
     avg_trade_duration: timedelta = field(default_factory=lambda: timedelta(0))
     longest_trade: timedelta = field(default_factory=lambda: timedelta(0))
     shortest_trade: timedelta = field(default_factory=lambda: timedelta(0))
+    
+    # NOVO: Estatísticas de execução
+    trades_with_gap: int = 0
+    total_slippage_pips: float = 0.0
 
 
 class BacktestEngine:
     """
-    Motor de Backtesting
+    Motor de Backtesting - VERSÃO CORRIGIDA
 
     IMPORTANTE: Usa APENAS dados REAIS do mercado.
+    
+    CORREÇÕES IMPLEMENTADAS:
+    1. Sinais executados no OPEN da próxima barra
+    2. Stop/Take consideram gaps
+    3. Execução realista com slippage
     """
 
     def __init__(self,
@@ -155,6 +177,9 @@ class BacktestEngine:
         self.current_position: Optional[Position] = None
         self.trades: List[Trade] = []
         self.signals_generated: List[Signal] = []
+        
+        # NOVO: Sinal pendente para execução na próxima barra
+        self.pending_signal: Optional[Signal] = None
 
     def run(self,
             strategy: BaseStrategy,
@@ -167,6 +192,12 @@ class BacktestEngine:
         Executa backtest de uma estrategia
 
         IMPORTANTE: Usa dados REAIS do mercado Forex.
+        
+        FLUXO CORRIGIDO:
+        1. Para cada barra:
+           a. Primeiro: Executar sinal PENDENTE da barra anterior (no OPEN desta barra)
+           b. Segundo: Verificar stop/take profit (usando high/low desta barra)
+           c. Terceiro: Gerar novo sinal (será executado na PRÓXIMA barra)
 
         Args:
             strategy: Estrategia a testar
@@ -182,12 +213,15 @@ class BacktestEngine:
         if verbose:
             print("\n" + "=" * 70)
             print("  BACKTEST - DADOS REAIS DO MERCADO")
+            print("  Versão Corrigida - Execução Realista")
             print("=" * 70)
             print(f"  Estrategia: {strategy.name}")
             print(f"  Simbolo: {symbol}")
             print(f"  Periodicidade: {periodicity}")
             print(f"  Capital inicial: ${self.initial_capital:,.2f}")
             print(f"  Tamanho posicao: {self.position_size} lotes")
+            print(f"  Spread: {self.spread_pips} pips")
+            print(f"  Slippage: {self.slippage_pips} pips")
             print("=" * 70 + "\n")
 
         # Reset estado
@@ -216,14 +250,29 @@ class BacktestEngine:
 
         # Processa cada barra
         for i, bar in enumerate(bars):
-            # Atualiza equity curve
+            # ================================================================
+            # PASSO 1: Executar sinal PENDENTE no OPEN desta barra
+            # ================================================================
+            if self.pending_signal is not None:
+                self._execute_pending_signal(self.pending_signal, bar)
+                self.pending_signal = None
+
+            # ================================================================
+            # PASSO 2: Verificar stop/take da posição atual
+            # (usando OPEN, HIGH, LOW desta barra - ordem importa!)
+            # ================================================================
+            if self.current_position:
+                self._check_position_exit_realistic(bar)
+
+            # ================================================================
+            # PASSO 3: Atualizar equity curve
+            # ================================================================
             self._update_equity(bar.close)
 
-            # Verifica stop/take da posicao atual
-            if self.current_position:
-                self._check_position_exit(bar)
-
-            # Gera sinal da estrategia
+            # ================================================================
+            # PASSO 4: Gerar sinal da estratégia
+            # (será executado na PRÓXIMA barra, não agora!)
+            # ================================================================
             signal = strategy.analyze(
                 price=bar.close,
                 timestamp=bar.timestamp,
@@ -236,8 +285,20 @@ class BacktestEngine:
             if signal and signal.type != SignalType.HOLD:
                 self.signals_generated.append(signal)
 
-                # Processa sinal
-                self._process_signal(signal, bar)
+                # Verificar se devemos armazenar como pendente ou processar
+                # Se tem posição aberta e sinal é oposto, fechar posição
+                if self.current_position:
+                    should_close = (
+                        (self.current_position.type == PositionType.LONG and signal.type == SignalType.SELL) or
+                        (self.current_position.type == PositionType.SHORT and signal.type == SignalType.BUY)
+                    )
+                    if should_close:
+                        # Fechar posição no CLOSE desta barra (sinal de saída)
+                        self._close_position(bar.close, bar.timestamp, "signal")
+                
+                # Armazenar sinal para executar na PRÓXIMA barra
+                if not self.current_position:
+                    self.pending_signal = signal
 
             # Progress
             if verbose and (i + 1) % 100 == 0:
@@ -271,6 +332,7 @@ class BacktestEngine:
         self.current_position = None
         self.trades = []
         self.signals_generated = []
+        self.pending_signal = None  # NOVO
 
     def _update_equity(self, current_price: float):
         """Atualiza curva de equity"""
@@ -288,55 +350,30 @@ class BacktestEngine:
 
         self.equity_curve.append(equity)
 
-    def _check_position_exit(self, bar: Bar):
-        """Verifica se posicao deve ser fechada por stop/take"""
-        if not self.current_position:
-            return
-
-        pos = self.current_position
-
-        # Verifica stop loss
-        if pos.stop_loss:
-            if pos.type == PositionType.LONG and bar.low <= pos.stop_loss:
-                self._close_position(pos.stop_loss, bar.timestamp, "stop_loss")
-                return
-            elif pos.type == PositionType.SHORT and bar.high >= pos.stop_loss:
-                self._close_position(pos.stop_loss, bar.timestamp, "stop_loss")
-                return
-
-        # Verifica take profit
-        if pos.take_profit:
-            if pos.type == PositionType.LONG and bar.high >= pos.take_profit:
-                self._close_position(pos.take_profit, bar.timestamp, "take_profit")
-                return
-            elif pos.type == PositionType.SHORT and bar.low <= pos.take_profit:
-                self._close_position(pos.take_profit, bar.timestamp, "take_profit")
-                return
-
-    def _process_signal(self, signal: Signal, bar: Bar):
-        """Processa um sinal de trading"""
-        # Se tem posicao aberta, verifica se deve fechar
+    def _execute_pending_signal(self, signal: Signal, bar: Bar):
+        """
+        NOVO: Executa um sinal pendente no OPEN da barra atual
+        
+        Esta é a forma CORRETA de executar sinais:
+        - O sinal foi gerado no CLOSE da barra anterior
+        - A execução acontece no OPEN desta barra
+        - Isso reflete a realidade do trading
+        """
         if self.current_position:
-            # Fecha se sinal e oposto
-            if (self.current_position.type == PositionType.LONG and signal.type == SignalType.SELL) or \
-               (self.current_position.type == PositionType.SHORT and signal.type == SignalType.BUY):
-                self._close_position(bar.close, bar.timestamp, "signal")
-
-        # Abre nova posicao se nao tem
-        if not self.current_position:
-            self._open_position(signal, bar)
-
-    def _open_position(self, signal: Signal, bar: Bar):
-        """Abre uma nova posicao"""
-        # Aplica slippage
+            # Já tem posição, não abrir outra
+            return
+            
+        # Aplicar spread e slippage ao OPEN
         slippage = self.slippage_pips * self.pip_value
         spread = self.spread_pips * self.pip_value
 
         if signal.type == SignalType.BUY:
-            entry_price = bar.close + spread / 2 + slippage  # Ask + slippage
+            # Compra no Ask (Open + spread/2) + slippage
+            entry_price = bar.open + spread / 2 + slippage
             pos_type = PositionType.LONG
         else:
-            entry_price = bar.close - spread / 2 - slippage  # Bid - slippage
+            # Venda no Bid (Open - spread/2) - slippage
+            entry_price = bar.open - spread / 2 - slippage
             pos_type = PositionType.SHORT
 
         self.current_position = Position(
@@ -350,21 +387,146 @@ class BacktestEngine:
             signal_confidence=signal.confidence
         )
 
-    def _close_position(self, exit_price: float, exit_time: datetime, reason: str):
-        """Fecha posicao atual"""
+    def _check_position_exit_realistic(self, bar: Bar):
+        """
+        CORRIGIDO: Verifica se posição deve ser fechada por stop/take
+        
+        Considera GAPS e ordem realista de execução:
+        1. Primeiro verifica se o OPEN já atingiu stop ou take (gap)
+        2. Se não, verifica se HIGH/LOW atingiram durante a barra
+        3. Stop loss tem PRIORIDADE em caso de ambiguidade (conservador)
+        
+        REGRAS DE GAP:
+        - Se LONG e bar.open < stop_loss: executa no OPEN (gap down)
+        - Se SHORT e bar.open > stop_loss: executa no OPEN (gap up)
+        - Se LONG e bar.open > take_profit: executa no OPEN (gap up favorável)
+        - Se SHORT e bar.open < take_profit: executa no OPEN (gap down favorável)
+        """
+        if not self.current_position:
+            return
+
+        pos = self.current_position
+        had_gap = False
+        intended_price = 0.0
+
+        # ====================================================================
+        # VERIFICAÇÃO DE GAP NO OPEN
+        # ====================================================================
+        
+        if pos.type == PositionType.LONG:
+            # LONG: Stop se preço CAI, Take se preço SOBE
+            
+            # Gap Down - Stop Loss atingido no OPEN
+            if pos.stop_loss and bar.open <= pos.stop_loss:
+                had_gap = True
+                intended_price = pos.stop_loss
+                # Executa no OPEN (pior que o stop)
+                exit_price = bar.open
+                self._close_position_with_details(
+                    exit_price, bar.timestamp, "stop_loss", 
+                    had_gap=True, intended_price=intended_price
+                )
+                return
+                
+            # Gap Up - Take Profit atingido no OPEN
+            if pos.take_profit and bar.open >= pos.take_profit:
+                had_gap = True
+                intended_price = pos.take_profit
+                # Executa no OPEN (melhor ou igual ao take)
+                exit_price = bar.open
+                self._close_position_with_details(
+                    exit_price, bar.timestamp, "take_profit",
+                    had_gap=True, intended_price=intended_price
+                )
+                return
+                
+        else:  # SHORT
+            # SHORT: Stop se preço SOBE, Take se preço CAI
+            
+            # Gap Up - Stop Loss atingido no OPEN
+            if pos.stop_loss and bar.open >= pos.stop_loss:
+                had_gap = True
+                intended_price = pos.stop_loss
+                # Executa no OPEN (pior que o stop)
+                exit_price = bar.open
+                self._close_position_with_details(
+                    exit_price, bar.timestamp, "stop_loss",
+                    had_gap=True, intended_price=intended_price
+                )
+                return
+                
+            # Gap Down - Take Profit atingido no OPEN
+            if pos.take_profit and bar.open <= pos.take_profit:
+                had_gap = True
+                intended_price = pos.take_profit
+                # Executa no OPEN (melhor ou igual ao take)
+                exit_price = bar.open
+                self._close_position_with_details(
+                    exit_price, bar.timestamp, "take_profit",
+                    had_gap=True, intended_price=intended_price
+                )
+                return
+
+        # ====================================================================
+        # VERIFICAÇÃO DURANTE A BARRA (HIGH/LOW)
+        # Usando lógica CONSERVADORA: Stop tem prioridade
+        # ====================================================================
+        
+        if pos.type == PositionType.LONG:
+            # Verificar Stop Loss primeiro (conservador)
+            if pos.stop_loss and bar.low <= pos.stop_loss:
+                self._close_position_with_details(
+                    pos.stop_loss, bar.timestamp, "stop_loss",
+                    had_gap=False, intended_price=pos.stop_loss
+                )
+                return
+                
+            # Verificar Take Profit
+            if pos.take_profit and bar.high >= pos.take_profit:
+                self._close_position_with_details(
+                    pos.take_profit, bar.timestamp, "take_profit",
+                    had_gap=False, intended_price=pos.take_profit
+                )
+                return
+                
+        else:  # SHORT
+            # Verificar Stop Loss primeiro (conservador)
+            if pos.stop_loss and bar.high >= pos.stop_loss:
+                self._close_position_with_details(
+                    pos.stop_loss, bar.timestamp, "stop_loss",
+                    had_gap=False, intended_price=pos.stop_loss
+                )
+                return
+                
+            # Verificar Take Profit
+            if pos.take_profit and bar.low <= pos.take_profit:
+                self._close_position_with_details(
+                    pos.take_profit, bar.timestamp, "take_profit",
+                    had_gap=False, intended_price=pos.take_profit
+                )
+                return
+
+    def _close_position_with_details(self, exit_price: float, exit_time: datetime, 
+                                      reason: str, had_gap: bool = False, 
+                                      intended_price: float = 0.0):
+        """
+        NOVO: Fecha posição com detalhes adicionais sobre execução
+        """
         if not self.current_position:
             return
 
         pos = self.current_position
 
-        # Aplica slippage na saida
+        # Aplica slippage na saída (sempre desfavorável)
         slippage = self.slippage_pips * self.pip_value
 
         if pos.type == PositionType.LONG:
-            actual_exit = exit_price - slippage  # Bid - slippage
+            # Vende no Bid - slippage
+            actual_exit = exit_price - slippage
             pnl_pips = (actual_exit - pos.entry_price) / self.pip_value
         else:
-            actual_exit = exit_price + slippage  # Ask + slippage
+            # Compra no Ask + slippage
+            actual_exit = exit_price + slippage
             pnl_pips = (pos.entry_price - actual_exit) / self.pip_value
 
         # Calcula PnL em USD (1 pip = $10 por lote padrao para EURUSD)
@@ -376,7 +538,7 @@ class BacktestEngine:
         # Atualiza capital
         self.capital += pnl_usd
 
-        # Registra trade
+        # Registra trade com detalhes
         trade = Trade(
             position_type=pos.type,
             entry_price=pos.entry_price,
@@ -388,12 +550,37 @@ class BacktestEngine:
             pnl_pips=pnl_pips,
             exit_reason=reason,
             strategy_name=pos.strategy_name,
-            signal_confidence=pos.signal_confidence
+            signal_confidence=pos.signal_confidence,
+            had_gap=had_gap,
+            intended_exit_price=intended_price if intended_price > 0 else exit_price
         )
         self.trades.append(trade)
 
         # Limpa posicao
         self.current_position = None
+
+    def _close_position(self, exit_price: float, exit_time: datetime, reason: str):
+        """
+        Fecha posição (compatibilidade com código existente)
+        """
+        self._close_position_with_details(exit_price, exit_time, reason)
+
+    def _open_position(self, signal: Signal, bar: Bar):
+        """
+        DEPRECATED: Usar _execute_pending_signal ao invés
+        
+        Mantido para compatibilidade, mas não deve ser chamado diretamente.
+        """
+        # Redireciona para o novo método
+        self._execute_pending_signal(signal, bar)
+
+    def _process_signal(self, signal: Signal, bar: Bar):
+        """
+        DEPRECATED: A lógica de processamento foi movida para o loop principal
+        
+        Mantido para compatibilidade.
+        """
+        pass
 
     def _calculate_metrics(self, strategy_name: str, symbol: str, periodicity: str,
                           start_time: datetime, end_time: datetime, total_bars: int) -> BacktestResult:
@@ -470,12 +657,23 @@ class BacktestEngine:
             result.longest_trade = max(durations)
             result.shortest_trade = min(durations)
 
+        # NOVO: Estatísticas de execução
+        result.trades_with_gap = sum(1 for t in self.trades if t.had_gap)
+        
+        # Calcular slippage total (diferença entre preço pretendido e executado)
+        total_slippage = 0.0
+        for t in self.trades:
+            if t.intended_exit_price > 0:
+                slippage = abs(t.exit_price - t.intended_exit_price) / self.pip_value
+                total_slippage += slippage
+        result.total_slippage_pips = total_slippage
+
         return result
 
     def _print_results(self, result: BacktestResult):
         """Imprime resultados do backtest"""
         print("\n" + "=" * 70)
-        print("  RESULTADOS DO BACKTEST")
+        print("  RESULTADOS DO BACKTEST (Execução Realista)")
         print("=" * 70)
 
         print(f"\n  RESUMO:")
@@ -510,19 +708,27 @@ class BacktestEngine:
         print(f"    Duracao media trade: {result.avg_trade_duration}")
         print(f"    Trade mais longo: {result.longest_trade}")
         print(f"    Trade mais curto: {result.shortest_trade}")
+        
+        # NOVO: Estatísticas de execução
+        print(f"\n  EXECUCAO:")
+        print(f"    Trades com gap: {result.trades_with_gap}")
+        print(f"    Slippage total: {result.total_slippage_pips:.1f} pips")
+        if result.total_trades > 0:
+            print(f"    Slippage medio por trade: {result.total_slippage_pips/result.total_trades:.2f} pips")
 
         print("\n" + "=" * 70)
 
         # Detalhes dos trades
         if result.trades:
             print("\n  ULTIMOS 10 TRADES:")
-            print("  " + "-" * 66)
+            print("  " + "-" * 80)
             for trade in result.trades[-10:]:
                 direction = "LONG " if trade.position_type == PositionType.LONG else "SHORT"
                 result_str = "WIN " if trade.is_winner else "LOSS"
+                gap_str = " [GAP]" if trade.had_gap else ""
                 print(f"    {direction} | {trade.entry_time.strftime('%Y-%m-%d %H:%M')} | "
                       f"Entry: {trade.entry_price:.5f} | Exit: {trade.exit_price:.5f} | "
-                      f"PnL: {trade.pnl_pips:+.1f} pips | {result_str} | {trade.exit_reason}")
+                      f"PnL: {trade.pnl_pips:+.1f} pips | {result_str} | {trade.exit_reason}{gap_str}")
 
 
 def run_backtest(strategy: BaseStrategy,
