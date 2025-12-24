@@ -45,7 +45,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from api.fxopen_historical_ws import Bar, download_historical_data
 from strategies.alta_volatilidade.prm_riemann_mandelbrot import ProtocoloRiemannMandelbrot
-from backtesting.robust_optimizer import (
+from backtesting.common.robust_optimizer import (
     RobustBacktester, RobustResult, BacktestResult,
     save_robust_config
 )
