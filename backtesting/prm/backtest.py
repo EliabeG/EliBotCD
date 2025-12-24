@@ -59,8 +59,8 @@ def create_prm_strategy(
         hmm_threshold: Threshold para HMM
         lyapunov_threshold: Threshold para Lyapunov
         curvature_threshold: Threshold para curvatura
-        hmm_training_window: NOVO - Janela de treino do HMM
-        hmm_min_training_samples: NOVO - Minimo de amostras para HMM
+        hmm_training_window: Janela de treino do HMM (sem look-ahead)
+        hmm_min_training_samples: Minimo de amostras para treinar HMM
 
     Returns:
         Instancia de PRMStrategy
@@ -305,7 +305,7 @@ def generate_report(result: BacktestResult, filename: str = None):
     report.append(f"  Sortino Ratio: {result.sortino_ratio:.2f}")
     report.append(f"  Calmar Ratio: {result.calmar_ratio:.2f}")
     
-    # NOVO: Estatísticas de execução
+    # Estatísticas de execução (se disponíveis)
     if hasattr(result, 'trades_with_gap'):
         report.append(f"\n{'='*70}")
         report.append("  ESTATISTICAS DE EXECUCAO")
