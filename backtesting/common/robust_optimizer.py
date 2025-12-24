@@ -2,6 +2,7 @@
 """
 ================================================================================
 OTIMIZADOR ROBUSTO COM VALIDACAO ANTI-OVERFITTING
+VERSÃO CORRIGIDA - COM VERIFICAÇÃO DE GAPS
 ================================================================================
 
 Este otimizador implementa:
@@ -9,6 +10,11 @@ Este otimizador implementa:
 2. Filtros de Realismo - descarta resultados suspeitos
 3. Score de Robustez - compara performance train vs test
 4. Walk-Forward ready - estrutura para validacao avancada
+
+CORREÇÕES APLICADAS:
+1. Verificação de GAPS no OPEN antes de HIGH/LOW
+2. Stop Loss tem prioridade (conservador)
+3. Slippage aplicado corretamente
 
 REGRAS ANTI-OVERFITTING:
 - Minimo 30 trades no treino, 15 no teste
@@ -41,6 +47,7 @@ class TradeResult:
     pnl_pips: float
     hit_sl: bool
     hit_tp: bool
+    had_gap: bool = False  # NOVO: Se houve gap na execução
 
 
 @dataclass
@@ -111,6 +118,8 @@ class RobustResult:
 class RobustBacktester:
     """
     Backtester robusto com validacao anti-overfitting
+    
+    VERSÃO CORRIGIDA - COM VERIFICAÇÃO DE GAPS
     """
 
     # Constantes de realismo (baseadas em trading real)
@@ -123,9 +132,10 @@ class RobustBacktester:
     MAX_DRAWDOWN = 0.40
     MIN_ROBUSTNESS = 0.60  # Teste deve ter >= 60% da performance do treino
 
-    def __init__(self, pip: float = 0.0001, spread: float = 1.0):
+    def __init__(self, pip: float = 0.0001, spread: float = 1.0, slippage: float = 0.5):
         self.pip = pip
         self.spread = spread
+        self.slippage = slippage  # NOVO: Slippage em pips
 
     def split_data(self, data: List, train_ratio: float = 0.70) -> Tuple[List, List]:
         """Divide dados em treino e teste"""
@@ -213,44 +223,104 @@ class RobustBacktester:
                       max_bars: int = 200) -> TradeResult:
         """
         Executa um trade com SL/TP
+        
+        VERSÃO CORRIGIDA:
+        1. Verifica GAPS no OPEN antes de HIGH/LOW
+        2. Stop tem prioridade (conservador)
+        3. Slippage aplicado corretamente
 
-        IMPORTANTE: Entrada na barra SEGUINTE ao sinal (entry_idx + 1)
+        IMPORTANTE: Entrada na barra SEGUINTE ao sinal (entry_idx é onde executa)
+        O entry_price já deve ser o OPEN da barra de entrada
         """
-        sl_price = entry_price - direction * sl_pips * self.pip
-        tp_price = entry_price + direction * tp_pips * self.pip
+        # Aplicar spread e slippage na entrada
+        slippage_value = self.slippage * self.pip
+        spread_value = self.spread * self.pip
+        
+        if direction == 1:  # LONG
+            actual_entry = entry_price + spread_value / 2 + slippage_value
+            sl_price = actual_entry - sl_pips * self.pip
+            tp_price = actual_entry + tp_pips * self.pip
+        else:  # SHORT
+            actual_entry = entry_price - spread_value / 2 - slippage_value
+            sl_price = actual_entry + sl_pips * self.pip
+            tp_price = actual_entry - tp_pips * self.pip
 
         exit_idx = entry_idx
-        exit_price = entry_price
+        exit_price = actual_entry
         hit_sl = False
         hit_tp = False
+        had_gap = False
 
-        # Percorre barras futuras (a partir da PROXIMA barra)
+        # Percorre barras futuras (a partir da PROXIMA barra após entrada)
         for j in range(entry_idx + 1, min(entry_idx + max_bars, len(bars))):
             bar = bars[j]
 
+            # ================================================================
+            # CORREÇÃO: VERIFICAR GAPS NO OPEN PRIMEIRO
+            # ================================================================
+            
+            if direction == 1:  # LONG
+                # Gap Down - Stop Loss atingido no OPEN
+                if bar.open <= sl_price:
+                    exit_price = bar.open - slippage_value  # Pior execução
+                    exit_idx = j
+                    hit_sl = True
+                    had_gap = True
+                    break
+                    
+                # Gap Up - Take Profit atingido no OPEN
+                if bar.open >= tp_price:
+                    exit_price = bar.open - slippage_value  # Execução no open
+                    exit_idx = j
+                    hit_tp = True
+                    had_gap = True
+                    break
+                    
+            else:  # SHORT
+                # Gap Up - Stop Loss atingido no OPEN
+                if bar.open >= sl_price:
+                    exit_price = bar.open + slippage_value  # Pior execução
+                    exit_idx = j
+                    hit_sl = True
+                    had_gap = True
+                    break
+                    
+                # Gap Down - Take Profit atingido no OPEN
+                if bar.open <= tp_price:
+                    exit_price = bar.open + slippage_value  # Execução no open
+                    exit_idx = j
+                    hit_tp = True
+                    had_gap = True
+                    break
+
+            # ================================================================
+            # VERIFICAR DURANTE A BARRA (HIGH/LOW)
+            # Stop tem prioridade (conservador)
+            # ================================================================
+            
             if direction == 1:  # LONG
                 # Verifica SL primeiro (conservador)
                 if bar.low <= sl_price:
-                    exit_price = sl_price
+                    exit_price = sl_price - slippage_value
                     exit_idx = j
                     hit_sl = True
                     break
                 # Verifica TP
                 if bar.high >= tp_price:
-                    exit_price = tp_price
+                    exit_price = tp_price - slippage_value
                     exit_idx = j
                     hit_tp = True
                     break
             else:  # SHORT
                 # Verifica SL primeiro (conservador)
                 if bar.high >= sl_price:
-                    exit_price = sl_price
+                    exit_price = sl_price + slippage_value
                     exit_idx = j
                     hit_sl = True
                     break
                 # Verifica TP
                 if bar.low <= tp_price:
-                    exit_price = tp_price
+                    exit_price = tp_price + slippage_value
                     exit_idx = j
                     hit_tp = True
                     break
@@ -258,20 +328,27 @@ class RobustBacktester:
         # Se nao bateu SL nem TP, fecha no final
         if not hit_sl and not hit_tp:
             exit_idx = min(entry_idx + max_bars, len(bars) - 1)
-            exit_price = bars[exit_idx].close
+            if direction == 1:
+                exit_price = bars[exit_idx].close - slippage_value
+            else:
+                exit_price = bars[exit_idx].close + slippage_value
 
-        # Calcula PnL
-        pnl = direction * (exit_price - entry_price) / self.pip - self.spread
+        # Calcula PnL (já inclui spread na entrada)
+        if direction == 1:
+            pnl = (exit_price - actual_entry) / self.pip
+        else:
+            pnl = (actual_entry - exit_price) / self.pip
 
         return TradeResult(
             entry_idx=entry_idx,
             exit_idx=exit_idx,
-            entry_price=entry_price,
+            entry_price=actual_entry,
             exit_price=exit_price,
             direction=direction,
             pnl_pips=pnl,
             hit_sl=hit_sl,
-            hit_tp=hit_tp
+            hit_tp=hit_tp,
+            had_gap=had_gap
         )
 
 
@@ -294,13 +371,16 @@ def save_robust_config(result: RobustResult, strategy_name: str,
         "symbol": symbol,
         "periodicity": periodicity,
         "optimized_at": datetime.now(timezone.utc).isoformat(),
+        "version": "2.0-corrected",  # NOVO: Indicar versão corrigida
         "validation": {
             "method": "train_test_split",
             "train_ratio": 0.70,
             "test_ratio": 0.30,
             "combinations_tested": n_tested,
             "robust_found": n_robust,
-            "anti_overfitting": True
+            "anti_overfitting": True,
+            "gap_handling": True,  # NOVO
+            "realistic_execution": True  # NOVO
         },
         "parameters": result.params,
         "performance": {
