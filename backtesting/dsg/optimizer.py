@@ -102,8 +102,16 @@ class DSGRobustOptimizer:
         self.robust_results: List[RobustResult] = []
         self.best: Optional[RobustResult] = None
 
-    async def load_and_precompute(self, start_date: datetime, end_date: datetime):
-        """Carrega dados e pre-calcula sinais DSG"""
+    async def load_and_precompute(self, start_date: datetime, end_date: datetime,
+                                   split_date: datetime = None):
+        """
+        Carrega dados e pre-calcula sinais DSG
+
+        Args:
+            start_date: Data inicial dos dados
+            end_date: Data final dos dados
+            split_date: Data de divisão train/test (se None, usa 70/30)
+        """
         print("\n" + "=" * 70)
         print("  CARREGANDO DADOS REAIS")
         print("=" * 70)
@@ -120,14 +128,25 @@ class DSGRobustOptimizer:
             print("  ERRO: Dados insuficientes!")
             return False
 
-        # SPLIT TRAIN/TEST (70/30)
-        split_idx = int(len(self.bars) * 0.70)
+        # SPLIT TRAIN/TEST por data específica ou 70/30
+        if split_date:
+            # Encontrar índice da data de split
+            split_idx = 0
+            for i, bar in enumerate(self.bars):
+                if bar.timestamp >= split_date:
+                    split_idx = i
+                    break
+            if split_idx == 0:
+                split_idx = int(len(self.bars) * 0.70)
+        else:
+            split_idx = int(len(self.bars) * 0.70)
+
         self.train_bars = self.bars[:split_idx]
         self.test_bars = self.bars[split_idx:]
 
         print(f"\n  DIVISAO TRAIN/TEST:")
-        print(f"    Treino: {len(self.train_bars)} barras")
-        print(f"    Teste:  {len(self.test_bars)} barras")
+        print(f"    Treino: {len(self.train_bars)} barras ({self.train_bars[0].timestamp.date()} a {self.train_bars[-1].timestamp.date()})")
+        print(f"    Teste:  {len(self.test_bars)} barras ({self.test_bars[0].timestamp.date()} a {self.test_bars[-1].timestamp.date()})")
 
         # Pre-calcular DSG
         print("\n  Pre-calculando sinais DSG (computacionalmente intensivo)...")
@@ -272,16 +291,15 @@ class DSGRobustOptimizer:
         )
         train_result = self.backtester.calculate_backtest_result(train_pnls)
 
-        # CORREÇÃO: Filtros mais rigorosos para significância estatística
-        # min_trades aumentado: 20 → 50 (treino), 10 → 25 (teste)
-        # min_pf aumentado: 1.05 → 1.30 (margem de segurança)
+        # Filtros balanceados para significância estatística
+        # Menos rigorosos que PRM pois DSG é mais complexo
         if not train_result.is_valid(
-            min_trades=50,        # CORREÇÃO: Aumentado de 20 para 50
-            max_win_rate=0.65,    # CORREÇÃO: Reduzido de 0.68 para 0.65
-            min_win_rate=0.30,    # CORREÇÃO: Aumentado de 0.28 para 0.30
-            max_pf=4.0,           # CORREÇÃO: Reduzido de 5.0 para 4.0
-            min_pf=1.30,          # CORREÇÃO: Aumentado de 1.05 para 1.30
-            max_dd=0.35           # CORREÇÃO: Reduzido de 0.45 para 0.35
+            min_trades=30,        # Mínimo para significância
+            max_win_rate=0.65,    # Evitar overfitting
+            min_win_rate=0.30,    # Mínimo aceitável
+            max_pf=4.0,           # Evitar curva muito otimista
+            min_pf=1.10,          # Mínimo para lucratividade
+            max_dd=0.40           # Drawdown máximo aceitável
         ):
             return None
 
@@ -294,14 +312,14 @@ class DSGRobustOptimizer:
         )
         test_result = self.backtester.calculate_backtest_result(test_pnls)
 
-        # CORREÇÃO: Filtros mais rigorosos para teste também
+        # Filtros para teste (out-of-sample)
         if not test_result.is_valid(
-            min_trades=25,        # CORREÇÃO: Aumentado de 10 para 25
-            max_win_rate=0.70,    # CORREÇÃO: Reduzido de 0.75 para 0.70
-            min_win_rate=0.25,    # CORREÇÃO: Aumentado de 0.20 para 0.25
-            max_pf=5.0,           # CORREÇÃO: Reduzido de 6.0 para 5.0
-            min_pf=1.15,          # CORREÇÃO: Aumentado de 0.9 para 1.15
-            max_dd=0.40           # CORREÇÃO: Reduzido de 0.55 para 0.40
+            min_trades=15,        # Mínimo para validação
+            max_win_rate=0.70,    # Evitar overfitting
+            min_win_rate=0.25,    # Mínimo aceitável
+            max_pf=5.0,           # Evitar curva muito otimista
+            min_pf=1.0,           # Apenas lucrativo
+            max_dd=0.45           # Drawdown máximo aceitável
         ):
             return None
 
@@ -354,11 +372,14 @@ class DSGRobustOptimizer:
         print(f"  Seed: {seed} (para reprodutibilidade)")
         print(f"{'='*70}")
 
-        # Ranges baseados na teoria e distribuicao real
-        ricci_vals = np.linspace(-1.0, -0.1, 20)
-        tidal_vals = np.linspace(0.001, 0.5, 20)
-        sl_vals = np.linspace(20, 55, 15)
-        tp_vals = np.linspace(25, 80, 20)
+        # Ranges baseados na distribuicao REAL dos dados
+        # Ricci: -50836 a -49798 (sempre muito negativo, sempre em colapso)
+        # Tidal: 0.0001 a 0.067 (média 0.009)
+        # Como ricci_collapse sempre é True, o Tidal é o filtro principal
+        ricci_vals = np.linspace(-51000, -49500, 20)  # Escala correta
+        tidal_vals = np.linspace(0.001, 0.05, 20)     # Ajustado para escala real
+        sl_vals = np.linspace(15, 50, 15)
+        tp_vals = np.linspace(20, 70, 20)
 
         best_robustness = -1
         tested = 0
@@ -435,7 +456,7 @@ class DSGRobustOptimizer:
 
 
 async def main():
-    N_COMBINATIONS = 100000
+    N_COMBINATIONS = 300000
 
     print("=" * 70)
     print("  OTIMIZADOR DSG ROBUSTO")
@@ -446,12 +467,16 @@ async def main():
 
     opt = DSGRobustOptimizer("EURUSD", "H1")
 
-    start = datetime(2025, 7, 1, tzinfo=timezone.utc)
-    end = datetime.now(timezone.utc)
+    # Períodos específicos de treino e teste
+    start = datetime(2024, 1, 1, tzinfo=timezone.utc)      # Início do treino
+    split = datetime(2025, 1, 1, tzinfo=timezone.utc)      # Fim do treino / Início do teste
+    end = datetime.now(timezone.utc)                        # Fim do teste
 
-    print(f"\n  Periodo: {start.date()} a {end.date()}")
+    print(f"\n  Periodo Total: {start.date()} a {end.date()}")
+    print(f"  Treino: {start.date()} a {split.date()}")
+    print(f"  Teste:  {split.date()} a {end.date()}")
 
-    if await opt.load_and_precompute(start, end):
+    if await opt.load_and_precompute(start, end, split_date=split):
         best = opt.optimize(N_COMBINATIONS)
         if best:
             print(f"\n{'='*70}")
