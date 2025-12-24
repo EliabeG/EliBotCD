@@ -1,6 +1,13 @@
 """
 Adaptador de Estratégia para o Protocolo Riemann-Mandelbrot
 Integra o indicador PRM com o sistema de trading
+
+VERSÃO CORRIGIDA - COMPATÍVEL COM PRM SEM LOOK-AHEAD
+=====================================================
+Correções aplicadas:
+1. Removido is_fitted (não existe mais no PRM corrigido)
+2. Adicionados novos parâmetros hmm_training_window e hmm_min_training_samples
+3. Direção baseada em tendência de barras FECHADAS
 """
 from datetime import datetime
 from typing import Optional
@@ -17,6 +24,8 @@ class PRMStrategy(BaseStrategy):
 
     Detecta "Singularidades de Preço" - momentos onde todos os subsistemas
     (HMM, Lyapunov, Curvatura) concordam que há uma oportunidade de entrada.
+    
+    VERSÃO CORRIGIDA - SEM LOOK-AHEAD BIAS
     """
 
     def __init__(self,
@@ -25,7 +34,10 @@ class PRMStrategy(BaseStrategy):
                  take_profit_pips: float = 30.0,
                  hmm_threshold: float = 0.85,
                  lyapunov_threshold: float = 0.5,
-                 curvature_threshold: float = 0.1):
+                 curvature_threshold: float = 0.1,
+                 hmm_training_window: int = 200,
+                 hmm_min_training_samples: int = 50,
+                 trend_lookback: int = 10):
         """
         Inicializa a estratégia PRM
 
@@ -36,29 +48,39 @@ class PRMStrategy(BaseStrategy):
             hmm_threshold: Threshold para ativação do HMM
             lyapunov_threshold: Threshold K para Lyapunov
             curvature_threshold: Threshold para aceleração da curvatura
+            hmm_training_window: NOVO - Janela de treino do HMM
+            hmm_min_training_samples: NOVO - Mínimo de amostras para HMM
+            trend_lookback: NOVO - Barras para calcular tendência
         """
         super().__init__(name="PRM-RiemannMandelbrot")
 
         self.min_prices = min_prices
         self.stop_loss_pips = stop_loss_pips
         self.take_profit_pips = take_profit_pips
+        self.trend_lookback = trend_lookback
 
         # Buffer de preços
         self.prices = deque(maxlen=500)
         self.volumes = deque(maxlen=500)
+        
+        # NOVO: Buffer de closes para calcular tendência sem look-ahead
+        self.closes_history = deque(maxlen=500)
 
-        # Indicador PRM
+        # Indicador PRM com novos parâmetros
         self.prm = ProtocoloRiemannMandelbrot(
             n_states=3,
             hmm_threshold=hmm_threshold,
             lyapunov_threshold_k=lyapunov_threshold,
             curvature_threshold=curvature_threshold,
-            lookback_window=100
+            lookback_window=100,
+            hmm_training_window=hmm_training_window,          # NOVO
+            hmm_min_training_samples=hmm_min_training_samples  # NOVO
         )
 
         # Estado
         self.last_analysis = None
         self.signal_cooldown = 0  # Evita sinais em sequência
+        self.bar_count = 0  # NOVO: Contador de barras processadas
 
     def add_price(self, price: float, volume: float = None):
         """Adiciona um preço ao buffer"""
@@ -69,10 +91,13 @@ class PRMStrategy(BaseStrategy):
         """
         Analisa o mercado e retorna sinal se houver singularidade
 
+        NOTA: Este método é chamado com o CLOSE da barra atual.
+        O sinal gerado será executado no OPEN da PRÓXIMA barra pelo BacktestEngine.
+
         Args:
-            price: Preço atual
+            price: Preço atual (close da barra)
             timestamp: Timestamp do tick
-            **indicators: Indicadores adicionais (volatility, hurst, entropy)
+            **indicators: Indicadores adicionais (volume, high, low, open)
 
         Returns:
             Signal se singularidade detectada, None caso contrário
@@ -80,6 +105,10 @@ class PRMStrategy(BaseStrategy):
         # Adiciona preço ao buffer
         volume = indicators.get('volume', 1.0)
         self.add_price(price, volume)
+        
+        # NOVO: Armazenar close no histórico para cálculo de tendência
+        self.closes_history.append(price)
+        self.bar_count += 1
 
         # Verifica se temos dados suficientes
         if len(self.prices) < self.min_prices:
@@ -101,8 +130,8 @@ class PRMStrategy(BaseStrategy):
 
             # Verifica se há singularidade
             if result['singularity_detected']:
-                # Determina direção baseada na curvatura e tendência
-                direction = self._determine_direction(result)
+                # CORRIGIDO: Determina direção baseada em barras FECHADAS
+                direction = self._determine_direction_safe(result)
 
                 if direction == SignalType.HOLD:
                     return None
@@ -143,33 +172,67 @@ class PRMStrategy(BaseStrategy):
 
         return None
 
-    def _determine_direction(self, result: dict) -> SignalType:
+    def _determine_direction_safe(self, result: dict) -> SignalType:
         """
-        Determina a direção do trade baseado na análise
-
-        Usa a curvatura e o estado do HMM para decidir direção
+        CORRIGIDO: Determina a direção do trade baseado APENAS em dados passados
+        
+        Usa tendência calculada com barras JÁ FECHADAS (não inclui barra atual).
+        
+        IMPORTANTE: 
+        - closes_history[-1] = close da barra ATUAL (acabou de ser adicionado)
+        - closes_history[-2] = close da barra ANTERIOR (já fechada)
+        - Para calcular tendência, usamos [-2] até [-(trend_lookback+2)]
         """
-        curvature_acc = result['curvature_analysis']['current_acceleration']
+        # Verificar se temos histórico suficiente
+        min_history = self.trend_lookback + 2  # +2 porque não usamos a barra atual
+        if len(self.closes_history) < min_history:
+            return SignalType.HOLD
+        
+        # ================================================================
+        # CORREÇÃO: Calcular tendência APENAS com barras FECHADAS
+        # ================================================================
+        # closes_history[-1] = barra atual (NÃO usar)
+        # closes_history[-2] = última barra fechada
+        # closes_history[-(trend_lookback+2)] = barra de referência
+        
+        recent_close = self.closes_history[-2]  # Última barra FECHADA
+        past_close = self.closes_history[-(self.trend_lookback + 2)]  # N barras antes
+        
+        trend = recent_close - past_close
+        
+        # Também considerar o estado do HMM e curvatura
         hmm_state = result['hmm_analysis']['current_state']
-
-        # Estado 1 (Alta Vol. Direcional) com curvatura positiva = BUY
-        # Estado 1 com curvatura negativa = SELL
-        # Estado 2 (Choque) = mais volátil, usa curvatura como guia
-
-        if hmm_state == 1:  # Alta volatilidade direcional
-            if curvature_acc > 0:
+        curvature_acc = result['curvature_analysis']['current_acceleration']
+        
+        # ================================================================
+        # LÓGICA DE DECISÃO
+        # ================================================================
+        
+        # Estado 1 (Alta Vol. Direcional) - Seguir tendência
+        if hmm_state == 1:
+            if trend > 0 and curvature_acc > 0:
                 return SignalType.BUY
-            elif curvature_acc < 0:
+            elif trend < 0 and curvature_acc < 0:
                 return SignalType.SELL
-        elif hmm_state == 2:  # Choque de volatilidade
-            # Em choques, seguir a curvatura com mais cautela
+                
+        # Estado 2 (Choque de volatilidade) - Mais cautela
+        elif hmm_state == 2:
+            # Em choques, só entra se tendência e curvatura concordam fortemente
             if abs(curvature_acc) > self.prm.curvature_threshold * 1.5:
-                if curvature_acc > 0:
+                if trend > 0 and curvature_acc > 0:
                     return SignalType.BUY
-                else:
+                elif trend < 0 and curvature_acc < 0:
                     return SignalType.SELL
 
         return SignalType.HOLD
+
+    def _determine_direction(self, result: dict) -> SignalType:
+        """
+        DEPRECATED: Use _determine_direction_safe ao invés
+        
+        Mantido para compatibilidade, redireciona para versão segura.
+        """
+        return self._determine_direction_safe(result)
 
     def _calculate_confidence(self, result: dict) -> float:
         """Calcula nível de confiança do sinal (0.0 a 1.0)"""
@@ -206,10 +269,24 @@ class PRMStrategy(BaseStrategy):
         """Reseta o estado da estratégia"""
         self.prices.clear()
         self.volumes.clear()
+        self.closes_history.clear()  # NOVO
         self.last_analysis = None
         self.last_signal = None
         self.signal_cooldown = 0
-        self.prm.is_fitted = False
+        self.bar_count = 0  # NOVO
+        
+        # CORRIGIDO: Não usar is_fitted (não existe mais)
+        # O PRM corrigido retreina automaticamente a cada chamada
+        # Criar nova instância para garantir estado limpo
+        self.prm = ProtocoloRiemannMandelbrot(
+            n_states=3,
+            hmm_threshold=self.prm.hmm_threshold,
+            lyapunov_threshold_k=self.prm.lyapunov_threshold_k,
+            curvature_threshold=self.prm.curvature_threshold,
+            lookback_window=self.prm.lookback_window,
+            hmm_training_window=self.prm.hmm_training_window,
+            hmm_min_training_samples=self.prm.hmm_min_training_samples
+        )
 
     def get_analysis_summary(self) -> Optional[dict]:
         """Retorna resumo da última análise"""
@@ -222,5 +299,6 @@ class PRMStrategy(BaseStrategy):
             'lyapunov': self.last_analysis['Lyapunov_Score'],
             'curvature': self.last_analysis['Curvature_Signal'],
             'hmm_state': self.last_analysis['hmm_analysis']['current_state'],
-            'lyap_class': self.last_analysis['lyapunov_analysis']['classification']
+            'lyap_class': self.last_analysis['lyapunov_analysis']['classification'],
+            'bar_count': self.bar_count  # NOVO
         }
