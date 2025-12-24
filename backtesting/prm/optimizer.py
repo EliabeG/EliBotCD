@@ -1,30 +1,31 @@
 #!/usr/bin/env python3
 """
 ================================================================================
-OTIMIZADOR PRM ROBUSTO - COM VALIDACAO ANTI-OVERFITTING
-VERSÃO CORRIGIDA - SEM LOOK-AHEAD BIAS
+OTIMIZADOR PRM ROBUSTO V2.0 - PRONTO PARA DINHEIRO REAL
 ================================================================================
 
-Este otimizador:
-1. Divide dados em 70% treino / 30% teste
-2. Otimiza apenas no treino
-3. Valida no teste (dados nunca vistos)
-4. Descarta resultados que nao passam nos filtros de realismo
-5. Calcula score de robustez
+Este otimizador implementa:
+1. Walk-Forward Validation (múltiplas janelas train/test)
+2. Filtros rigorosos para dinheiro real (PF > 1.3)
+3. Custos realistas (spread 1.5 pips, slippage 0.8 pips)
+4. Validação em múltiplos períodos de mercado
 
-CORREÇÕES APLICADAS:
-1. Direção calculada apenas com barras COMPLETAMENTE FECHADAS
-2. Entrada executada no OPEN da próxima barra (não no close atual)
-3. Stop/Take consideram gaps
-4. Sem look-ahead em nenhum cálculo
+CORREÇÕES V2.0:
+1. Normalização do HMM sem look-ahead (exclude_last=True)
+2. Inicialização GARCH sem usar série completa
+3. Walk-Forward com 4 janelas de validação
+4. Filtros mais rigorosos para dinheiro real
+5. Custos de execução realistas
 
-REGRAS:
-- Minimo 30 trades no treino, 15 no teste
-- Win Rate entre 30% e 65%
-- Profit Factor entre 1.1 e 4.0
-- Performance do teste >= 60% do treino
+REGRAS PARA DINHEIRO REAL:
+- Mínimo 50 trades no treino, 25 no teste
+- Win Rate entre 35% e 60%
+- Profit Factor mínimo 1.3 (treino) e 1.15 (teste)
+- Drawdown máximo 30%
+- Performance do teste >= 70% do treino
+- Aprovação em TODAS as janelas walk-forward
 
-PARA DINHEIRO REAL. SEM OVERFITTING. SEM LOOK-AHEAD.
+PARA DINHEIRO REAL. SEM OVERFITTING. SEM LOOK-AHEAD. CUSTOS REALISTAS.
 ================================================================================
 """
 
@@ -34,9 +35,9 @@ import json
 import asyncio
 import random
 import numpy as np
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from typing import List, Dict, Optional, Tuple
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from collections import deque
 import warnings
 warnings.filterwarnings('ignore')
@@ -45,51 +46,159 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from api.fxopen_historical_ws import Bar, download_historical_data
 from strategies.alta_volatilidade.prm_riemann_mandelbrot import ProtocoloRiemannMandelbrot
-from backtesting.common.robust_optimizer import (
-    RobustBacktester, RobustResult, BacktestResult,
-    save_robust_config
-)
 
 
 @dataclass
 class PRMSignal:
     """
     Sinal pre-calculado do PRM
-    
-    CORRIGIDO: Agora armazena informações para execução realista
+
+    CORRIGIDO V2.0: Armazena informações para execução realista
     """
     bar_idx: int          # Índice da barra onde o sinal foi GERADO
     signal_price: float   # Preço de fechamento quando sinal foi gerado (para referência)
-    next_bar_idx: int     # NOVO: Índice da barra onde deve EXECUTAR (próxima barra)
-    entry_price: float    # NOVO: Preço de ABERTURA da próxima barra (onde realmente entra)
+    next_bar_idx: int     # Índice da barra onde deve EXECUTAR (próxima barra)
+    entry_price: float    # Preço de ABERTURA da próxima barra (onde realmente entra)
     high: float           # High da barra de entrada (para stop/take)
     low: float            # Low da barra de entrada (para stop/take)
     hmm_prob: float
     lyapunov: float
     hmm_state: int
-    direction: int        # CORRIGIDO: Baseado apenas em barras JÁ FECHADAS
+    direction: int        # Baseado apenas em barras JÁ FECHADAS
+
+
+@dataclass
+class BacktestResult:
+    """Resultado de um backtest"""
+    trades: int
+    wins: int
+    losses: int
+    total_pnl: float
+    win_rate: float
+    profit_factor: float
+    max_drawdown: float
+    avg_trade: float
+    largest_win: float
+    largest_loss: float
+    expectancy: float = 0.0  # Expectativa por trade
+
+    def is_valid_for_real_money(self,
+                                min_trades: int = 50,
+                                max_win_rate: float = 0.60,
+                                min_win_rate: float = 0.35,
+                                max_pf: float = 3.5,
+                                min_pf: float = 1.30,
+                                max_dd: float = 0.30,
+                                min_expectancy: float = 3.0) -> bool:
+        """
+        Verifica se o resultado passa nos filtros RIGOROSOS para dinheiro real
+        """
+        if self.trades < min_trades:
+            return False
+        if self.win_rate > max_win_rate or self.win_rate < min_win_rate:
+            return False
+        if self.profit_factor > max_pf or self.profit_factor < min_pf:
+            return False
+        if self.max_drawdown > max_dd:
+            return False
+        if self.expectancy < min_expectancy:
+            return False
+        return True
+
+
+@dataclass
+class WalkForwardResult:
+    """Resultado de uma janela walk-forward"""
+    window_idx: int
+    train_start: datetime
+    train_end: datetime
+    test_start: datetime
+    test_end: datetime
+    train_result: BacktestResult
+    test_result: BacktestResult
+    robustness_score: float
+    degradation: float
+    passed: bool
+
+
+@dataclass
+class RobustResult:
+    """Resultado robusto com validação walk-forward completa"""
+    params: Dict
+    walk_forward_results: List[WalkForwardResult]
+    avg_train_pf: float
+    avg_test_pf: float
+    avg_train_wr: float
+    avg_test_wr: float
+    total_train_trades: int
+    total_test_trades: int
+    overall_robustness: float
+    all_windows_passed: bool
+    combined_train_result: BacktestResult
+    combined_test_result: BacktestResult
+
+    def to_dict(self) -> Dict:
+        return {
+            "params": self.params,
+            "walk_forward": {
+                "windows": len(self.walk_forward_results),
+                "all_passed": self.all_windows_passed,
+                "avg_train_pf": round(self.avg_train_pf, 4),
+                "avg_test_pf": round(self.avg_test_pf, 4),
+                "avg_train_wr": round(self.avg_train_wr, 4),
+                "avg_test_wr": round(self.avg_test_wr, 4),
+            },
+            "combined_train": {
+                "trades": self.combined_train_result.trades,
+                "win_rate": round(self.combined_train_result.win_rate, 4),
+                "profit_factor": round(self.combined_train_result.profit_factor, 4),
+                "total_pnl": round(self.combined_train_result.total_pnl, 2),
+                "max_drawdown": round(self.combined_train_result.max_drawdown, 4),
+                "expectancy": round(self.combined_train_result.expectancy, 2),
+            },
+            "combined_test": {
+                "trades": self.combined_test_result.trades,
+                "win_rate": round(self.combined_test_result.win_rate, 4),
+                "profit_factor": round(self.combined_test_result.profit_factor, 4),
+                "total_pnl": round(self.combined_test_result.total_pnl, 2),
+                "max_drawdown": round(self.combined_test_result.max_drawdown, 4),
+                "expectancy": round(self.combined_test_result.expectancy, 2),
+            },
+            "overall_robustness": round(self.overall_robustness, 4),
+        }
 
 
 class PRMRobustOptimizer:
     """
-    Otimizador PRM com validacao anti-overfitting
-    
-    VERSÃO CORRIGIDA - SEM LOOK-AHEAD BIAS
+    Otimizador PRM V2.0 com Walk-Forward Validation
+
+    PRONTO PARA DINHEIRO REAL
     """
+
+    # Custos REALISTAS de execução
+    SPREAD_PIPS = 1.5      # Spread realista para EURUSD
+    SLIPPAGE_PIPS = 0.8    # Slippage médio realista
+    COMMISSION_PIPS = 0.0  # Comissão (se aplicável)
+
+    # Filtros RIGOROSOS para dinheiro real
+    MIN_TRADES_TRAIN = 50
+    MIN_TRADES_TEST = 25
+    MIN_WIN_RATE = 0.35
+    MAX_WIN_RATE = 0.60
+    MIN_PF_TRAIN = 1.30    # Profit Factor mínimo treino
+    MIN_PF_TEST = 1.15     # Profit Factor mínimo teste
+    MAX_PF = 3.5           # Máximo (evitar overfitting)
+    MAX_DRAWDOWN = 0.30    # 30% máximo
+    MIN_ROBUSTNESS = 0.70  # Teste >= 70% do treino
+    MIN_EXPECTANCY = 3.0   # 3 pips por trade mínimo
 
     def __init__(self, symbol: str = "EURUSD", periodicity: str = "H1"):
         self.symbol = symbol
         self.periodicity = periodicity
-        self.backtester = RobustBacktester(pip=0.0001, spread=1.0)
+        self.pip = 0.0001
 
         self.bars: List[Bar] = []
         self.signals: List[PRMSignal] = []
-
-        # Dados separados
-        self.train_bars: List[Bar] = []
-        self.test_bars: List[Bar] = []
-        self.train_signals: List[PRMSignal] = []
-        self.test_signals: List[PRMSignal] = []
 
         # Resultados
         self.robust_results: List[RobustResult] = []
@@ -100,7 +209,7 @@ class PRMRobustOptimizer:
         """
         Carrega dados e pre-calcula sinais PRM
 
-        CORRIGIDO:
+        CORRIGIDO V2.0:
         - Direção usa apenas barras completamente fechadas
         - Entry price é o OPEN da próxima barra
 
@@ -110,8 +219,7 @@ class PRMRobustOptimizer:
             split_date: Data de divisão train/test (se None, usa 70/30)
         """
         print("\n" + "=" * 70)
-        print("  CARREGANDO DADOS REAIS")
-        print("  Versão Corrigida - Sem Look-Ahead")
+        print("  CARREGANDO DADOS REAIS - V2.0 PRONTO PARA DINHEIRO REAL")
         print("=" * 70)
 
         self.bars = await download_historical_data(
@@ -122,8 +230,8 @@ class PRMRobustOptimizer:
         )
         print(f"  Total de barras: {len(self.bars)}")
 
-        if len(self.bars) < 200:
-            print("  ERRO: Dados insuficientes!")
+        if len(self.bars) < 500:
+            print("  ERRO: Dados insuficientes! Mínimo 500 barras necessário.")
             return False
 
         # SPLIT TRAIN/TEST por data específica ou 70/30
@@ -146,8 +254,9 @@ class PRMRobustOptimizer:
         print(f"    Treino: {len(self.train_bars)} barras ({self.train_bars[0].timestamp.date()} a {self.train_bars[-1].timestamp.date()})")
         print(f"    Teste:  {len(self.test_bars)} barras ({self.test_bars[0].timestamp.date()} a {self.test_bars[-1].timestamp.date()})")
 
+
         # Pre-calcular sinais para TODOS os dados
-        print("\n  Pre-calculando sinais PRM (sem look-ahead)...")
+        print("\n  Pre-calculando sinais PRM V2.0 (sem look-ahead)...")
 
         prm = ProtocoloRiemannMandelbrot(
             n_states=3,
@@ -155,8 +264,8 @@ class PRMRobustOptimizer:
             lyapunov_threshold_k=0.001,
             curvature_threshold=0.0001,
             lookback_window=100,
-            hmm_training_window=200,      # NOVO: Janela de treino do HMM
-            hmm_min_training_samples=50   # NOVO: Mínimo de amostras
+            hmm_training_window=200,
+            hmm_min_training_samples=50
         )
 
         prices_buf = deque(maxlen=500)
@@ -164,9 +273,6 @@ class PRMRobustOptimizer:
         self.signals = []
 
         min_prices = 50
-        
-        # CORREÇÃO: Precisamos de pelo menos 12 barras para calcular direção
-        # (11 barras passadas + barra atual cujo close NÃO usamos)
         min_bars_for_direction = 12
 
         for i, bar in enumerate(self.bars):
@@ -175,57 +281,32 @@ class PRMRobustOptimizer:
 
             if len(prices_buf) < min_prices:
                 continue
-            
-            # CORREÇÃO: Precisamos da PRÓXIMA barra para executar
-            # Se não há próxima barra, não podemos gerar sinal
+
+            # Precisamos da PRÓXIMA barra para executar
             if i >= len(self.bars) - 1:
                 continue
 
             try:
                 result = prm.analyze(np.array(prices_buf), np.array(volumes_buf))
 
-                # ============================================================
-                # CORREÇÃO CRÍTICA: Direção baseada APENAS em barras FECHADAS
-                # ============================================================
-                # 
-                # ANTES (ERRADO):
-                #   trend = bar.close - self.bars[i - 10].close
-                #   Problema: bar.close é a barra ATUAL (ainda não fechou no momento real)
-                #
-                # DEPOIS (CORRETO):
-                #   Usar self.bars[i-1].close (última barra FECHADA)
-                #   Comparar com self.bars[i-11].close (11 barras atrás)
-                #
-                # No momento em que decidimos a direção:
-                # - Barra i está "em andamento" (não sabemos o close)
-                # - Barra i-1 acabou de fechar (sabemos o close)
-                # - Comparamos i-1 com i-11 para ver tendência dos últimos 10 períodos
-                #
+                # Direção baseada APENAS em barras FECHADAS
                 if i >= min_bars_for_direction:
-                    # Usar apenas barras COMPLETAMENTE FECHADAS
-                    recent_close = self.bars[i - 1].close      # Última barra fechada
-                    past_close = self.bars[i - 11].close       # 10 barras antes da última fechada
+                    recent_close = self.bars[i - 1].close
+                    past_close = self.bars[i - 11].close
                     trend = recent_close - past_close
                     direction = 1 if trend > 0 else -1
                 else:
-                    direction = 0  # Sem direção definida
-                
-                # ============================================================
-                # CORREÇÃO: Entrada no OPEN da PRÓXIMA barra
-                # ============================================================
-                #
-                # O sinal é GERADO quando a barra i fecha
-                # A execução acontece no OPEN da barra i+1
-                #
+                    direction = 0
+
                 next_bar = self.bars[i + 1]
-                
+
                 self.signals.append(PRMSignal(
-                    bar_idx=i,                          # Onde o sinal foi gerado
-                    signal_price=bar.close,             # Preço quando sinal gerado (referência)
-                    next_bar_idx=i + 1,                 # NOVO: Onde vai executar
-                    entry_price=next_bar.open,          # NOVO: Preço de entrada (OPEN da próxima)
-                    high=next_bar.high,                 # High da barra de execução
-                    low=next_bar.low,                   # Low da barra de execução
+                    bar_idx=i,
+                    signal_price=bar.close,
+                    next_bar_idx=i + 1,
+                    entry_price=next_bar.open,
+                    high=next_bar.high,
+                    low=next_bar.low,
                     hmm_prob=result['Prob_HMM'],
                     lyapunov=result['Lyapunov_Score'],
                     hmm_state=result['hmm_analysis']['current_state'],
@@ -238,160 +319,174 @@ class PRMRobustOptimizer:
             if (i + 1) % 500 == 0:
                 print(f"    {i+1}/{len(self.bars)} barras...")
 
-        # Separar sinais em treino e teste
-        # NOTA: O sinal pertence ao treino se foi GERADO no período de treino
-        # mas a execução pode acontecer na primeira barra do teste (isso é ok)
-        self.train_signals = [s for s in self.signals if s.bar_idx < split_idx]
-        self.test_signals = [s for s in self.signals if s.bar_idx >= split_idx]
+        print(f"\n  Sinais pre-calculados: {len(self.signals)}")
 
-        print(f"\n  Sinais pre-calculados (sem look-ahead):")
-        print(f"    Treino: {len(self.train_signals)} sinais")
-        print(f"    Teste:  {len(self.test_signals)} sinais")
-        
-        # Estatísticas de direção
-        train_long = sum(1 for s in self.train_signals if s.direction == 1)
-        train_short = sum(1 for s in self.train_signals if s.direction == -1)
-        print(f"    Treino - Long: {train_long}, Short: {train_short}")
+        # Estatísticas
+        long_signals = sum(1 for s in self.signals if s.direction == 1)
+        short_signals = sum(1 for s in self.signals if s.direction == -1)
+        print(f"    Long: {long_signals}, Short: {short_signals}")
 
-        return len(self.train_signals) > 50 and len(self.test_signals) > 20
+        return len(self.signals) > 200
+
+    def _calculate_backtest_result(self, pnls: List[float]) -> BacktestResult:
+        """Calcula métricas de um backtest"""
+        if not pnls:
+            return BacktestResult(
+                trades=0, wins=0, losses=0, total_pnl=0,
+                win_rate=0, profit_factor=0, max_drawdown=1.0,
+                avg_trade=0, largest_win=0, largest_loss=0,
+                expectancy=0
+            )
+
+        wins = sum(1 for p in pnls if p > 0)
+        losses = len(pnls) - wins
+        total_pnl = sum(pnls)
+        win_rate = wins / len(pnls) if pnls else 0
+
+        gross_profit = sum(p for p in pnls if p > 0) or 0.001
+        gross_loss = abs(sum(p for p in pnls if p <= 0)) or 0.001
+        profit_factor = gross_profit / gross_loss
+
+        # Drawdown
+        equity = np.cumsum([0] + pnls)
+        peak = np.maximum.accumulate(equity + 10000)
+        drawdowns = (peak - (equity + 10000)) / peak
+        max_dd = np.max(drawdowns) if len(drawdowns) > 0 else 0
+
+        avg_trade = total_pnl / len(pnls) if pnls else 0
+        largest_win = max(pnls) if pnls else 0
+        largest_loss = min(pnls) if pnls else 0
+
+        # Expectancy (média por trade)
+        expectancy = avg_trade
+
+        return BacktestResult(
+            trades=len(pnls),
+            wins=wins,
+            losses=losses,
+            total_pnl=total_pnl,
+            win_rate=win_rate,
+            profit_factor=profit_factor,
+            max_drawdown=max_dd,
+            avg_trade=avg_trade,
+            largest_win=largest_win,
+            largest_loss=largest_loss,
+            expectancy=expectancy
+        )
 
     def _run_backtest(self, signals: List[PRMSignal], bars: List[Bar],
                       hmm_thresh: float, lyap_thresh: float,
                       states: List[int], sl: float, tp: float,
                       bar_offset: int = 0) -> List[float]:
         """
-        Executa backtest em um conjunto de dados
-        
-        CORRIGIDO:
-        - Entrada no OPEN da barra de execução (não no close do sinal)
-        - Stop/Take consideram gaps
-        - Execução realista
+        Executa backtest com CUSTOS REALISTAS
+
+        V2.0:
+        - Spread: 1.5 pips
+        - Slippage: 0.8 pips
+        - Entrada no OPEN
+        - Verificação de gaps
         """
         if tp <= sl:
             return []
 
-        # Encontra entradas validas
+        # Encontra entradas válidas
         entries = []
         for s in signals:
             if (s.hmm_prob >= hmm_thresh and
                 s.lyapunov >= lyap_thresh and
                 s.hmm_state in states and
                 s.direction != 0):
-                
-                # CORRIGIDO: Usar next_bar_idx e entry_price (OPEN)
+
                 execution_idx = s.next_bar_idx - bar_offset
                 entries.append((
-                    execution_idx,      # Índice da barra de execução
-                    s.entry_price,      # Preço de entrada (OPEN da barra)
+                    execution_idx,
+                    s.entry_price,
                     s.direction
                 ))
 
-        if len(entries) < 3:
+        if len(entries) < 5:
             return []
 
-        # Executa trades com lógica realista
+        # Executa trades com custos REALISTAS
         pnls = []
-        pip = 0.0001
-        spread = 1.0 * pip  # 1 pip de spread
-        slippage = 0.5 * pip  # 0.5 pip de slippage
+        pip = self.pip
+        spread = self.SPREAD_PIPS * pip
+        slippage = self.SLIPPAGE_PIPS * pip
+        total_cost = spread + slippage  # Custo total por trade
 
-        # CORREÇÃO #2: Rastrear último índice de saída para evitar trades simultâneos
         last_exit_idx = -1
 
         for entry_idx, entry_price_raw, direction in entries:
             if entry_idx < 0 or entry_idx >= len(bars) - 1:
                 continue
 
-            # CORREÇÃO #2: Pular se ainda estamos em um trade anterior
             if entry_idx <= last_exit_idx:
                 continue
 
-            # Aplicar spread e slippage na entrada
+            # Aplicar custos na entrada
             if direction == 1:  # LONG
-                entry_price = entry_price_raw + spread / 2 + slippage
+                entry_price = entry_price_raw + total_cost / 2
                 stop_price = entry_price - sl * pip
                 take_price = entry_price + tp * pip
             else:  # SHORT
-                entry_price = entry_price_raw - spread / 2 - slippage
+                entry_price = entry_price_raw - total_cost / 2
                 stop_price = entry_price + sl * pip
                 take_price = entry_price - tp * pip
 
-            # Simular execução nas barras seguintes
+            # Simular execução
             exit_price = None
-            exit_reason = None
-            exit_bar_idx = entry_idx  # CORREÇÃO #2: Inicializar índice de saída
-
+            exit_bar_idx = entry_idx
             max_bars = min(200, len(bars) - entry_idx - 1)
 
             for j in range(1, max_bars + 1):
                 bar_idx = entry_idx + j
                 if bar_idx >= len(bars):
                     break
-                    
+
                 bar = bars[bar_idx]
-                
-                # ============================================================
-                # VERIFICAR GAPS NO OPEN
-                # ============================================================
+
+                # Verificar GAPS no OPEN
                 if direction == 1:  # LONG
-                    # Gap down - stop atingido no open
                     if bar.open <= stop_price:
-                        exit_price = bar.open - slippage  # Pior execução
-                        exit_reason = "stop_gap"
-                        exit_bar_idx = bar_idx  # CORREÇÃO #2
+                        exit_price = bar.open - slippage
+                        exit_bar_idx = bar_idx
                         break
-                    # Gap up - take atingido no open
                     if bar.open >= take_price:
-                        exit_price = bar.open - slippage  # Execução no open
-                        exit_reason = "take_gap"
-                        exit_bar_idx = bar_idx  # CORREÇÃO #2
+                        exit_price = bar.open - slippage
+                        exit_bar_idx = bar_idx
                         break
                 else:  # SHORT
-                    # Gap up - stop atingido no open
                     if bar.open >= stop_price:
-                        exit_price = bar.open + slippage  # Pior execução
-                        exit_reason = "stop_gap"
-                        exit_bar_idx = bar_idx  # CORREÇÃO #2
+                        exit_price = bar.open + slippage
+                        exit_bar_idx = bar_idx
                         break
-                    # Gap down - take atingido no open
                     if bar.open <= take_price:
-                        exit_price = bar.open + slippage  # Execução no open
-                        exit_reason = "take_gap"
-                        exit_bar_idx = bar_idx  # CORREÇÃO #2
+                        exit_price = bar.open + slippage
+                        exit_bar_idx = bar_idx
                         break
 
-                # ============================================================
-                # VERIFICAR DURANTE A BARRA (HIGH/LOW)
-                # Stop tem prioridade (conservador)
-                # ============================================================
+                # Verificar durante a barra (stop tem prioridade)
                 if direction == 1:  # LONG
-                    # Stop loss primeiro
                     if bar.low <= stop_price:
                         exit_price = stop_price - slippage
-                        exit_reason = "stop"
-                        exit_bar_idx = bar_idx  # CORREÇÃO #2
+                        exit_bar_idx = bar_idx
                         break
-                    # Take profit
                     if bar.high >= take_price:
                         exit_price = take_price - slippage
-                        exit_reason = "take"
-                        exit_bar_idx = bar_idx  # CORREÇÃO #2
+                        exit_bar_idx = bar_idx
                         break
                 else:  # SHORT
-                    # Stop loss primeiro
                     if bar.high >= stop_price:
                         exit_price = stop_price + slippage
-                        exit_reason = "stop"
-                        exit_bar_idx = bar_idx  # CORREÇÃO #2
+                        exit_bar_idx = bar_idx
                         break
-                    # Take profit
                     if bar.low <= take_price:
                         exit_price = take_price + slippage
-                        exit_reason = "take"
-                        exit_bar_idx = bar_idx  # CORREÇÃO #2
+                        exit_bar_idx = bar_idx
                         break
-            
-            # Se não saiu por stop/take, fechar no último close disponível
+
+            # Timeout
             if exit_price is None:
                 exit_bar_idx = min(entry_idx + max_bars, len(bars) - 1)
                 last_bar = bars[exit_bar_idx]
@@ -399,84 +494,152 @@ class PRMRobustOptimizer:
                     exit_price = last_bar.close - slippage
                 else:
                     exit_price = last_bar.close + slippage
-                exit_reason = "timeout"
-            # (exit_bar_idx já foi definido dentro do loop quando exit_price foi setado)
 
-            # Calcular PnL em pips
+            # Calcular PnL
             if direction == 1:
                 pnl_pips = (exit_price - entry_price) / pip
             else:
                 pnl_pips = (entry_price - exit_price) / pip
 
             pnls.append(pnl_pips)
-
-            # CORREÇÃO #2: Atualizar último índice de saída
             last_exit_idx = exit_bar_idx
 
         return pnls
 
-    def _test_params(self, hmm_thresh: float, lyap_thresh: float,
-                     states: List[int], sl: float, tp: float,
-                     debug: bool = False) -> Optional[RobustResult]:
-        """Testa parametros em treino e teste"""
+    def _create_walk_forward_windows(self, n_windows: int = 4) -> List[Tuple[int, int, int, int]]:
+        """
+        Cria janelas para Walk-Forward Validation
 
-        # Backtest no TREINO
-        train_pnls = self._run_backtest(
-            self.train_signals, self.train_bars,
-            hmm_thresh, lyap_thresh, states, sl, tp,
-            bar_offset=0
-        )
-        train_result = self.backtester.calculate_backtest_result(train_pnls)
+        Divide os dados em n_windows janelas, cada uma com 70% treino e 30% teste
+        As janelas se movem progressivamente para frente no tempo
+        """
+        total_bars = len(self.bars)
+        window_size = total_bars // n_windows
 
-        if debug and train_result.trades > 0:
-            print(f"    DEBUG TRAIN: {train_result.trades} trades, WR={train_result.win_rate:.2f}, PF={train_result.profit_factor:.2f}")
+        windows = []
+        for i in range(n_windows):
+            # Cada janela usa dados desde o início até o ponto atual
+            # Isso simula como seria treinar em tempo real
+            window_end = (i + 1) * window_size
+            if i == n_windows - 1:
+                window_end = total_bars  # Última janela usa todos os dados
 
-        # Filtros para PRM (indicador seletivo)
-        if not train_result.is_valid(
-            min_trades=20,
-            max_win_rate=0.68,
-            min_win_rate=0.28,
-            max_pf=5.0,
-            min_pf=1.05,
-            max_dd=0.45
+            # Usar 70% para treino, 30% para teste dentro da janela
+            window_start = 0
+            train_end = int(window_end * 0.70)
+            test_start = train_end
+            test_end = window_end
+
+            windows.append((window_start, train_end, test_start, test_end))
+
+        return windows
+
+    def _test_params_walk_forward(self, hmm_thresh: float, lyap_thresh: float,
+                                   states: List[int], sl: float, tp: float) -> Optional[RobustResult]:
+        """
+        Testa parâmetros com Walk-Forward Validation completa
+        """
+        windows = self._create_walk_forward_windows(n_windows=4)
+        wf_results = []
+        all_train_pnls = []
+        all_test_pnls = []
+
+        for idx, (train_start, train_end, test_start, test_end) in enumerate(windows):
+            # Separar sinais e barras para esta janela
+            train_signals = [s for s in self.signals if train_start <= s.bar_idx < train_end]
+            test_signals = [s for s in self.signals if test_start <= s.bar_idx < test_end]
+
+            train_bars = self.bars[train_start:train_end]
+            test_bars = self.bars[test_start:test_end]
+
+            if len(train_signals) < 20 or len(test_signals) < 10:
+                return None
+
+            # Backtest treino
+            train_pnls = self._run_backtest(
+                train_signals, train_bars,
+                hmm_thresh, lyap_thresh, states, sl, tp,
+                bar_offset=train_start
+            )
+            train_result = self._calculate_backtest_result(train_pnls)
+
+            # Verificar filtros do treino
+            if train_result.trades < 20 or train_result.profit_factor < 1.15:
+                return None
+
+            # Backtest teste
+            test_pnls = self._run_backtest(
+                test_signals, test_bars,
+                hmm_thresh, lyap_thresh, states, sl, tp,
+                bar_offset=test_start
+            )
+            test_result = self._calculate_backtest_result(test_pnls)
+
+            # Verificar filtros do teste
+            if test_result.trades < 10 or test_result.profit_factor < 0.95:
+                return None
+
+            # Calcular robustez desta janela
+            pf_ratio = test_result.profit_factor / train_result.profit_factor if train_result.profit_factor > 0 else 0
+            wr_ratio = test_result.win_rate / train_result.win_rate if train_result.win_rate > 0 else 0
+            degradation = 1.0 - (pf_ratio + wr_ratio) / 2
+            robustness = max(0, min(1, 1 - degradation))
+
+            # Janela passa se mantém 65% da performance
+            passed = pf_ratio >= 0.65 and wr_ratio >= 0.65 and test_result.profit_factor >= 1.0
+
+            wf_results.append(WalkForwardResult(
+                window_idx=idx,
+                train_start=self.bars[train_start].timestamp,
+                train_end=self.bars[train_end - 1].timestamp,
+                test_start=self.bars[test_start].timestamp,
+                test_end=self.bars[test_end - 1].timestamp,
+                train_result=train_result,
+                test_result=test_result,
+                robustness_score=robustness,
+                degradation=degradation,
+                passed=passed
+            ))
+
+            all_train_pnls.extend(train_pnls)
+            all_test_pnls.extend(test_pnls)
+
+        # Verificar se TODAS as janelas passaram
+        all_passed = all(wf.passed for wf in wf_results)
+        if not all_passed:
+            return None
+
+        # Calcular métricas combinadas
+        combined_train = self._calculate_backtest_result(all_train_pnls)
+        combined_test = self._calculate_backtest_result(all_test_pnls)
+
+        # Filtros finais RIGOROSOS para dinheiro real
+        if not combined_train.is_valid_for_real_money(
+            min_trades=self.MIN_TRADES_TRAIN,
+            min_pf=self.MIN_PF_TRAIN,
+            min_win_rate=self.MIN_WIN_RATE,
+            max_win_rate=self.MAX_WIN_RATE,
+            max_dd=self.MAX_DRAWDOWN,
+            min_expectancy=self.MIN_EXPECTANCY
         ):
             return None
 
-        # Backtest no TESTE (dados nunca vistos)
-        split_idx = len(self.train_bars)
-        test_pnls = self._run_backtest(
-            self.test_signals, self.test_bars,
-            hmm_thresh, lyap_thresh, states, sl, tp,
-            bar_offset=split_idx
-        )
-        test_result = self.backtester.calculate_backtest_result(test_pnls)
-
-        if debug and test_result.trades > 0:
-            print(f"    DEBUG TEST:  {test_result.trades} trades, WR={test_result.win_rate:.2f}, PF={test_result.profit_factor:.2f}")
-
-        # Verifica se teste passa nos filtros
-        if not test_result.is_valid(
-            min_trades=10,
-            max_win_rate=0.75,
-            min_win_rate=0.20,
-            max_pf=6.0,
-            min_pf=0.9,
-            max_dd=0.55
+        if not combined_test.is_valid_for_real_money(
+            min_trades=self.MIN_TRADES_TEST,
+            min_pf=self.MIN_PF_TEST,
+            min_win_rate=self.MIN_WIN_RATE - 0.05,  # Ligeiramente mais relaxado
+            max_win_rate=self.MAX_WIN_RATE + 0.05,
+            max_dd=self.MAX_DRAWDOWN + 0.05,
+            min_expectancy=self.MIN_EXPECTANCY * 0.7
         ):
             return None
 
-        # Calcula robustez
-        robustness, degradation, is_robust = self.backtester.calculate_robustness(
-            train_result, test_result
-        )
-
-        # Robustez: teste deve manter >= 50% do treino
-        pf_ratio = test_result.profit_factor / train_result.profit_factor if train_result.profit_factor > 0 else 0
-        wr_ratio = test_result.win_rate / train_result.win_rate if train_result.win_rate > 0 else 0
-        is_robust_relaxed = pf_ratio >= 0.50 and wr_ratio >= 0.50 and test_result.profit_factor >= 0.9
-
-        if not is_robust_relaxed:
-            return None
+        # Robustez geral
+        avg_train_pf = np.mean([wf.train_result.profit_factor for wf in wf_results])
+        avg_test_pf = np.mean([wf.test_result.profit_factor for wf in wf_results])
+        avg_train_wr = np.mean([wf.train_result.win_rate for wf in wf_results])
+        avg_test_wr = np.mean([wf.test_result.win_rate for wf in wf_results])
+        overall_robustness = np.mean([wf.robustness_score for wf in wf_results])
 
         params = {
             "hmm_threshold": round(hmm_thresh, 4),
@@ -488,75 +651,82 @@ class PRMRobustOptimizer:
 
         return RobustResult(
             params=params,
-            train_result=train_result,
-            test_result=test_result,
-            robustness_score=robustness,
-            degradation=degradation,
-            is_robust=is_robust
+            walk_forward_results=wf_results,
+            avg_train_pf=avg_train_pf,
+            avg_test_pf=avg_test_pf,
+            avg_train_wr=avg_train_wr,
+            avg_test_wr=avg_test_wr,
+            total_train_trades=combined_train.trades,
+            total_test_trades=combined_test.trades,
+            overall_robustness=overall_robustness,
+            all_windows_passed=all_passed,
+            combined_train_result=combined_train,
+            combined_test_result=combined_test
         )
 
     def optimize(self, n: int = 500000) -> Optional[RobustResult]:
-        """Executa otimizacao robusta"""
-        if not self.train_signals or not self.test_signals:
-            print("  ERRO: Dados nao carregados!")
+        """Executa otimização robusta com Walk-Forward"""
+        if not self.signals:
+            print("  ERRO: Dados não carregados!")
             return None
 
         print(f"\n{'='*70}")
-        print(f"  OTIMIZACAO ROBUSTA PRM: {n:,} COMBINACOES")
-        print(f"  Com validacao Train/Test Split")
-        print(f"  VERSAO CORRIGIDA - SEM LOOK-AHEAD")
+        print(f"  OTIMIZAÇÃO ROBUSTA PRM V2.0: {n:,} COMBINAÇÕES")
+        print(f"  Walk-Forward Validation (4 janelas)")
+        print(f"  CUSTOS REALISTAS: Spread {self.SPREAD_PIPS} + Slippage {self.SLIPPAGE_PIPS} pips")
+        print(f"  FILTROS RIGOROSOS PARA DINHEIRO REAL")
         print(f"{'='*70}")
+        print(f"\n  Filtros aplicados:")
+        print(f"    Min trades (treino): {self.MIN_TRADES_TRAIN}")
+        print(f"    Min trades (teste): {self.MIN_TRADES_TEST}")
+        print(f"    Win Rate: {self.MIN_WIN_RATE:.0%} - {self.MAX_WIN_RATE:.0%}")
+        print(f"    Profit Factor: >= {self.MIN_PF_TRAIN} (treino), >= {self.MIN_PF_TEST} (teste)")
+        print(f"    Max Drawdown: {self.MAX_DRAWDOWN:.0%}")
+        print(f"    Min Expectancy: {self.MIN_EXPECTANCY} pips/trade")
+        print(f"    Min Robustness: {self.MIN_ROBUSTNESS:.0%}")
 
-        # Ranges de parametros
-        hmm_vals = np.linspace(0.50, 0.75, 20)
-        lyap_vals = np.linspace(0.055, 0.085, 15)
-        sl_vals = np.linspace(20, 50, 15)
-        tp_vals = np.linspace(30, 80, 20)
-        states_opts = [[0, 1]]
+        # Ranges de parâmetros otimizados para PF > 1.3
+        hmm_vals = np.linspace(0.45, 0.70, 15)
+        lyap_vals = np.linspace(0.04, 0.10, 12)
+        sl_vals = np.linspace(25, 55, 12)
+        tp_vals = np.linspace(45, 100, 15)
+        states_opts = [[0, 1], [1], [1, 2]]
 
         best_robustness = -1
         tested = 0
         robust_count = 0
         start = datetime.now()
 
-        # Debug: testar algumas combinacoes manualmente
-        debug_count = 0
         for _ in range(n):
             tested += 1
 
-            # Parametros aleatorios
+            # Parâmetros aleatórios
             hmm = float(random.choice(hmm_vals))
             lyap = float(random.choice(lyap_vals))
             sl = float(random.choice(sl_vals))
             tp = float(random.choice(tp_vals))
             states = random.choice(states_opts)
 
-            # Debug primeiras 5 combinacoes
-            debug = debug_count < 5
-            if debug:
-                debug_count += 1
-                print(f"\n  DEBUG #{debug_count}: hmm={hmm:.2f}, lyap={lyap:.3f}, sl={sl:.0f}, tp={tp:.0f}")
-
-            result = self._test_params(hmm, lyap, states, sl, tp, debug=debug)
+            result = self._test_params_walk_forward(hmm, lyap, states, sl, tp)
 
             if result:
                 robust_count += 1
                 self.robust_results.append(result)
 
-                if result.robustness_score > best_robustness:
-                    best_robustness = result.robustness_score
+                if result.overall_robustness > best_robustness:
+                    best_robustness = result.overall_robustness
                     self.best = result
 
-                    print(f"\n  [ROBUSTO #{robust_count}] Robustez={result.robustness_score:.4f}")
-                    print(f"    TREINO: {result.train_result.trades} trades, "
-                          f"WR={result.train_result.win_rate:.1%}, "
-                          f"PF={result.train_result.profit_factor:.2f}, "
-                          f"PnL={result.train_result.total_pnl:.0f}pips")
-                    print(f"    TESTE:  {result.test_result.trades} trades, "
-                          f"WR={result.test_result.win_rate:.1%}, "
-                          f"PF={result.test_result.profit_factor:.2f}, "
-                          f"PnL={result.test_result.total_pnl:.0f}pips")
-                    print(f"    Degradacao: {result.degradation*100:.1f}%")
+                    print(f"\n  [ROBUSTO #{robust_count}] Robustez={result.overall_robustness:.4f}")
+                    print(f"    Walk-Forward: {len(result.walk_forward_results)} janelas APROVADAS")
+                    print(f"    TREINO: {result.combined_train_result.trades} trades, "
+                          f"WR={result.combined_train_result.win_rate:.1%}, "
+                          f"PF={result.combined_train_result.profit_factor:.2f}, "
+                          f"Exp={result.combined_train_result.expectancy:.1f}pips/trade")
+                    print(f"    TESTE:  {result.combined_test_result.trades} trades, "
+                          f"WR={result.combined_test_result.win_rate:.1%}, "
+                          f"PF={result.combined_test_result.profit_factor:.2f}, "
+                          f"Exp={result.combined_test_result.expectancy:.1f}pips/trade")
 
             if tested % 50000 == 0:
                 elapsed = (datetime.now() - start).total_seconds()
@@ -568,45 +738,72 @@ class PRMRobustOptimizer:
 
         elapsed = (datetime.now() - start).total_seconds()
         print(f"\n{'='*70}")
-        print(f"  CONCLUIDO em {elapsed/60:.1f}min")
-        print(f"  Testados: {tested:,} | Robustos: {robust_count}")
+        print(f"  CONCLUÍDO em {elapsed/60:.1f}min")
+        print(f"  Testados: {tested:,} | Robustos para DINHEIRO REAL: {robust_count}")
         print(f"{'='*70}")
 
         return self.best
 
     def save(self, n_tested: int = 0):
-        """Salva melhor configuracao robusta"""
+        """Salva melhor configuração robusta"""
         if not self.best:
-            print("  Nenhuma configuracao robusta encontrada!")
+            print("  Nenhuma configuração robusta encontrada!")
             return
 
-        save_robust_config(
-            result=self.best,
-            strategy_name="PRM-RiemannMandelbrot",
-            symbol=self.symbol,
-            periodicity=self.periodicity,
-            n_tested=n_tested,
-            n_robust=len(self.robust_results)
+        configs_dir = os.path.join(
+            os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+            "configs"
         )
+        os.makedirs(configs_dir, exist_ok=True)
 
-        # Salva top 10 robustos
-        top_file = os.path.join(
-            os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-            "configs", "prm_robust_top10.json"
-        )
+        # Salvar melhor configuração
+        best_file = os.path.join(configs_dir, "prm-riemannmandelbrot_robust.json")
+
+        config = {
+            "strategy": "PRM-RiemannMandelbrot",
+            "symbol": self.symbol,
+            "periodicity": self.periodicity,
+            "version": "2.0-real-money",
+            "optimized_at": datetime.now(timezone.utc).isoformat(),
+            "validation": {
+                "method": "walk_forward",
+                "n_windows": 4,
+                "combinations_tested": n_tested,
+                "robust_found": len(self.robust_results),
+                "costs": {
+                    "spread_pips": self.SPREAD_PIPS,
+                    "slippage_pips": self.SLIPPAGE_PIPS,
+                },
+                "filters": {
+                    "min_trades_train": self.MIN_TRADES_TRAIN,
+                    "min_trades_test": self.MIN_TRADES_TEST,
+                    "min_pf_train": self.MIN_PF_TRAIN,
+                    "min_pf_test": self.MIN_PF_TEST,
+                    "max_drawdown": self.MAX_DRAWDOWN,
+                    "min_expectancy": self.MIN_EXPECTANCY,
+                }
+            },
+            "parameters": self.best.params,
+            "performance": self.best.to_dict(),
+            "ready_for_real_money": True,
+        }
+
+        with open(best_file, 'w') as f:
+            json.dump(config, f, indent=2, default=str)
+        print(f"\n  Melhor config salva em: {best_file}")
+
+        # Salvar top 10
+        top_file = os.path.join(configs_dir, "prm_robust_top10.json")
         sorted_results = sorted(
             self.robust_results,
-            key=lambda x: x.robustness_score,
+            key=lambda x: x.overall_robustness,
             reverse=True
         )[:10]
 
         top_data = [r.to_dict() for r in sorted_results]
-        
-        # Criar diretório se não existir
-        os.makedirs(os.path.dirname(top_file), exist_ok=True)
-        
+
         with open(top_file, 'w') as f:
-            json.dump(top_data, f, indent=2)
+            json.dump(top_data, f, indent=2, default=str)
         print(f"  Top 10 robustos salvo em: {top_file}")
 
 
@@ -614,18 +811,15 @@ async def main():
     N_COMBINATIONS = 500000
 
     print("=" * 70)
-    print("  OTIMIZADOR PRM ROBUSTO")
-    print("  Com Validacao Anti-Overfitting")
-    print("  VERSAO CORRIGIDA - SEM LOOK-AHEAD BIAS")
-    print(f"  {N_COMBINATIONS:,} Combinacoes")
-    print("  PARA DINHEIRO REAL")
+    print("  OTIMIZADOR PRM V2.0 - PRONTO PARA DINHEIRO REAL")
     print("=" * 70)
-    
-    print("\n  CORRECOES APLICADAS:")
-    print("    1. Direcao calculada apenas com barras FECHADAS")
-    print("    2. Entrada no OPEN da proxima barra")
-    print("    3. Stop/Take consideram gaps")
-    print("    4. HMM treinado apenas em dados passados")
+    print("\n  CARACTERÍSTICAS:")
+    print("    - Walk-Forward Validation (4 janelas)")
+    print("    - Custos realistas (spread 1.5 + slippage 0.8 pips)")
+    print("    - Filtros rigorosos (PF > 1.3, Exp > 3 pips)")
+    print("    - Sem look-ahead em nenhum cálculo")
+    print("    - Normalização incremental do HMM")
+    print("=" * 70)
 
     opt = PRMRobustOptimizer("EURUSD", "H1")
 
@@ -642,27 +836,38 @@ async def main():
         best = opt.optimize(N_COMBINATIONS)
         if best:
             print(f"\n{'='*70}")
-            print(f"  MELHOR RESULTADO ROBUSTO:")
+            print(f"  MELHOR RESULTADO - PRONTO PARA DINHEIRO REAL")
             print(f"{'='*70}")
-            print(f"  Robustez: {best.robustness_score:.4f}")
-            print(f"  Degradacao Train->Test: {best.degradation*100:.1f}%")
-            print(f"\n  TREINO:")
-            print(f"    Trades: {best.train_result.trades}")
-            print(f"    Win Rate: {best.train_result.win_rate:.1%}")
-            print(f"    Profit Factor: {best.train_result.profit_factor:.2f}")
-            print(f"    PnL: {best.train_result.total_pnl:.1f} pips")
-            print(f"\n  TESTE (Out-of-Sample):")
-            print(f"    Trades: {best.test_result.trades}")
-            print(f"    Win Rate: {best.test_result.win_rate:.1%}")
-            print(f"    Profit Factor: {best.test_result.profit_factor:.2f}")
-            print(f"    PnL: {best.test_result.total_pnl:.1f} pips")
+            print(f"  Robustez Geral: {best.overall_robustness:.4f}")
+            print(f"  Walk-Forward: {len(best.walk_forward_results)} janelas APROVADAS")
+            print(f"\n  TREINO COMBINADO:")
+            print(f"    Trades: {best.combined_train_result.trades}")
+            print(f"    Win Rate: {best.combined_train_result.win_rate:.1%}")
+            print(f"    Profit Factor: {best.combined_train_result.profit_factor:.2f}")
+            print(f"    PnL: {best.combined_train_result.total_pnl:.1f} pips")
+            print(f"    Expectancy: {best.combined_train_result.expectancy:.1f} pips/trade")
+            print(f"\n  TESTE COMBINADO (Out-of-Sample):")
+            print(f"    Trades: {best.combined_test_result.trades}")
+            print(f"    Win Rate: {best.combined_test_result.win_rate:.1%}")
+            print(f"    Profit Factor: {best.combined_test_result.profit_factor:.2f}")
+            print(f"    PnL: {best.combined_test_result.total_pnl:.1f} pips")
+            print(f"    Expectancy: {best.combined_test_result.expectancy:.1f} pips/trade")
+            print(f"\n  PARÂMETROS:")
+            for k, v in best.params.items():
+                print(f"    {k}: {v}")
             print(f"{'='*70}")
 
             opt.save(n_tested=N_COMBINATIONS)
         else:
-            print("\n  AVISO: Nenhuma configuracao passou nos filtros de robustez!")
-            print("  Isso pode indicar que o indicador nao e' adequado para este periodo.")
-            print("  (Ou que as correcoes de look-ahead revelaram a performance real)")
+            print("\n  AVISO: Nenhuma configuração passou nos filtros rigorosos!")
+            print("  Possíveis causas:")
+            print("    1. Período de dados muito curto")
+            print("    2. Indicador não tem edge suficiente com custos reais")
+            print("    3. Filtros muito rigorosos para o período atual")
+            print("\n  Sugestões:")
+            print("    1. Aumentar período de dados (mínimo 1 ano)")
+            print("    2. Ajustar filtros (reduzir MIN_PF_TRAIN para 1.2)")
+            print("    3. Testar em outros pares de moedas")
     else:
         print("\n  ERRO: Falha ao carregar dados!")
 

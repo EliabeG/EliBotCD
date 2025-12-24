@@ -2,6 +2,7 @@
 """
 ================================================================================
 OTIMIZADOR DSG ROBUSTO - COM VALIDACAO ANTI-OVERFITTING
+VERSÃO CORRIGIDA - SEM LOOK-AHEAD BIAS
 ================================================================================
 
 DSG (Detector de Singularidade Gravitacional):
@@ -15,7 +16,13 @@ VALIDACAO:
 3. Valida no teste (dados nunca vistos)
 4. Descarta resultados que nao passam nos filtros de realismo
 
-PARA DINHEIRO REAL. SEM OVERFITTING.
+CORREÇÕES APLICADAS:
+1. Entrada no OPEN da próxima barra (não no CLOSE atual)
+2. Direção calculada com barras fechadas
+3. Stop/Take consideram gaps
+4. Evita trades simultâneos
+
+PARA DINHEIRO REAL. SEM OVERFITTING. SEM LOOK-AHEAD.
 ================================================================================
 """
 
@@ -42,14 +49,27 @@ from backtesting.common.robust_optimizer import (
     save_robust_config
 )
 
+# CORREÇÃO C4: Importar custos centralizados
+from config.execution_costs import (
+    SPREAD_PIPS,
+    SLIPPAGE_PIPS,
+    get_pip_value,
+)
+
 
 @dataclass
 class DSGSignal:
-    """Sinal pre-calculado do DSG"""
-    bar_idx: int
-    price: float
-    high: float
-    low: float
+    """
+    Sinal pre-calculado do DSG
+
+    CORRIGIDO: Agora armazena informações para execução realista
+    """
+    bar_idx: int              # Índice da barra onde o sinal foi GERADO
+    signal_price: float       # Preço de fechamento quando sinal foi gerado (referência)
+    next_bar_idx: int         # NOVO: Índice da barra onde deve EXECUTAR
+    entry_price: float        # NOVO: Preço de ABERTURA da próxima barra (onde realmente entra)
+    high: float               # High da barra de execução
+    low: float                # Low da barra de execução
     ricci_scalar: float
     tidal_force: float
     event_horizon_distance: float
@@ -65,7 +85,12 @@ class DSGRobustOptimizer:
     def __init__(self, symbol: str = "EURUSD", periodicity: str = "H1"):
         self.symbol = symbol
         self.periodicity = periodicity
-        self.backtester = RobustBacktester(pip=0.0001, spread=1.0)
+
+        # CORREÇÃO C4: Usar custos centralizados
+        # ANTES: RobustBacktester(pip=0.0001, spread=1.0) - spread fixo incorreto
+        # DEPOIS: Usa valores do config/execution_costs.py
+        pip_value = get_pip_value(symbol)
+        self.backtester = RobustBacktester(pip=pip_value, spread=SPREAD_PIPS)
 
         self.bars: List[Bar] = []
         self.signals: List[DSGSignal] = []
@@ -123,15 +148,25 @@ class DSGRobustOptimizer:
             if len(prices_buf) < min_prices:
                 continue
 
+            # CORREÇÃO: Precisamos da PRÓXIMA barra para executar
+            # Se não há próxima barra, não podemos gerar sinal
+            if i >= len(self.bars) - 1:
+                continue
+
             try:
                 prices_arr = np.array(prices_buf)
                 result = dsg.analyze(prices_arr)
 
+                # CORREÇÃO: Entrada no OPEN da PRÓXIMA barra
+                next_bar = self.bars[i + 1]
+
                 self.signals.append(DSGSignal(
-                    bar_idx=i,
-                    price=bar.close,
-                    high=bar.high,
-                    low=bar.low,
+                    bar_idx=i,                          # Onde o sinal foi gerado
+                    signal_price=bar.close,             # Preço quando sinal gerado (referência)
+                    next_bar_idx=i + 1,                 # NOVO: Onde vai executar
+                    entry_price=next_bar.open,          # NOVO: Preço de entrada (OPEN da próxima)
+                    high=next_bar.high,                 # High da barra de execução
+                    low=next_bar.low,                   # Low da barra de execução
                     ricci_scalar=result['Ricci_Scalar'],
                     tidal_force=result['Tidal_Force_Magnitude'],
                     event_horizon_distance=result['Event_Horizon_Distance'],
@@ -169,8 +204,15 @@ class DSGRobustOptimizer:
                       ricci_thresh: float, tidal_thresh: float,
                       sl: float, tp: float,
                       bar_offset: int = 0) -> List[float]:
-        """Executa backtest em um conjunto de dados"""
-        if tp <= sl:
+        """
+        Executa backtest em um conjunto de dados
+
+        VERSÃO CORRIGIDA:
+        1. Usa OPEN da próxima barra como entry_price
+        2. Evita trades simultâneos (last_exit_idx)
+        3. R:R mínimo de 1.2
+        """
+        if tp <= sl * 1.2:  # Exige R:R mínimo de 1.2
             return []
 
         entries = []
@@ -184,19 +226,28 @@ class DSGRobustOptimizer:
             conditions = sum([ricci_collapse, high_tidal, crossing])
 
             if conditions >= 2 and s.geodesic_direction != 0:
-                entries.append((s.bar_idx - bar_offset, s.price, s.geodesic_direction))
+                # CORREÇÃO: Usar next_bar_idx e entry_price (OPEN da próxima barra)
+                execution_idx = s.next_bar_idx - bar_offset
+                entries.append((execution_idx, s.entry_price, s.geodesic_direction))
 
         if len(entries) < 3:
             return []
 
         pnls = []
-        for bar_idx, entry_price, direction in entries:
-            if bar_idx < 0 or bar_idx >= len(bars) - 1:
+        last_exit_idx = -1  # CORREÇÃO: Evitar trades simultâneos
+
+        for exec_idx, entry_price, direction in entries:
+            # Validações
+            if exec_idx < 0 or exec_idx >= len(bars) - 1:
+                continue
+
+            # CORREÇÃO: Evitar trades simultâneos
+            if exec_idx <= last_exit_idx:
                 continue
 
             trade = self.backtester.execute_trade(
                 bars=bars,
-                entry_idx=bar_idx,
+                entry_idx=exec_idx,
                 entry_price=entry_price,
                 direction=direction,
                 sl_pips=sl,
@@ -204,6 +255,9 @@ class DSGRobustOptimizer:
                 max_bars=200
             )
             pnls.append(trade.pnl_pips)
+
+            # Atualiza último índice de saída
+            last_exit_idx = trade.exit_idx
 
         return pnls
 
@@ -218,14 +272,16 @@ class DSGRobustOptimizer:
         )
         train_result = self.backtester.calculate_backtest_result(train_pnls)
 
-        # Filtros para treino
+        # CORREÇÃO: Filtros mais rigorosos para significância estatística
+        # min_trades aumentado: 20 → 50 (treino), 10 → 25 (teste)
+        # min_pf aumentado: 1.05 → 1.30 (margem de segurança)
         if not train_result.is_valid(
-            min_trades=20,
-            max_win_rate=0.68,
-            min_win_rate=0.28,
-            max_pf=5.0,
-            min_pf=1.05,
-            max_dd=0.45
+            min_trades=50,        # CORREÇÃO: Aumentado de 20 para 50
+            max_win_rate=0.65,    # CORREÇÃO: Reduzido de 0.68 para 0.65
+            min_win_rate=0.30,    # CORREÇÃO: Aumentado de 0.28 para 0.30
+            max_pf=4.0,           # CORREÇÃO: Reduzido de 5.0 para 4.0
+            min_pf=1.30,          # CORREÇÃO: Aumentado de 1.05 para 1.30
+            max_dd=0.35           # CORREÇÃO: Reduzido de 0.45 para 0.35
         ):
             return None
 
@@ -238,14 +294,14 @@ class DSGRobustOptimizer:
         )
         test_result = self.backtester.calculate_backtest_result(test_pnls)
 
-        # Filtros para teste
+        # CORREÇÃO: Filtros mais rigorosos para teste também
         if not test_result.is_valid(
-            min_trades=10,
-            max_win_rate=0.75,
-            min_win_rate=0.20,
-            max_pf=6.0,
-            min_pf=0.9,
-            max_dd=0.55
+            min_trades=25,        # CORREÇÃO: Aumentado de 10 para 25
+            max_win_rate=0.70,    # CORREÇÃO: Reduzido de 0.75 para 0.70
+            min_win_rate=0.25,    # CORREÇÃO: Aumentado de 0.20 para 0.25
+            max_pf=5.0,           # CORREÇÃO: Reduzido de 6.0 para 5.0
+            min_pf=1.15,          # CORREÇÃO: Aumentado de 0.9 para 1.15
+            max_dd=0.40           # CORREÇÃO: Reduzido de 0.55 para 0.40
         ):
             return None
 
@@ -278,15 +334,24 @@ class DSGRobustOptimizer:
             is_robust=is_robust
         )
 
-    def optimize(self, n: int = 100000) -> Optional[RobustResult]:
-        """Executa otimizacao robusta"""
+    def optimize(self, n: int = 100000, seed: int = 42) -> Optional[RobustResult]:
+        """
+        Executa otimizacao robusta
+
+        CORREÇÃO: Seed fixo para reprodutibilidade
+        """
         if not self.train_signals or not self.test_signals:
             print("  ERRO: Dados nao carregados!")
             return None
 
+        # CORREÇÃO: Fixar seeds para reprodutibilidade
+        random.seed(seed)
+        np.random.seed(seed)
+
         print(f"\n{'='*70}")
         print(f"  OTIMIZACAO ROBUSTA DSG: {n:,} COMBINACOES")
         print(f"  Com validacao Train/Test Split")
+        print(f"  Seed: {seed} (para reprodutibilidade)")
         print(f"{'='*70}")
 
         # Ranges baseados na teoria e distribuicao real

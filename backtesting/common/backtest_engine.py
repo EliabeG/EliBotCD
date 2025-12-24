@@ -1,6 +1,6 @@
 """
 ================================================================================
-BACKTEST ENGINE - VERSÃO CORRIGIDA
+BACKTEST ENGINE V2.0 - PRONTO PARA DINHEIRO REAL
 Motor de Backtesting para Estrategias de Trading
 ================================================================================
 
@@ -8,14 +8,16 @@ IMPORTANTE: Este motor usa APENAS dados REAIS do mercado.
 Nenhuma simulacao ou dados sinteticos sao permitidos.
 Isso envolve dinheiro real, entao a precisao e crucial.
 
-VERSÃO CORRIGIDA - EXECUÇÃO REALISTA
-=====================================
+VERSÃO V2.0 - EXECUÇÃO REALISTA COM CUSTOS REAIS
+================================================
 Correções aplicadas:
 1. Sinais são executados no OPEN da próxima barra (não no close atual)
 2. Stop Loss considera gaps (execução no open se houver gap)
 3. Take Profit considera gaps (execução no open se houver gap)
 4. Lógica conservadora: stop tem prioridade sobre take em caso de ambiguidade
 5. Slippage aplicado corretamente em todas as situações
+6. NOVO V2.0: Spread realista de 1.5 pips
+7. NOVO V2.0: Slippage realista de 0.8 pips
 
 Funcionalidades:
 - Execucao barra-por-barra com execução realista
@@ -23,6 +25,7 @@ Funcionalidades:
 - Simulacao realista de execucao com gaps
 - Gerenciamento de posicoes
 - Relatorios detalhados
+- Custos de execução realistas
 """
 
 import numpy as np
@@ -34,6 +37,15 @@ from collections import deque
 
 from api.fxopen_historical_ws import Bar, get_historical_data_sync as get_historical_data
 from strategies.base import BaseStrategy, Signal, SignalType
+
+# CORREÇÃO C4: Importar custos centralizados
+from config.execution_costs import (
+    SPREAD_PIPS,
+    SLIPPAGE_PIPS,
+    COMMISSION_PER_LOT,
+    get_pip_value,
+    get_usd_per_pip,
+)
 
 
 class PositionType(Enum):
@@ -149,27 +161,37 @@ class BacktestEngine:
     def __init__(self,
                  initial_capital: float = 10000.0,
                  position_size: float = 0.01,  # Lotes
-                 pip_value: float = 0.0001,
-                 spread_pips: float = 1.0,
-                 commission_per_lot: float = 0.0,
-                 slippage_pips: float = 0.5):
+                 pip_value: float = None,      # CORREÇÃO C4: será obtido do config
+                 spread_pips: float = None,    # CORREÇÃO C4: será obtido do config
+                 commission_per_lot: float = None,  # CORREÇÃO C4: será obtido do config
+                 slippage_pips: float = None,  # CORREÇÃO C4: será obtido do config
+                 symbol: str = "EURUSD"):      # CORREÇÃO M2: símbolo para cálculo correto
         """
         Inicializa o motor de backtest
+
+        V2.1: Custos centralizados e correção de PnL por par
+
+        CORREÇÃO C4: Os custos agora vêm do config/execution_costs.py por padrão.
+        Valores passados como parâmetro sobrescrevem os do config.
 
         Args:
             initial_capital: Capital inicial em USD
             position_size: Tamanho da posicao em lotes
-            pip_value: Valor de 1 pip (0.0001 para EURUSD)
-            spread_pips: Spread em pips
-            commission_per_lot: Comissao por lote
-            slippage_pips: Slippage medio em pips
+            pip_value: Valor de 1 pip (None = usa config baseado no símbolo)
+            spread_pips: Spread em pips (None = usa config centralizado)
+            commission_per_lot: Comissao por lote (None = usa config)
+            slippage_pips: Slippage medio em pips (None = usa config)
+            symbol: Par de moedas para cálculo correto de PnL
         """
         self.initial_capital = initial_capital
         self.position_size = position_size
-        self.pip_value = pip_value
-        self.spread_pips = spread_pips
-        self.commission_per_lot = commission_per_lot
-        self.slippage_pips = slippage_pips
+        self.symbol = symbol.upper()
+
+        # CORREÇÃO C4: Usar custos centralizados se não especificados
+        self.pip_value = pip_value if pip_value is not None else get_pip_value(self.symbol)
+        self.spread_pips = spread_pips if spread_pips is not None else SPREAD_PIPS
+        self.commission_per_lot = commission_per_lot if commission_per_lot is not None else COMMISSION_PER_LOT
+        self.slippage_pips = slippage_pips if slippage_pips is not None else SLIPPAGE_PIPS
 
         # Estado
         self.capital = initial_capital
@@ -183,6 +205,13 @@ class BacktestEngine:
 
         # CORREÇÃO #1: Fechamento pendente para executar no OPEN da próxima barra
         self.pending_close_signal: bool = False
+
+    def _get_usd_per_pip(self) -> float:
+        """
+        CORREÇÃO M2: Retorna o valor em USD por pip para o símbolo atual.
+        Usa a função centralizada de config/execution_costs.py
+        """
+        return get_usd_per_pip(self.symbol)
 
     def run(self,
             strategy: BaseStrategy,
@@ -213,18 +242,23 @@ class BacktestEngine:
         Returns:
             BacktestResult com metricas de performance
         """
+        # CORREÇÃO M2: Atualizar símbolo e pip_value para o par sendo testado
+        self.symbol = symbol.upper()
+        self.pip_value = get_pip_value(self.symbol)
+
         if verbose:
             print("\n" + "=" * 70)
             print("  BACKTEST - DADOS REAIS DO MERCADO")
-            print("  Versão Corrigida - Execução Realista")
+            print("  Versão V2.1 Corrigida - Execução Realista")
             print("=" * 70)
             print(f"  Estrategia: {strategy.name}")
             print(f"  Simbolo: {symbol}")
             print(f"  Periodicidade: {periodicity}")
             print(f"  Capital inicial: ${self.initial_capital:,.2f}")
             print(f"  Tamanho posicao: {self.position_size} lotes")
-            print(f"  Spread: {self.spread_pips} pips")
-            print(f"  Slippage: {self.slippage_pips} pips")
+            print(f"  Spread: {self.spread_pips} pips (centralizado)")
+            print(f"  Slippage: {self.slippage_pips} pips (centralizado)")
+            print(f"  USD/pip/lote: ${self._get_usd_per_pip():.2f}")
             print("=" * 70 + "\n")
 
         # Reset estado
@@ -284,10 +318,15 @@ class BacktestEngine:
             # PASSO 4: Gerar sinal da estratégia
             # (será executado na PRÓXIMA barra, não agora!)
             # ================================================================
+            # CORREÇÃO C2: Passar volumes corretamente como bid_volume e ask_volume
+            # ANTES: Passava apenas 'volume' que não era reconhecido pela estratégia DSG
+            # DEPOIS: Passa bid_volume e ask_volume para que a estratégia use dados reais
             signal = strategy.analyze(
                 price=bar.close,
                 timestamp=bar.timestamp,
-                volume=bar.volume,
+                bid_volume=bar.volume,   # CORREÇÃO C2: era 'volume'
+                ask_volume=bar.volume,   # CORREÇÃO C2: era apenas 'volume'
+                volume=bar.volume,       # Mantém compatibilidade
                 high=bar.high,
                 low=bar.low,
                 open=bar.open
@@ -402,10 +441,15 @@ class BacktestEngine:
             else:  # SHORT
                 actual_stop_loss = entry_price + (signal.stop_loss_pips * self.pip_value)
                 actual_take_profit = entry_price - (signal.take_profit_pips * self.pip_value)
-        else:
+        elif signal.stop_loss is not None and signal.take_profit is not None:
             # Compatibilidade: usar valores fixos se não tiver pips
             actual_stop_loss = signal.stop_loss
             actual_take_profit = signal.take_profit
+        else:
+            # CORREÇÃO: Rejeitar sinais sem stop/take definido
+            # Isso evita posições sem gerenciamento de risco
+            print(f"  AVISO: Sinal rejeitado - stop_loss ou take_profit não definidos")
+            return
 
         self.current_position = Position(
             type=pos_type,
@@ -537,31 +581,40 @@ class BacktestEngine:
                 )
                 return
 
-    def _close_position_with_details(self, exit_price: float, exit_time: datetime, 
-                                      reason: str, had_gap: bool = False, 
+    def _close_position_with_details(self, exit_price: float, exit_time: datetime,
+                                      reason: str, had_gap: bool = False,
                                       intended_price: float = 0.0):
         """
         NOVO: Fecha posição com detalhes adicionais sobre execução
+
+        CORREÇÃO C3: Aplica spread E slippage na saída
+        ANTES: Apenas slippage era aplicado
+        DEPOIS: Spread/2 + slippage são aplicados corretamente
         """
         if not self.current_position:
             return
 
         pos = self.current_position
 
-        # Aplica slippage na saída (sempre desfavorável)
+        # CORREÇÃO C3: Aplica spread E slippage na saída (sempre desfavorável)
         slippage = self.slippage_pips * self.pip_value
+        spread = self.spread_pips * self.pip_value
 
         if pos.type == PositionType.LONG:
-            # Vende no Bid - slippage
-            actual_exit = exit_price - slippage
+            # CORREÇÃO C3: LONG vende no Bid: preço - spread/2 - slippage
+            # ANTES: actual_exit = exit_price - slippage (faltava spread)
+            actual_exit = exit_price - spread / 2 - slippage
             pnl_pips = (actual_exit - pos.entry_price) / self.pip_value
         else:
-            # Compra no Ask + slippage
-            actual_exit = exit_price + slippage
+            # CORREÇÃO C3: SHORT compra no Ask: preço + spread/2 + slippage
+            # ANTES: actual_exit = exit_price + slippage (faltava spread)
+            actual_exit = exit_price + spread / 2 + slippage
             pnl_pips = (pos.entry_price - actual_exit) / self.pip_value
 
-        # Calcula PnL em USD (1 pip = $10 por lote padrao para EURUSD)
-        pnl_usd = pnl_pips * pos.size * 10  # 10 USD por pip por lote
+        # CORREÇÃO M2: Calcula PnL em USD usando função centralizada
+        # ANTES: pnl_usd = pnl_pips * pos.size * 10 (fixo para EURUSD)
+        # DEPOIS: Usa valor correto por par de moedas
+        pnl_usd = pnl_pips * pos.size * self._get_usd_per_pip()
 
         # Subtrai comissao
         pnl_usd -= self.commission_per_lot * pos.size

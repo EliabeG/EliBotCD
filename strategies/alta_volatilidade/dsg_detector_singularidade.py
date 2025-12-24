@@ -11,10 +11,17 @@ infinita e as regras normais cessam.
 
 Dependências Críticas: jax ou tensorflow (para operações tensoriais aceleradas e diferenciação
 automática), numpy (uso extensivo de einsum), scipy.spatial
+
+VERSÃO CORRIGIDA - SEM LOOK-AHEAD BIAS
+======================================
+Correções aplicadas:
+1. Substituído gaussian_filter1d (não-causal) por EMA causal
+2. Direção da geodésica calculada apenas com barras FECHADAS
+3. Adicionado suporte para modo "online" sem look-ahead
 """
 
 import numpy as np
-from scipy.ndimage import gaussian_filter1d
+# REMOVIDO: from scipy.ndimage import gaussian_filter1d (era não-causal, substituído por EMA)
 from scipy.spatial.distance import cdist
 import warnings
 warnings.filterwarnings('ignore')
@@ -706,11 +713,15 @@ class DetectorSingularidadeGravitacional:
         if n < 10:
             return self._empty_result()
 
-        # Gerar volumes sintéticos se não fornecidos
+        # CORREÇÃO C1: Gerar volumes DETERMINÍSTICOS se não fornecidos
+        # ANTES: Usava np.random.rand() que tornava backtests não-reproduzíveis
+        # DEPOIS: Volumes baseados apenas na variação de preço (determinístico)
         if bid_volumes is None:
-            bid_volumes = np.abs(np.diff(prices, prepend=prices[0])) * 1000 + np.random.rand(n) * 100
+            price_changes = np.abs(np.diff(prices, prepend=prices[0]))
+            bid_volumes = price_changes * 1000 + 50  # Valor base fixo, sem random
         if ask_volumes is None:
-            ask_volumes = np.abs(np.diff(prices, prepend=prices[0])) * 1000 + np.random.rand(n) * 100
+            price_changes = np.abs(np.diff(prices, prepend=prices[0]))
+            ask_volumes = price_changes * 1000 + 50  # Valor base fixo, sem random
 
         # Resetar histórico
         self._ricci_history = []
@@ -722,23 +733,55 @@ class DetectorSingularidadeGravitacional:
         tidal_series = np.zeros(n)
         distance_series = np.zeros(n)
 
-        # Analisar cada ponto (subsamplear para eficiência)
+        # CORREÇÃO CRÍTICA: Subsampling com STEP FUNCTION (Zero-Order Hold)
+        # =================================================================
+        # PROBLEMA ANTERIOR: np.interp() causa LOOK-AHEAD BIAS porque a
+        # interpolação linear usa pontos FUTUROS para calcular valores intermediários.
+        # Exemplo: Para obter valor no índice 5, interp usa índices 0 e 10,
+        # mas o índice 10 ainda não aconteceu no momento 5!
+        #
+        # SOLUÇÃO: Step Function (Zero-Order Hold) - 100% CAUSAL
+        # Cada barra usa o valor do ÚLTIMO ponto calculado, sem olhar para frente.
+        # =================================================================
         step = max(1, n // 100)  # Máximo 100 pontos para cálculo completo
+
+        # Armazenar pontos calculados
+        calculated_indices = []
+        calculated_ricci = []
+        calculated_tidal = []
+        calculated_distance = []
 
         for i in range(0, n, step):
             result = self.analyze_point(
                 i, prices[i], bid_volumes[i], ask_volumes[i]
             )
 
-            # Preencher série
-            end_idx = min(i + step, n)
-            ricci_series[i:end_idx] = result['ricci_scalar']
-            tidal_series[i:end_idx] = result['tidal_force']
-            distance_series[i:end_idx] = result['event_horizon_distance']
+            calculated_indices.append(i)
+            calculated_ricci.append(result['ricci_scalar'])
+            calculated_tidal.append(result['tidal_force'])
+            calculated_distance.append(result['event_horizon_distance'])
 
-        # Suavizar séries
-        ricci_series = gaussian_filter1d(ricci_series, sigma=2)
-        tidal_series = gaussian_filter1d(tidal_series, sigma=2)
+        # Adicionar último ponto se não foi calculado
+        if calculated_indices[-1] != n - 1:
+            result = self.analyze_point(
+                n - 1, prices[n - 1], bid_volumes[n - 1], ask_volumes[n - 1]
+            )
+            calculated_indices.append(n - 1)
+            calculated_ricci.append(result['ricci_scalar'])
+            calculated_tidal.append(result['tidal_force'])
+            calculated_distance.append(result['event_horizon_distance'])
+
+        # CORREÇÃO: Step Function CAUSAL (Zero-Order Hold)
+        # Usa apenas o ÚLTIMO valor calculado até cada índice - SEM look-ahead
+        ricci_series = self._apply_step_function_causal(n, calculated_indices, calculated_ricci)
+        tidal_series = self._apply_step_function_causal(n, calculated_indices, calculated_tidal)
+        distance_series = self._apply_step_function_causal(n, calculated_indices, calculated_distance)
+
+        # CORREÇÃO #1: Suavizar séries com EMA CAUSAL (não gaussian_filter1d que é não-causal)
+        # gaussian_filter1d usa convolução simétrica que olha para o futuro!
+        # EMA é 100% causal: só usa dados passados
+        ricci_series = self._apply_ema_causal(ricci_series, alpha=0.3)
+        tidal_series = self._apply_ema_causal(tidal_series, alpha=0.3)
 
         # Valores atuais
         current_ricci = ricci_series[-1]
@@ -757,10 +800,25 @@ class DetectorSingularidadeGravitacional:
             current_distance, self._distance_history
         )
 
-        # Determinar direção da geodésica
-        if len(self._coords_history) >= 3:
-            prices_recent = [c[1] for c in self._coords_history[-3:]]
-            geodesic_direction = np.sign(prices_recent[-1] - prices_recent[0])
+        # CORREÇÃO #2: Determinar direção da geodésica usando apenas barras FECHADAS
+        # ANTES (ERRADO): Usava self._coords_history[-3:] que inclui a barra atual
+        # DEPOIS (CORRETO): Usar [-4:-1] para excluir a barra atual (ainda não fechou)
+        #
+        # No momento da decisão:
+        # - _coords_history[-1] = barra atual (close ainda pode mudar em tempo real)
+        # - _coords_history[-2] = última barra fechada
+        # - _coords_history[-4] = 3 barras atrás (fechada)
+        if len(self._coords_history) >= 4:
+            # Usar apenas barras COMPLETAMENTE FECHADAS
+            prices_past = [c[1] for c in self._coords_history[-4:-1]]  # Exclui barra atual
+            geodesic_direction = np.sign(prices_past[-1] - prices_past[0])
+        elif len(self._coords_history) >= 2:
+            # Fallback com menos dados (ainda exclui barra atual)
+            prices_past = [c[1] for c in self._coords_history[:-1]]
+            if len(prices_past) >= 2:
+                geodesic_direction = np.sign(prices_past[-1] - prices_past[0])
+            else:
+                geodesic_direction = 0
         else:
             geodesic_direction = 0
 
@@ -897,6 +955,88 @@ class DetectorSingularidadeGravitacional:
             'reasons': reasons,
             'conditions_met': conditions_met
         }
+
+    def _apply_step_function_causal(self, n: int, indices: list, values: list) -> np.ndarray:
+        """
+        CORREÇÃO CRÍTICA: Step Function (Zero-Order Hold) - 100% CAUSAL
+
+        Substitui np.interp() que causa LOOK-AHEAD BIAS.
+
+        A step function usa apenas o ÚLTIMO valor calculado até cada índice,
+        nunca olhando para valores futuros.
+
+        Exemplo:
+        - indices = [0, 10, 20]
+        - values = [1.0, 2.0, 3.0]
+        - Para índice 5: usa valor 1.0 (último calculado até 5)
+        - Para índice 15: usa valor 2.0 (último calculado até 15)
+
+        Args:
+            n: Tamanho total do array de saída
+            indices: Lista de índices onde valores foram calculados
+            values: Lista de valores calculados
+
+        Returns:
+            Array de tamanho n com step function aplicada (causal)
+        """
+        result = np.zeros(n)
+
+        if not indices or not values:
+            return result
+
+        # Converter para arrays numpy para eficiência
+        indices_arr = np.array(indices)
+        values_arr = np.array(values)
+
+        for i in range(n):
+            # Encontrar o índice do último valor calculado que é <= i
+            # searchsorted retorna onde i seria inserido para manter ordem
+            # Com 'right', retorna posição após elementos iguais
+            pos = np.searchsorted(indices_arr, i, side='right')
+
+            if pos == 0:
+                # CORREÇÃO CRÍTICA: Nenhum valor calculado ANTES deste índice
+                # Usar np.nan para indicar "sem dados ainda" - 100% causal
+                # ANTES (ERRADO): result[i] = values_arr[0] ← Isso é look-ahead!
+                # O values_arr[0] corresponde ao índice indices_arr[0], que pode ser > i
+                result[i] = np.nan
+            else:
+                # Usar o último valor calculado (pos-1)
+                result[i] = values_arr[pos - 1]
+
+        # Substituir NaN pelo primeiro valor válido (forward-fill do primeiro calculado)
+        # Isso é causal porque só preenchemos APÓS o primeiro cálculo real
+        if np.isnan(result[0]) and len(values_arr) > 0:
+            first_valid_idx = indices_arr[0]
+            # Preencher do início até o primeiro cálculo com NaN ou valor neutro
+            result[:first_valid_idx] = 0.0  # Valor neutro antes do primeiro cálculo
+
+        return result
+
+    def _apply_ema_causal(self, series: np.ndarray, alpha: float = 0.3) -> np.ndarray:
+        """
+        CORREÇÃO #1: Aplica EMA (Exponential Moving Average) CAUSAL
+
+        Substitui gaussian_filter1d que é NÃO-CAUSAL (olha para o futuro).
+        EMA só usa dados PASSADOS: EMA[t] = alpha * X[t] + (1-alpha) * EMA[t-1]
+
+        Args:
+            series: Série temporal a suavizar
+            alpha: Fator de suavização (0-1). Maior = menos suavização.
+
+        Returns:
+            Série suavizada de forma causal
+        """
+        if len(series) == 0:
+            return series
+
+        result = np.zeros_like(series)
+        result[0] = series[0]
+
+        for i in range(1, len(series)):
+            result[i] = alpha * series[i] + (1 - alpha) * result[i-1]
+
+        return result
 
     def _empty_result(self) -> dict:
         """Retorna resultado vazio quando não há dados suficientes"""

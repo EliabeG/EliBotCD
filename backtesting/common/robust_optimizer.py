@@ -1,29 +1,31 @@
 #!/usr/bin/env python3
 """
 ================================================================================
-OTIMIZADOR ROBUSTO COM VALIDACAO ANTI-OVERFITTING
-VERSÃO CORRIGIDA - COM VERIFICAÇÃO DE GAPS
+OTIMIZADOR ROBUSTO V2.0 - PRONTO PARA DINHEIRO REAL
 ================================================================================
 
 Este otimizador implementa:
 1. Train/Test Split (70/30) - treina em 70%, valida em 30%
-2. Filtros de Realismo - descarta resultados suspeitos
+2. Filtros RIGOROSOS para dinheiro real
 3. Score de Robustez - compara performance train vs test
-4. Walk-Forward ready - estrutura para validacao avancada
+4. Custos de execução REALISTAS
 
-CORREÇÕES APLICADAS:
+CORREÇÕES V2.0:
 1. Verificação de GAPS no OPEN antes de HIGH/LOW
 2. Stop Loss tem prioridade (conservador)
-3. Slippage aplicado corretamente
+3. Spread realista: 1.5 pips
+4. Slippage realista: 0.8 pips
+5. Filtros mais rigorosos (PF > 1.3)
 
-REGRAS ANTI-OVERFITTING:
-- Minimo 30 trades no treino, 15 no teste
-- Win Rate entre 30% e 65% (realista)
-- Profit Factor entre 1.1 e 4.0
-- Drawdown maximo 40%
-- Performance do teste deve ser >= 60% do treino
+REGRAS PARA DINHEIRO REAL:
+- Minimo 50 trades no treino, 25 no teste
+- Win Rate entre 35% e 60% (realista)
+- Profit Factor mínimo 1.3 (treino), 1.15 (teste)
+- Drawdown maximo 30%
+- Performance do teste deve ser >= 70% do treino
+- Expectativa mínima: 3 pips por trade
 
-IMPORTANTE: Isso e' dinheiro real. Sem brincadeira.
+IMPORTANTE: Isso é dinheiro real. Custos realistas aplicados.
 ================================================================================
 """
 
@@ -34,6 +36,12 @@ from dataclasses import dataclass
 from abc import ABC, abstractmethod
 import json
 import os
+
+# CORREÇÃO C4: Importar custos centralizados
+from config.execution_costs import (
+    SPREAD_PIPS,
+    SLIPPAGE_PIPS,
+)
 
 
 @dataclass
@@ -117,25 +125,35 @@ class RobustResult:
 
 class RobustBacktester:
     """
-    Backtester robusto com validacao anti-overfitting
-    
-    VERSÃO CORRIGIDA - COM VERIFICAÇÃO DE GAPS
+    Backtester robusto V2.0 - Pronto para dinheiro real
+
+    Custos REALISTAS e filtros RIGOROSOS
     """
 
-    # Constantes de realismo (baseadas em trading real)
-    MIN_TRADES_TRAIN = 30
-    MIN_TRADES_TEST = 15
-    MIN_WIN_RATE = 0.30
-    MAX_WIN_RATE = 0.65
-    MIN_PROFIT_FACTOR = 1.1
-    MAX_PROFIT_FACTOR = 4.0
-    MAX_DRAWDOWN = 0.40
-    MIN_ROBUSTNESS = 0.60  # Teste deve ter >= 60% da performance do treino
+    # Constantes RIGOROSAS para dinheiro real
+    MIN_TRADES_TRAIN = 50
+    MIN_TRADES_TEST = 25
+    MIN_WIN_RATE = 0.35
+    MAX_WIN_RATE = 0.60
+    MIN_PROFIT_FACTOR = 1.30   # V2.0: Mais rigoroso
+    MAX_PROFIT_FACTOR = 3.5
+    MAX_DRAWDOWN = 0.30        # V2.0: Mais conservador
+    MIN_ROBUSTNESS = 0.70      # V2.0: Teste deve ter >= 70% da performance do treino
+    MIN_EXPECTANCY = 3.0       # V2.0: Mínimo 3 pips por trade
 
-    def __init__(self, pip: float = 0.0001, spread: float = 1.0, slippage: float = 0.5):
+    def __init__(self, pip: float = 0.0001, spread: float = None, slippage: float = None):
+        """
+        CORREÇÃO C4: Usa custos centralizados por padrão
+
+        Args:
+            pip: Valor de 1 pip (ex: 0.0001 para EURUSD)
+            spread: Spread em pips (None = usa config centralizado)
+            slippage: Slippage em pips (None = usa config centralizado)
+        """
         self.pip = pip
-        self.spread = spread
-        self.slippage = slippage  # NOVO: Slippage em pips
+        # CORREÇÃO C4: Usar custos centralizados se não especificados
+        self.spread = spread if spread is not None else SPREAD_PIPS
+        self.slippage = slippage if slippage is not None else SLIPPAGE_PIPS
 
     def split_data(self, data: List, train_ratio: float = 0.70) -> Tuple[List, List]:
         """Divide dados em treino e teste"""
