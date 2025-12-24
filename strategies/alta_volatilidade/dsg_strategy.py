@@ -81,14 +81,16 @@ class DSGStrategy(BaseStrategy):
         """Adiciona um preço e volumes ao buffer"""
         self.prices.append(price)
 
-        # Gera volumes sintéticos se não fornecidos
+        # CORREÇÃO C1: Gera volumes DETERMINÍSTICOS se não fornecidos
+        # ANTES: Usava np.random.rand() que tornava backtests não-reproduzíveis
+        # DEPOIS: Volumes baseados apenas na variação de preço (determinístico)
         if bid_vol is not None:
             self.bid_volumes.append(bid_vol)
         else:
-            # Volume baseado na variação de preço
+            # Volume determinístico baseado na variação de preço
             if len(self.prices) > 1:
                 change = abs(self.prices[-1] - self.prices[-2])
-                self.bid_volumes.append(change * 50000 + np.random.rand() * 100)
+                self.bid_volumes.append(change * 50000 + 50)  # Valor fixo, sem random
             else:
                 self.bid_volumes.append(100)
 
@@ -97,7 +99,7 @@ class DSGStrategy(BaseStrategy):
         else:
             if len(self.prices) > 1:
                 change = abs(self.prices[-1] - self.prices[-2])
-                self.ask_volumes.append(change * 50000 + np.random.rand() * 100)
+                self.ask_volumes.append(change * 50000 + 50)  # Valor fixo, sem random
             else:
                 self.ask_volumes.append(100)
 

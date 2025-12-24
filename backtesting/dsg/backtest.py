@@ -38,6 +38,9 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspa
 from backtesting.common.backtest_engine import BacktestEngine, run_backtest, BacktestResult
 from strategies.alta_volatilidade import DSGStrategy
 
+# CORREÇÃO C4: Importar custos centralizados
+from config.execution_costs import SPREAD_PIPS, SLIPPAGE_PIPS
+
 
 def create_dsg_strategy(
     min_prices: int = 100,
@@ -128,13 +131,14 @@ def run_dsg_backtest(
         tidal_force_threshold=tidal_force_threshold
     )
 
-    # Configura engine (versao corrigida)
+    # CORREÇÃO C4: Usar custos centralizados do config
+    # ANTES: spread_pips=1.0, slippage_pips=0.5 (inconsistente com outros componentes)
+    # DEPOIS: Usa SPREAD_PIPS e SLIPPAGE_PIPS do config/execution_costs.py
     engine = BacktestEngine(
         initial_capital=initial_capital,
         position_size=0.01,  # Mini lote
-        pip_value=0.0001,
-        spread_pips=1.0,
-        slippage_pips=0.5
+        symbol=symbol,       # CORREÇÃO M2: passa símbolo para cálculo correto de PnL
+        # Não passa pip_value, spread_pips, slippage_pips - usa config centralizado
     )
 
     # Define periodo

@@ -37,6 +37,12 @@ from abc import ABC, abstractmethod
 import json
 import os
 
+# CORREÇÃO C4: Importar custos centralizados
+from config.execution_costs import (
+    SPREAD_PIPS,
+    SLIPPAGE_PIPS,
+)
+
 
 @dataclass
 class TradeResult:
@@ -135,10 +141,19 @@ class RobustBacktester:
     MIN_ROBUSTNESS = 0.70      # V2.0: Teste deve ter >= 70% da performance do treino
     MIN_EXPECTANCY = 3.0       # V2.0: Mínimo 3 pips por trade
 
-    def __init__(self, pip: float = 0.0001, spread: float = 1.5, slippage: float = 0.8):
+    def __init__(self, pip: float = 0.0001, spread: float = None, slippage: float = None):
+        """
+        CORREÇÃO C4: Usa custos centralizados por padrão
+
+        Args:
+            pip: Valor de 1 pip (ex: 0.0001 para EURUSD)
+            spread: Spread em pips (None = usa config centralizado)
+            slippage: Slippage em pips (None = usa config centralizado)
+        """
         self.pip = pip
-        self.spread = spread
-        self.slippage = slippage  # NOVO: Slippage em pips
+        # CORREÇÃO C4: Usar custos centralizados se não especificados
+        self.spread = spread if spread is not None else SPREAD_PIPS
+        self.slippage = slippage if slippage is not None else SLIPPAGE_PIPS
 
     def split_data(self, data: List, train_ratio: float = 0.70) -> Tuple[List, List]:
         """Divide dados em treino e teste"""
