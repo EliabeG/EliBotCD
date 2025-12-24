@@ -2,6 +2,7 @@
 """
 ================================================================================
 OTIMIZADOR DSG ROBUSTO - COM VALIDACAO ANTI-OVERFITTING
+VERSÃO CORRIGIDA - SEM LOOK-AHEAD BIAS
 ================================================================================
 
 DSG (Detector de Singularidade Gravitacional):
@@ -15,7 +16,13 @@ VALIDACAO:
 3. Valida no teste (dados nunca vistos)
 4. Descarta resultados que nao passam nos filtros de realismo
 
-PARA DINHEIRO REAL. SEM OVERFITTING.
+CORREÇÕES APLICADAS:
+1. Entrada no OPEN da próxima barra (não no CLOSE atual)
+2. Direção calculada com barras fechadas
+3. Stop/Take consideram gaps
+4. Evita trades simultâneos
+
+PARA DINHEIRO REAL. SEM OVERFITTING. SEM LOOK-AHEAD.
 ================================================================================
 """
 
@@ -45,11 +52,17 @@ from backtesting.common.robust_optimizer import (
 
 @dataclass
 class DSGSignal:
-    """Sinal pre-calculado do DSG"""
-    bar_idx: int
-    price: float
-    high: float
-    low: float
+    """
+    Sinal pre-calculado do DSG
+
+    CORRIGIDO: Agora armazena informações para execução realista
+    """
+    bar_idx: int              # Índice da barra onde o sinal foi GERADO
+    signal_price: float       # Preço de fechamento quando sinal foi gerado (referência)
+    next_bar_idx: int         # NOVO: Índice da barra onde deve EXECUTAR
+    entry_price: float        # NOVO: Preço de ABERTURA da próxima barra (onde realmente entra)
+    high: float               # High da barra de execução
+    low: float                # Low da barra de execução
     ricci_scalar: float
     tidal_force: float
     event_horizon_distance: float
@@ -123,15 +136,25 @@ class DSGRobustOptimizer:
             if len(prices_buf) < min_prices:
                 continue
 
+            # CORREÇÃO: Precisamos da PRÓXIMA barra para executar
+            # Se não há próxima barra, não podemos gerar sinal
+            if i >= len(self.bars) - 1:
+                continue
+
             try:
                 prices_arr = np.array(prices_buf)
                 result = dsg.analyze(prices_arr)
 
+                # CORREÇÃO: Entrada no OPEN da PRÓXIMA barra
+                next_bar = self.bars[i + 1]
+
                 self.signals.append(DSGSignal(
-                    bar_idx=i,
-                    price=bar.close,
-                    high=bar.high,
-                    low=bar.low,
+                    bar_idx=i,                          # Onde o sinal foi gerado
+                    signal_price=bar.close,             # Preço quando sinal gerado (referência)
+                    next_bar_idx=i + 1,                 # NOVO: Onde vai executar
+                    entry_price=next_bar.open,          # NOVO: Preço de entrada (OPEN da próxima)
+                    high=next_bar.high,                 # High da barra de execução
+                    low=next_bar.low,                   # Low da barra de execução
                     ricci_scalar=result['Ricci_Scalar'],
                     tidal_force=result['Tidal_Force_Magnitude'],
                     event_horizon_distance=result['Event_Horizon_Distance'],
@@ -169,8 +192,15 @@ class DSGRobustOptimizer:
                       ricci_thresh: float, tidal_thresh: float,
                       sl: float, tp: float,
                       bar_offset: int = 0) -> List[float]:
-        """Executa backtest em um conjunto de dados"""
-        if tp <= sl:
+        """
+        Executa backtest em um conjunto de dados
+
+        VERSÃO CORRIGIDA:
+        1. Usa OPEN da próxima barra como entry_price
+        2. Evita trades simultâneos (last_exit_idx)
+        3. R:R mínimo de 1.2
+        """
+        if tp <= sl * 1.2:  # Exige R:R mínimo de 1.2
             return []
 
         entries = []
@@ -184,19 +214,28 @@ class DSGRobustOptimizer:
             conditions = sum([ricci_collapse, high_tidal, crossing])
 
             if conditions >= 2 and s.geodesic_direction != 0:
-                entries.append((s.bar_idx - bar_offset, s.price, s.geodesic_direction))
+                # CORREÇÃO: Usar next_bar_idx e entry_price (OPEN da próxima barra)
+                execution_idx = s.next_bar_idx - bar_offset
+                entries.append((execution_idx, s.entry_price, s.geodesic_direction))
 
         if len(entries) < 3:
             return []
 
         pnls = []
-        for bar_idx, entry_price, direction in entries:
-            if bar_idx < 0 or bar_idx >= len(bars) - 1:
+        last_exit_idx = -1  # CORREÇÃO: Evitar trades simultâneos
+
+        for exec_idx, entry_price, direction in entries:
+            # Validações
+            if exec_idx < 0 or exec_idx >= len(bars) - 1:
+                continue
+
+            # CORREÇÃO: Evitar trades simultâneos
+            if exec_idx <= last_exit_idx:
                 continue
 
             trade = self.backtester.execute_trade(
                 bars=bars,
-                entry_idx=bar_idx,
+                entry_idx=exec_idx,
                 entry_price=entry_price,
                 direction=direction,
                 sl_pips=sl,
@@ -204,6 +243,9 @@ class DSGRobustOptimizer:
                 max_bars=200
             )
             pnls.append(trade.pnl_pips)
+
+            # Atualiza último índice de saída
+            last_exit_idx = trade.exit_idx
 
         return pnls
 
