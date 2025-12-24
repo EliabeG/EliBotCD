@@ -8,6 +8,13 @@ Backtest com Dados Historicos REAIS
 Este script executa backtest do indicador PRM (Protocolo Riemann-Mandelbrot)
 usando dados historicos REAIS do mercado Forex.
 
+VERSÃO CORRIGIDA - SEM LOOK-AHEAD BIAS
+======================================
+- HMM treinado apenas em dados passados
+- Entrada no OPEN da próxima barra
+- Stop/Take consideram gaps
+- Direção baseada em barras fechadas
+
 IMPORTANTE: Nenhuma simulacao - apenas dados reais do mercado.
 Isso envolve dinheiro real, entao a precisao e crucial.
 
@@ -17,7 +24,7 @@ O indicador PRM detecta "Singularidades de Preco" usando:
 3. Curvatura Geometrica - Aceleracao de tendencia
 
 Uso:
-    python -m backtesting.backtest_prm [--days DAYS] [--symbol SYMBOL]
+    python -m backtesting.prm.backtest [--days DAYS] [--symbol SYMBOL]
 """
 
 import sys
@@ -38,7 +45,9 @@ def create_prm_strategy(
     take_profit_pips: float = 40.0,
     hmm_threshold: float = 0.85,
     lyapunov_threshold: float = 0.5,
-    curvature_threshold: float = 0.1
+    curvature_threshold: float = 0.1,
+    hmm_training_window: int = 200,
+    hmm_min_training_samples: int = 50
 ) -> PRMStrategy:
     """
     Cria instancia da estrategia PRM com parametros customizados
@@ -50,6 +59,8 @@ def create_prm_strategy(
         hmm_threshold: Threshold para HMM
         lyapunov_threshold: Threshold para Lyapunov
         curvature_threshold: Threshold para curvatura
+        hmm_training_window: NOVO - Janela de treino do HMM
+        hmm_min_training_samples: NOVO - Minimo de amostras para HMM
 
     Returns:
         Instancia de PRMStrategy
@@ -60,7 +71,9 @@ def create_prm_strategy(
         take_profit_pips=take_profit_pips,
         hmm_threshold=hmm_threshold,
         lyapunov_threshold=lyapunov_threshold,
-        curvature_threshold=curvature_threshold
+        curvature_threshold=curvature_threshold,
+        hmm_training_window=hmm_training_window,
+        hmm_min_training_samples=hmm_min_training_samples
     )
 
 
@@ -78,6 +91,7 @@ def run_prm_backtest(
     Executa backtest do PRM com dados REAIS
 
     IMPORTANTE: Usa dados REAIS do mercado Forex.
+    VERSÃO CORRIGIDA - Sem look-ahead bias.
 
     Args:
         symbol: Par de moedas
@@ -95,16 +109,17 @@ def run_prm_backtest(
     print("\n" + "=" * 70)
     print("  BACKTEST PRM - PROTOCOLO RIEMANN-MANDELBROT")
     print("  Dados Historicos REAIS do Mercado Forex")
+    print("  VERSAO CORRIGIDA - Sem Look-Ahead Bias")
     print("=" * 70)
 
-    # Cria estrategia
+    # Cria estrategia com novos parametros
     strategy = create_prm_strategy(
         min_prices=min_prices,
         stop_loss_pips=stop_loss_pips,
         take_profit_pips=take_profit_pips
     )
 
-    # Configura engine
+    # Configura engine (versao corrigida)
     engine = BacktestEngine(
         initial_capital=initial_capital,
         position_size=0.01,  # Mini lote
@@ -141,6 +156,9 @@ def run_optimization(
     Testa diferentes combinacoes de parametros para encontrar
     a melhor configuracao.
 
+    NOTA: Para otimizacao robusta com train/test split,
+    use backtesting.prm.optimizer ao inves.
+
     Args:
         symbol: Par de moedas
         days: Dias de historico
@@ -151,6 +169,7 @@ def run_optimization(
     """
     print("\n" + "=" * 70)
     print("  OTIMIZACAO PRM - BUSCA DE MELHORES PARAMETROS")
+    print("  AVISO: Use optimizer.py para otimizacao com validacao robusta")
     print("=" * 70)
 
     # Parametros a testar
@@ -244,6 +263,7 @@ def generate_report(result: BacktestResult, filename: str = None):
     report.append("=" * 70)
     report.append("  RELATORIO DE BACKTEST - PRM")
     report.append("  Protocolo Riemann-Mandelbrot")
+    report.append("  VERSAO CORRIGIDA - Sem Look-Ahead Bias")
     report.append("=" * 70)
     report.append(f"\nData do relatorio: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     report.append(f"\n{'='*70}")
@@ -284,6 +304,14 @@ def generate_report(result: BacktestResult, filename: str = None):
     report.append(f"  Sharpe Ratio: {result.sharpe_ratio:.2f}")
     report.append(f"  Sortino Ratio: {result.sortino_ratio:.2f}")
     report.append(f"  Calmar Ratio: {result.calmar_ratio:.2f}")
+    
+    # NOVO: Estatísticas de execução
+    if hasattr(result, 'trades_with_gap'):
+        report.append(f"\n{'='*70}")
+        report.append("  ESTATISTICAS DE EXECUCAO")
+        report.append(f"{'='*70}")
+        report.append(f"  Trades com gap: {result.trades_with_gap}")
+        report.append(f"  Slippage total: {result.total_slippage_pips:.1f} pips")
 
     report.append(f"\n{'='*70}")
     report.append("  LISTA DE TRADES")
@@ -292,6 +320,7 @@ def generate_report(result: BacktestResult, filename: str = None):
     for i, trade in enumerate(result.trades, 1):
         direction = "LONG" if trade.position_type.value == "LONG" else "SHORT"
         outcome = "WIN" if trade.is_winner else "LOSS"
+        gap_str = " [GAP]" if hasattr(trade, 'had_gap') and trade.had_gap else ""
         report.append(
             f"  {i:3d}. {direction:5s} | "
             f"{trade.entry_time.strftime('%Y-%m-%d %H:%M')} | "
@@ -299,7 +328,7 @@ def generate_report(result: BacktestResult, filename: str = None):
             f"Exit: {trade.exit_price:.5f} | "
             f"PnL: {trade.pnl_pips:+7.1f} pips | "
             f"{outcome:4s} | "
-            f"{trade.exit_reason}"
+            f"{trade.exit_reason}{gap_str}"
         )
 
     report.append(f"\n{'='*70}")
@@ -321,14 +350,18 @@ def generate_report(result: BacktestResult, filename: str = None):
 def main():
     """Funcao principal"""
     parser = argparse.ArgumentParser(
-        description="Backtest PRM - Protocolo Riemann-Mandelbrot com dados REAIS",
+        description="Backtest PRM - Protocolo Riemann-Mandelbrot com dados REAIS (Versao Corrigida)",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Exemplos:
-    python -m backtesting.backtest_prm                    # Backtest padrao
-    python -m backtesting.backtest_prm --days 60          # 60 dias de historico
-    python -m backtesting.backtest_prm --optimize         # Otimizacao de parametros
-    python -m backtesting.backtest_prm --symbol GBPUSD    # Outro par
+    python -m backtesting.prm.backtest                    # Backtest padrao
+    python -m backtesting.prm.backtest --days 60          # 60 dias de historico
+    python -m backtesting.prm.backtest --optimize         # Otimizacao de parametros
+    python -m backtesting.prm.backtest --symbol GBPUSD    # Outro par
+
+NOTA: Esta versao foi corrigida para eliminar look-ahead bias.
+Para otimizacao robusta com train/test split, use:
+    python -m backtesting.prm.optimizer
         """
     )
 
