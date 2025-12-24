@@ -1,8 +1,20 @@
 #!/usr/bin/env python3
 """
-Debug script para entender o comportamento do PRM
+================================================================================
+DEBUG PRM - Analise de Distribuicao de Sinais
+================================================================================
 
-VERSÃO CORRIGIDA - Usa PRM com parâmetros corretos
+Script de debug para entender o comportamento do PRM e analisar
+a distribuição de sinais com diferentes thresholds.
+
+VERSÃO CORRIGIDA - Usa PRM sem look-ahead bias
+==============================================
+- HMM treinado em janela deslizante
+- Direção baseada em barras fechadas
+- Todos os parâmetros corrigidos
+
+Uso:
+    python -m backtesting.prm.debug
 """
 
 import sys
@@ -26,20 +38,25 @@ async def main():
     print("=" * 60)
 
     # Carregar dados
+    print("\nCarregando dados historicos...")
     bars = await download_historical_data(
         'EURUSD', 'H1',
         datetime(2025, 7, 1, tzinfo=timezone.utc),
         datetime.now(timezone.utc)
     )
-    print(f"\nBarras carregadas: {len(bars)}")
+    print(f"Barras carregadas: {len(bars)}")
+
+    if len(bars) < 100:
+        print("ERRO: Dados insuficientes!")
+        return
 
     # Calcular PRM com parâmetros CORRIGIDOS
     prm = ProtocoloRiemannMandelbrot(
         n_states=3,
         hmm_threshold=0.1,
         lyapunov_threshold_k=0.001,
-        hmm_training_window=200,        # NOVO: Janela de treino
-        hmm_min_training_samples=50     # NOVO: Mínimo de amostras
+        hmm_training_window=200,        # Janela de treino do HMM
+        hmm_min_training_samples=50     # Mínimo de amostras
     )
 
     prices_buf = deque(maxlen=500)
@@ -49,13 +66,14 @@ async def main():
     lyapunov_scores = []
     hmm_states = []
     
-    # NOVO: Estatísticas de direção
+    # Estatísticas de direção (baseada em barras FECHADAS)
     directions = []
     min_bars_for_direction = 12
 
-    print("\nCalculando valores PRM (com HMM retreinando em janela deslizante)...")
-    print("NOTA: Isso pode ser mais lento que a versão anterior devido ao retreino do HMM")
+    print("\nCalculando valores PRM...")
+    print("NOTA: HMM retreina em janela deslizante (pode ser mais lento)")
     
+    errors = 0
     for i, bar in enumerate(bars):
         prices_buf.append(bar.close)
         volumes_buf.append(bar.volume)
@@ -80,14 +98,21 @@ async def main():
             directions.append(direction)
             
         except Exception as e:
-            if i < 55:  # Só mostrar erros nas primeiras barras
-                print(f"  Barra {i}: {e}")
+            errors += 1
+            if errors <= 3:  # Só mostrar primeiros erros
+                print(f"  Erro na barra {i}: {e}")
             continue
 
         if (i + 1) % 200 == 0:
-            print(f"    {i+1}/{len(bars)} barras...")
+            print(f"    {i+1}/{len(bars)} barras processadas...")
 
-    print(f"Pontos calculados: {len(hmm_probs)}")
+    print(f"\nPontos calculados: {len(hmm_probs)}")
+    if errors > 0:
+        print(f"Erros encontrados: {errors}")
+
+    if len(hmm_probs) == 0:
+        print("ERRO: Nenhum ponto calculado!")
+        return
 
     # Estatisticas
     print("\n" + "=" * 60)
@@ -95,34 +120,36 @@ async def main():
     print("=" * 60)
 
     print(f"\nHMM Prob:")
-    print(f"  Min: {min(hmm_probs):.4f}")
-    print(f"  Max: {max(hmm_probs):.4f}")
-    print(f"  Mean: {np.mean(hmm_probs):.4f}")
+    print(f"  Min:    {min(hmm_probs):.4f}")
+    print(f"  Max:    {max(hmm_probs):.4f}")
+    print(f"  Mean:   {np.mean(hmm_probs):.4f}")
     print(f"  Median: {np.median(hmm_probs):.4f}")
-    print(f"  Std: {np.std(hmm_probs):.4f}")
+    print(f"  Std:    {np.std(hmm_probs):.4f}")
 
     print(f"\nLyapunov Score:")
-    print(f"  Min: {min(lyapunov_scores):.4f}")
-    print(f"  Max: {max(lyapunov_scores):.4f}")
-    print(f"  Mean: {np.mean(lyapunov_scores):.4f}")
+    print(f"  Min:    {min(lyapunov_scores):.4f}")
+    print(f"  Max:    {max(lyapunov_scores):.4f}")
+    print(f"  Mean:   {np.mean(lyapunov_scores):.4f}")
     print(f"  Median: {np.median(lyapunov_scores):.4f}")
-    print(f"  Std: {np.std(lyapunov_scores):.4f}")
+    print(f"  Std:    {np.std(lyapunov_scores):.4f}")
 
     print(f"\nHMM States:")
     for s in [0, 1, 2]:
         count = hmm_states.count(s)
         pct = count / len(hmm_states) * 100 if hmm_states else 0
-        print(f"  State {s}: {count} ({pct:.1f}%)")
+        state_names = ['Consolidacao', 'Alta Vol. Direcional', 'Choque de Vol.']
+        print(f"  State {s} ({state_names[s]}): {count} ({pct:.1f}%)")
 
-    # NOVO: Estatísticas de direção
-    print(f"\nDirecao (baseada em barras FECHADAS):")
-    long_count = directions.count(1)
-    short_count = directions.count(-1)
-    neutral_count = directions.count(0)
-    total = len(directions)
-    print(f"  Long:    {long_count} ({long_count/total*100:.1f}%)")
-    print(f"  Short:   {short_count} ({short_count/total*100:.1f}%)")
-    print(f"  Neutral: {neutral_count} ({neutral_count/total*100:.1f}%)")
+    # Estatísticas de direção
+    if directions:
+        print(f"\nDirecao (baseada em barras FECHADAS):")
+        long_count = directions.count(1)
+        short_count = directions.count(-1)
+        neutral_count = directions.count(0)
+        total = len(directions)
+        print(f"  Long:    {long_count} ({long_count/total*100:.1f}%)")
+        print(f"  Short:   {short_count} ({short_count/total*100:.1f}%)")
+        print(f"  Neutral: {neutral_count} ({neutral_count/total*100:.1f}%)")
 
     # Contar sinais com diferentes thresholds
     print("\n" + "=" * 60)
@@ -141,8 +168,8 @@ async def main():
             counts.append(count)
         print(f"  {hmm_t:<8.2f} | {counts[0]:<12} | {counts[1]:<12} | {counts[2]:<12} | {counts[3]:<12}")
 
-    # Filtrar por states tambem
-    print("\n  Incluindo filtro de HMM States [0,1] ou [1,2]:")
+    # Filtrar por states também
+    print("\n  Com filtro de HMM States [0,1] (excluindo choque de volatilidade):")
     states_filter = [0, 1]
     for hmm_t in [0.55, 0.60, 0.65]:
         for lyap_t in [0.03, 0.05, 0.07]:
@@ -150,19 +177,47 @@ async def main():
                        if h >= hmm_t and l >= lyap_t and s in states_filter)
             print(f"    hmm>={hmm_t}, lyap>={lyap_t}, states={states_filter}: {count} sinais")
 
-    # NOVO: Sinais com direção
+    # Sinais com direção
+    if directions:
+        print("\n" + "=" * 60)
+        print("  SINAIS COM DIRECAO (usando barras FECHADAS)")
+        print("=" * 60)
+        
+        for hmm_t in [0.55, 0.60, 0.65]:
+            for lyap_t in [0.05, 0.06, 0.07]:
+                long_signals = sum(1 for h, l, s, d in zip(hmm_probs, lyapunov_scores, hmm_states, directions)
+                                  if h >= hmm_t and l >= lyap_t and s in [0, 1] and d == 1)
+                short_signals = sum(1 for h, l, s, d in zip(hmm_probs, lyapunov_scores, hmm_states, directions)
+                                   if h >= hmm_t and l >= lyap_t and s in [0, 1] and d == -1)
+                total_signals = long_signals + short_signals
+                print(f"    hmm>={hmm_t}, lyap>={lyap_t}: {total_signals} sinais (L:{long_signals}, S:{short_signals})")
+
+    # Distribuição temporal dos sinais
     print("\n" + "=" * 60)
-    print("  SINAIS COM DIRECAO (usando barras FECHADAS)")
+    print("  DISTRIBUICAO TEMPORAL DOS SINAIS")
     print("=" * 60)
     
-    for hmm_t in [0.55, 0.60, 0.65]:
-        for lyap_t in [0.05, 0.06, 0.07]:
-            long_signals = sum(1 for h, l, s, d in zip(hmm_probs, lyapunov_scores, hmm_states, directions)
-                              if h >= hmm_t and l >= lyap_t and s in [0, 1] and d == 1)
-            short_signals = sum(1 for h, l, s, d in zip(hmm_probs, lyapunov_scores, hmm_states, directions)
-                               if h >= hmm_t and l >= lyap_t and s in [0, 1] and d == -1)
-            total_signals = long_signals + short_signals
-            print(f"    hmm>={hmm_t}, lyap>={lyap_t}: {total_signals} sinais (L:{long_signals}, S:{short_signals})")
+    # Usar threshold médio para análise
+    hmm_t = 0.60
+    lyap_t = 0.06
+    
+    # Contar sinais por período
+    n_periods = 10
+    period_size = len(hmm_probs) // n_periods
+    
+    print(f"\n  Sinais por período (hmm>={hmm_t}, lyap>={lyap_t}):")
+    for p in range(n_periods):
+        start_idx = p * period_size
+        end_idx = start_idx + period_size if p < n_periods - 1 else len(hmm_probs)
+        
+        period_count = sum(1 for i in range(start_idx, end_idx)
+                          if hmm_probs[i] >= hmm_t and lyapunov_scores[i] >= lyap_t)
+        
+        print(f"    Período {p+1}: {period_count} sinais")
+
+    print("\n" + "=" * 60)
+    print("  FIM DA ANALISE")
+    print("=" * 60)
 
 
 if __name__ == "__main__":
