@@ -7,12 +7,13 @@ DEBUG DTT - Analise de Distribuicao de Sinais
 Script de debug para entender o comportamento do DTT e analisar
 a distribuição de sinais com diferentes thresholds.
 
-VERSÃO CORRIGIDA - Análise SEM look-ahead bias
-==============================================
-- Direção baseada em barras FECHADAS
+VERSÃO V2.1 - CORREÇÕES DA AUDITORIA 24/12/2025
+================================================
+- Direção via MÓDULO COMPARTILHADO (consistência entre arquivos)
 - Análise de entropia de persistência
 - Análise de probabilidade de tunelamento
 - Verificação de distribuição temporal
+- Verificação de look-ahead bias
 
 Uso:
     python -m backtesting.dtt.debug
@@ -31,11 +32,20 @@ from collections import deque
 from api.fxopen_historical_ws import download_historical_data
 from strategies.alta_volatilidade.dtt_tunelamento_topologico import DetectorTunelamentoTopologico
 
+# V2.1: Usar módulo compartilhado para cálculo de direção
+from backtesting.common.direction_calculator import (
+    calculate_direction_from_bars,
+    DEFAULT_DIRECTION_LOOKBACK,
+    DIRECTION_LONG,
+    DIRECTION_SHORT,
+    DIRECTION_NEUTRAL
+)
+
 
 async def main():
     print("=" * 60)
     print("  DEBUG DTT - Analise de Distribuicao de Sinais")
-    print("  VERSAO CORRIGIDA - Sem Look-Ahead")
+    print("  VERSAO V2.1 - Módulo Compartilhado de Direção")
     print("=" * 60)
 
     # Carregar dados
@@ -68,9 +78,9 @@ async def main():
     signal_strengths = []
     trade_ons = []
 
-    # Estatísticas de direção (baseada em barras FECHADAS)
+    # V2.1: Estatísticas de direção via MÓDULO COMPARTILHADO
     directions = []
-    direction_lookback = 12  # Consistente com DTTStrategy
+    direction_lookback = DEFAULT_DIRECTION_LOOKBACK  # Via módulo compartilhado
     min_prices = 150
 
     print("\nCalculando valores DTT...")
@@ -94,18 +104,10 @@ async def main():
             signal_strengths.append(result['signal_strength'])
             trade_ons.append(1 if result['trade_on'] else 0)
 
-            # CORREÇÃO AUDITORIA 2: Calcular direção apenas com barras FECHADAS
-            # - bars[i] = barra atual (momento da análise)
-            # - bars[i-1] = barra anterior (já fechada)
-            # - bars[i-direction_lookback] = N barras antes
+            # V2.1: Calcular direção via MÓDULO COMPARTILHADO
+            # Garante consistência entre DTTStrategy, optimizer e debug
             # NÃO usar result['direction'] que pode ter look-ahead
-            if i >= direction_lookback + 1:
-                recent_close = bars[i - 1].close
-                past_close = bars[i - direction_lookback].close
-                trend = recent_close - past_close
-                direction = 1 if trend > 0 else -1
-            else:
-                direction = 0
+            direction = calculate_direction_from_bars(bars, i, direction_lookback)
             directions.append(direction)
 
         except Exception as e:
@@ -158,12 +160,12 @@ async def main():
     print(f"  TRADE ON:  {total_on} ({total_on/len(trade_ons)*100:.1f}%)")
     print(f"  SYSTEM OFF: {total_off} ({total_off/len(trade_ons)*100:.1f}%)")
 
-    # Estatísticas de direção (usando cálculo CORRIGIDO)
+    # V2.1: Estatísticas de direção via módulo compartilhado
     if directions:
-        print(f"\nDirecao (baseada em barras FECHADAS):")
-        long_count = directions.count(1)
-        short_count = directions.count(-1)
-        neutral_count = directions.count(0)
+        print(f"\nDirecao (via módulo compartilhado - direction_calculator.py):")
+        long_count = directions.count(DIRECTION_LONG)
+        short_count = directions.count(DIRECTION_SHORT)
+        neutral_count = directions.count(DIRECTION_NEUTRAL)
         total = len(directions)
         print(f"  Long:    {long_count} ({long_count/total*100:.1f}%)")
         print(f"  Short:   {short_count} ({short_count/total*100:.1f}%)")
@@ -195,18 +197,18 @@ async def main():
                        if e >= ent_t and t >= tunn_t and s >= strength_thresh)
             print(f"    entropy>={ent_t}, tunneling>={tunn_t}, strength>={strength_thresh}: {count} sinais")
 
-    # Sinais com direção
+    # V2.1: Sinais com direção via módulo compartilhado
     if directions:
         print("\n" + "=" * 60)
-        print("  SINAIS COM DIRECAO (usando barras FECHADAS)")
+        print("  SINAIS COM DIRECAO (via módulo compartilhado)")
         print("=" * 60)
 
         for ent_t in [0.55, 0.60, 0.65]:
             for tunn_t in [0.10, 0.15, 0.20]:
                 long_signals = sum(1 for e, t, s, d in zip(entropies, tunnelings, signal_strengths, directions)
-                                  if e >= ent_t and t >= tunn_t and s >= 0.3 and d == 1)
+                                  if e >= ent_t and t >= tunn_t and s >= 0.3 and d == DIRECTION_LONG)
                 short_signals = sum(1 for e, t, s, d in zip(entropies, tunnelings, signal_strengths, directions)
-                                   if e >= ent_t and t >= tunn_t and s >= 0.3 and d == -1)
+                                   if e >= ent_t and t >= tunn_t and s >= 0.3 and d == DIRECTION_SHORT)
                 total_signals = long_signals + short_signals
                 print(f"    ent>={ent_t}, tunn>={tunn_t}: {total_signals} sinais (L:{long_signals}, S:{short_signals})")
 
@@ -261,14 +263,15 @@ async def main():
 
     # Verificação de look-ahead potencial
     print("\n" + "=" * 60)
-    print("  VERIFICACAO DE LOOK-AHEAD BIAS")
+    print("  VERIFICACAO DE LOOK-AHEAD BIAS (V2.1)")
     print("=" * 60)
 
     print("\n  Checklist de potenciais problemas:")
-    print("  [✓] Direção calculada usando barras FECHADAS (i-1 e i-11)")
+    print("  [✓] Direção via MÓDULO COMPARTILHADO (direction_calculator.py)")
+    print("  [✓] Índices consistentes entre todos os arquivos")
     print("  [✓] Embedding de Takens usa apenas dados passados")
     print("  [✓] Homologia Persistente calcula em nuvem de pontos passados")
-    print("  [✓] KDE para potencial usa apenas preços recentes (passados)")
+    print("  [✓] KDE exclui preço atual (prices[-1]) - CORREÇÃO V2.1")
     print("  [✓] Schrödinger resolve baseado em potencial passado")
 
     # Verificar se há correlação impossível com futuro
