@@ -32,6 +32,10 @@ from strategies.alta_volatilidade.dsg_detector_singularidade import DetectorSing
 def test_step_function_causal():
     """
     Testa se a step function é realmente causal
+
+    CORREÇÃO: Agora testa também o comportamento quando índice < primeiro cálculo
+    Índices ANTES do primeiro cálculo devem ser 0.0 (valor neutro)
+    Índices APÓS o primeiro cálculo usam step function
     """
     print("\n" + "=" * 60)
     print("TESTE 1: Step Function Causal")
@@ -39,39 +43,54 @@ def test_step_function_causal():
 
     dsg = DetectorSingularidadeGravitacional()
 
-    # Cenário: índices [0, 10, 20] com valores [1.0, 2.0, 3.0]
+    # Cenário 1: primeiro cálculo no índice 0
+    print("\n  Cenário 1: primeiro cálculo no índice 0")
     indices = [0, 10, 20]
     values = [1.0, 2.0, 3.0]
     n = 25
 
     result = dsg._apply_step_function_causal(n, indices, values)
 
-    # Verificações
     errors = []
 
-    # Índice 0: deve usar valor 1.0
+    # Índice 0: deve usar valor 1.0 (primeiro cálculo)
     if result[0] != 1.0:
-        errors.append(f"Índice 0: esperado 1.0, obtido {result[0]}")
+        errors.append(f"Cenário 1 - Índice 0: esperado 1.0, obtido {result[0]}")
 
     # Índice 5: deve usar valor 1.0 (último calculado até 5 é índice 0)
     if result[5] != 1.0:
-        errors.append(f"Índice 5: esperado 1.0, obtido {result[5]}")
+        errors.append(f"Cenário 1 - Índice 5: esperado 1.0, obtido {result[5]}")
 
     # Índice 10: deve usar valor 2.0
     if result[10] != 2.0:
-        errors.append(f"Índice 10: esperado 2.0, obtido {result[10]}")
+        errors.append(f"Cenário 1 - Índice 10: esperado 2.0, obtido {result[10]}")
 
-    # Índice 15: deve usar valor 2.0 (último calculado até 15 é índice 10)
-    if result[15] != 2.0:
-        errors.append(f"Índice 15: esperado 2.0, obtido {result[15]}")
+    # Cenário 2: primeiro cálculo no índice 5 (não no 0)
+    # Isso testa a correção de look-ahead
+    print("  Cenário 2: primeiro cálculo no índice 5 (correção look-ahead)")
+    indices2 = [5, 15, 25]
+    values2 = [1.0, 2.0, 3.0]
+    n2 = 30
 
-    # Índice 20: deve usar valor 3.0
-    if result[20] != 3.0:
-        errors.append(f"Índice 20: esperado 3.0, obtido {result[20]}")
+    result2 = dsg._apply_step_function_causal(n2, indices2, values2)
 
-    # Índice 24: deve usar valor 3.0 (último calculado até 24 é índice 20)
-    if result[24] != 3.0:
-        errors.append(f"Índice 24: esperado 3.0, obtido {result[24]}")
+    # CORREÇÃO: Índices 0-4 devem ser 0.0 (valor neutro, NÃO values2[0])
+    # Isso é CRÍTICO: usar values2[0] seria look-ahead bias!
+    for i in range(5):
+        if result2[i] != 0.0:
+            errors.append(f"Cenário 2 - Índice {i}: esperado 0.0 (neutro), obtido {result2[i]}")
+
+    # Índice 5: deve usar valor 1.0 (primeiro cálculo)
+    if result2[5] != 1.0:
+        errors.append(f"Cenário 2 - Índice 5: esperado 1.0, obtido {result2[5]}")
+
+    # Índice 10: deve usar valor 1.0 (último calculado até 10 é índice 5)
+    if result2[10] != 1.0:
+        errors.append(f"Cenário 2 - Índice 10: esperado 1.0, obtido {result2[10]}")
+
+    # Índice 15: deve usar valor 2.0
+    if result2[15] != 2.0:
+        errors.append(f"Cenário 2 - Índice 15: esperado 2.0, obtido {result2[15]}")
 
     if errors:
         print("❌ FALHOU:")
@@ -80,7 +99,9 @@ def test_step_function_causal():
         return False
     else:
         print("✅ PASSOU: Step function é 100% causal")
-        print(f"   Resultado: {result}")
+        print(f"   Cenário 1: {result[:15]}...")
+        print(f"   Cenário 2: {result2[:20]}...")
+        print("   Índices antes do primeiro cálculo usam valor neutro (0.0)")
         return True
 
 

@@ -441,10 +441,15 @@ class BacktestEngine:
             else:  # SHORT
                 actual_stop_loss = entry_price + (signal.stop_loss_pips * self.pip_value)
                 actual_take_profit = entry_price - (signal.take_profit_pips * self.pip_value)
-        else:
+        elif signal.stop_loss is not None and signal.take_profit is not None:
             # Compatibilidade: usar valores fixos se não tiver pips
             actual_stop_loss = signal.stop_loss
             actual_take_profit = signal.take_profit
+        else:
+            # CORREÇÃO: Rejeitar sinais sem stop/take definido
+            # Isso evita posições sem gerenciamento de risco
+            print(f"  AVISO: Sinal rejeitado - stop_loss ou take_profit não definidos")
+            return
 
         self.current_position = Position(
             type=pos_type,

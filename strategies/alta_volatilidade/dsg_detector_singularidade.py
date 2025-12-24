@@ -995,11 +995,21 @@ class DetectorSingularidadeGravitacional:
             pos = np.searchsorted(indices_arr, i, side='right')
 
             if pos == 0:
-                # Nenhum valor calculado antes deste índice, usar primeiro
-                result[i] = values_arr[0]
+                # CORREÇÃO CRÍTICA: Nenhum valor calculado ANTES deste índice
+                # Usar np.nan para indicar "sem dados ainda" - 100% causal
+                # ANTES (ERRADO): result[i] = values_arr[0] ← Isso é look-ahead!
+                # O values_arr[0] corresponde ao índice indices_arr[0], que pode ser > i
+                result[i] = np.nan
             else:
                 # Usar o último valor calculado (pos-1)
                 result[i] = values_arr[pos - 1]
+
+        # Substituir NaN pelo primeiro valor válido (forward-fill do primeiro calculado)
+        # Isso é causal porque só preenchemos APÓS o primeiro cálculo real
+        if np.isnan(result[0]) and len(values_arr) > 0:
+            first_valid_idx = indices_arr[0]
+            # Preencher do início até o primeiro cálculo com NaN ou valor neutro
+            result[:first_valid_idx] = 0.0  # Valor neutro antes do primeiro cálculo
 
         return result
 
