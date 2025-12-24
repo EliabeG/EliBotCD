@@ -733,12 +733,19 @@ class DetectorSingularidadeGravitacional:
         tidal_series = np.zeros(n)
         distance_series = np.zeros(n)
 
-        # CORREÇÃO M1: Subsampling com INTERPOLAÇÃO ao invés de replicação
-        # ANTES: Valores eram replicados (ex: barra 0,1,2 tinham o mesmo valor)
-        # DEPOIS: Valores são interpolados linearmente entre pontos calculados
+        # CORREÇÃO CRÍTICA: Subsampling com STEP FUNCTION (Zero-Order Hold)
+        # =================================================================
+        # PROBLEMA ANTERIOR: np.interp() causa LOOK-AHEAD BIAS porque a
+        # interpolação linear usa pontos FUTUROS para calcular valores intermediários.
+        # Exemplo: Para obter valor no índice 5, interp usa índices 0 e 10,
+        # mas o índice 10 ainda não aconteceu no momento 5!
+        #
+        # SOLUÇÃO: Step Function (Zero-Order Hold) - 100% CAUSAL
+        # Cada barra usa o valor do ÚLTIMO ponto calculado, sem olhar para frente.
+        # =================================================================
         step = max(1, n // 100)  # Máximo 100 pontos para cálculo completo
 
-        # Armazenar pontos calculados para interpolação
+        # Armazenar pontos calculados
         calculated_indices = []
         calculated_ricci = []
         calculated_tidal = []
@@ -764,10 +771,11 @@ class DetectorSingularidadeGravitacional:
             calculated_tidal.append(result['tidal_force'])
             calculated_distance.append(result['event_horizon_distance'])
 
-        # CORREÇÃO M1: Interpolar linearmente entre pontos calculados
-        ricci_series = np.interp(np.arange(n), calculated_indices, calculated_ricci)
-        tidal_series = np.interp(np.arange(n), calculated_indices, calculated_tidal)
-        distance_series = np.interp(np.arange(n), calculated_indices, calculated_distance)
+        # CORREÇÃO: Step Function CAUSAL (Zero-Order Hold)
+        # Usa apenas o ÚLTIMO valor calculado até cada índice - SEM look-ahead
+        ricci_series = self._apply_step_function_causal(n, calculated_indices, calculated_ricci)
+        tidal_series = self._apply_step_function_causal(n, calculated_indices, calculated_tidal)
+        distance_series = self._apply_step_function_causal(n, calculated_indices, calculated_distance)
 
         # CORREÇÃO #1: Suavizar séries com EMA CAUSAL (não gaussian_filter1d que é não-causal)
         # gaussian_filter1d usa convolução simétrica que olha para o futuro!
@@ -947,6 +955,53 @@ class DetectorSingularidadeGravitacional:
             'reasons': reasons,
             'conditions_met': conditions_met
         }
+
+    def _apply_step_function_causal(self, n: int, indices: list, values: list) -> np.ndarray:
+        """
+        CORREÇÃO CRÍTICA: Step Function (Zero-Order Hold) - 100% CAUSAL
+
+        Substitui np.interp() que causa LOOK-AHEAD BIAS.
+
+        A step function usa apenas o ÚLTIMO valor calculado até cada índice,
+        nunca olhando para valores futuros.
+
+        Exemplo:
+        - indices = [0, 10, 20]
+        - values = [1.0, 2.0, 3.0]
+        - Para índice 5: usa valor 1.0 (último calculado até 5)
+        - Para índice 15: usa valor 2.0 (último calculado até 15)
+
+        Args:
+            n: Tamanho total do array de saída
+            indices: Lista de índices onde valores foram calculados
+            values: Lista de valores calculados
+
+        Returns:
+            Array de tamanho n com step function aplicada (causal)
+        """
+        result = np.zeros(n)
+
+        if not indices or not values:
+            return result
+
+        # Converter para arrays numpy para eficiência
+        indices_arr = np.array(indices)
+        values_arr = np.array(values)
+
+        for i in range(n):
+            # Encontrar o índice do último valor calculado que é <= i
+            # searchsorted retorna onde i seria inserido para manter ordem
+            # Com 'right', retorna posição após elementos iguais
+            pos = np.searchsorted(indices_arr, i, side='right')
+
+            if pos == 0:
+                # Nenhum valor calculado antes deste índice, usar primeiro
+                result[i] = values_arr[0]
+            else:
+                # Usar o último valor calculado (pos-1)
+                result[i] = values_arr[pos - 1]
+
+        return result
 
     def _apply_ema_causal(self, series: np.ndarray, alpha: float = 0.3) -> np.ndarray:
         """
