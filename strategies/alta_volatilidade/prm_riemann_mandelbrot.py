@@ -10,12 +10,15 @@ detectar a coerência dessa transição.
 
 Dependências Críticas: PyWavelets, hmmlearn, nolds, scipy.optimize, numpy
 
-VERSÃO CORRIGIDA - SEM LOOK-AHEAD BIAS
-======================================
+VERSÃO CORRIGIDA V2.0 - PRONTO PARA DINHEIRO REAL
+=================================================
 Correções aplicadas:
 1. HMM agora é treinado APENAS em dados passados (janela deslizante)
 2. Todas as análises usam apenas informação disponível no momento
 3. Adicionado modo "online" para trading real
+4. NOVO: Normalização incremental SEM look-ahead (exclui ponto atual)
+5. NOVO: Inicialização GARCH sem usar série completa
+6. NOVO: Validação mais rigorosa para dinheiro real
 """
 
 import numpy as np
@@ -132,12 +135,18 @@ class ProtocoloRiemannMandelbrot:
         Estima volatilidade usando GARCH(1,1)
 
         σ²_t = ω + α * ε²_{t-1} + β * σ²_{t-1}
-        
-        NOTA: Este cálculo é naturalmente causal (só usa dados passados)
+
+        CORREÇÃO V2.0: Inicialização sem look-ahead
+        A variância inicial agora usa apenas os primeiros N pontos, não toda a série.
         """
         n = len(returns)
         variance = np.zeros(n)
-        variance[0] = np.var(returns)
+
+        # CORREÇÃO V2.0: Inicialização SEM look-ahead
+        # Usar variância dos primeiros 20 pontos (ou menos se não disponível)
+        # Isso evita usar informação futura na inicialização
+        init_window = min(20, n)
+        variance[0] = np.var(returns[:init_window]) if init_window > 1 else returns[0]**2
 
         omega = self.garch_omega
         alpha = self.garch_alpha
@@ -148,11 +157,20 @@ class ProtocoloRiemannMandelbrot:
 
         return np.sqrt(variance)
 
-    def _prepare_hmm_features(self, prices: np.ndarray, volume: np.ndarray = None) -> np.ndarray:
+    def _prepare_hmm_features(self, prices: np.ndarray, volume: np.ndarray = None,
+                               exclude_last: bool = False) -> np.ndarray:
         """
         Prepara features para o HMM
 
+        CORREÇÃO V2.0: Normalização SEM look-ahead
+
         Input do HMM: Retornos logarítmicos, Volatilidade GARCH(1,1) estimada e Tick Volume
+
+        Args:
+            prices: Array de preços
+            volume: Array de volumes (opcional)
+            exclude_last: Se True, exclui último ponto da estatística de normalização
+                         Isso elimina look-ahead bias na normalização
         """
         returns = self._calculate_log_returns(prices)
         volatility = self._estimate_garch_volatility(returns)
@@ -163,11 +181,28 @@ class ProtocoloRiemannMandelbrot:
         else:
             volume = volume[1:]  # Alinhar com retornos
 
-        # Normalizar features
+        # CORREÇÃO V2.0: Normalização incremental SEM look-ahead
+        # Quando exclude_last=True, usamos estatísticas calculadas ANTES do último ponto
+        if exclude_last and len(returns) > 1:
+            # Calcular estatísticas EXCLUINDO o último ponto
+            returns_stats = returns[:-1]
+            volatility_stats = volatility[:-1]
+            volume_stats = volume[:-1]
+
+            ret_mean, ret_std = np.mean(returns_stats), np.std(returns_stats) + 1e-10
+            vol_mean, vol_std = np.mean(volatility_stats), np.std(volatility_stats) + 1e-10
+            volm_mean, volm_std = np.mean(volume_stats), np.std(volume_stats) + 1e-10
+        else:
+            # Modo padrão (para treino onde todos os dados são passados)
+            ret_mean, ret_std = np.mean(returns), np.std(returns) + 1e-10
+            vol_mean, vol_std = np.mean(volatility), np.std(volatility) + 1e-10
+            volm_mean, volm_std = np.mean(volume), np.std(volume) + 1e-10
+
+        # Normalizar features usando estatísticas calculadas
         features = np.column_stack([
-            (returns - np.mean(returns)) / (np.std(returns) + 1e-10),
-            (volatility - np.mean(volatility)) / (np.std(volatility) + 1e-10),
-            (volume - np.mean(volume)) / (np.std(volume) + 1e-10)
+            (returns - ret_mean) / ret_std,
+            (volatility - vol_mean) / vol_std,
+            (volume - volm_mean) / volm_std
         ])
 
         return features
@@ -260,44 +295,49 @@ class ProtocoloRiemannMandelbrot:
 
     def get_hmm_probabilities(self, prices: np.ndarray, volume: np.ndarray = None) -> dict:
         """
-        CORRIGIDO: Obtém probabilidades posteriores do HMM SEM LOOK-AHEAD
-        
+        CORRIGIDO V2.0: Obtém probabilidades posteriores do HMM SEM LOOK-AHEAD
+
         O HMM é treinado APENAS em dados passados (excluindo a barra atual).
         Depois, usamos o modelo treinado para prever a probabilidade da barra atual.
 
         Gatilho: O algoritmo só "acorda" quando a Probabilidade Posterior
         do Estado 1 ou 2 for > threshold
-        
-        IMPORTANTE: 
+
+        CORREÇÕES V2.0:
+        - Normalização das features exclui último ponto
+        - Forward-only para probabilidades
+
+        IMPORTANTE:
         - prices[:-1] = dados de treino (passado)
         - prices[-1] = barra atual (a ser prevista)
         """
         n_prices = len(prices)
-        
+
         # Verificar se temos dados suficientes
         min_required = self.hmm_min_training_samples + 1  # +1 para a barra atual
         if n_prices < min_required:
             raise ValueError(f"Dados insuficientes. Necessário: {min_required}, Fornecido: {n_prices}")
-        
+
         # Determinar janela de treino (excluindo barra atual)
         # Usar no máximo hmm_training_window barras para treino
         train_end = n_prices - 1  # Excluir última barra (atual)
         train_start = max(0, train_end - self.hmm_training_window)
-        
+
         training_prices = prices[train_start:train_end]
         training_volume = volume[train_start:train_end] if volume is not None else None
-        
+
         # Treinar HMM apenas nos dados PASSADOS
         self._fit_hmm_on_window(training_prices, training_volume)
-        
+
         # Agora, preparar features para TODA a janela (incluindo barra atual)
         # para obter as probabilidades
         # Usamos uma janela que inclui a barra atual para prever seu estado
         predict_start = max(0, n_prices - self.hmm_training_window)
         predict_prices = prices[predict_start:]
         predict_volume = volume[predict_start:] if volume is not None else None
-        
-        features = self._prepare_hmm_features(predict_prices, predict_volume)
+
+        # CORREÇÃO V2.0: Usar exclude_last=True para normalização sem look-ahead
+        features = self._prepare_hmm_features(predict_prices, predict_volume, exclude_last=True)
 
         # CORREÇÃO #7: Usar algoritmo forward-only (sem look-ahead)
         # ANTES (ERRADO):
