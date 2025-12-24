@@ -1,13 +1,12 @@
 #!/usr/bin/env python3
 """
 ================================================================================
-OTIMIZADOR DSG ROBUSTO - COM VALIDACAO ANTI-OVERFITTING
+OTIMIZADOR FIFN ROBUSTO - COM VALIDACAO ANTI-OVERFITTING
 ================================================================================
 
-DSG (Detector de Singularidade Gravitacional):
-- Usa Tensor Metrico Financeiro para modelar espaco-tempo
-- Usa Escalar de Ricci para detectar curvatura
-- Usa Forca de Mare para detectar rompimentos
+FIFN (Fluxo de Informacao Fisher-Navier):
+- Usa Numero de Reynolds para detectar zona de operacao
+- Usa Divergencia KL e Skewness para direcao
 
 VALIDACAO:
 1. Divide dados em 70% treino / 30% teste
@@ -32,34 +31,34 @@ from collections import deque
 import warnings
 warnings.filterwarnings('ignore')
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+# Adiciona o diretorio raiz ao path
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
 from api.fxopen_historical_ws import Bar, download_historical_data
-from strategies.alta_volatilidade.dsg_detector_singularidade import DetectorSingularidadeGravitacional
-from backtesting.robust_optimizer import (
+from strategies.alta_volatilidade.fifn_fisher_navier import FluxoInformacaoFisherNavier
+from backtesting.common.robust_optimizer import (
     RobustBacktester, RobustResult, BacktestResult,
     save_robust_config
 )
 
 
 @dataclass
-class DSGSignal:
-    """Sinal pre-calculado do DSG"""
+class FIFNSignal:
+    """Sinal pre-calculado do FIFN"""
     bar_idx: int
     price: float
     high: float
     low: float
-    ricci_scalar: float
-    tidal_force: float
-    event_horizon_distance: float
-    ricci_collapsing: bool
-    crossing_horizon: bool
-    geodesic_direction: int
-    signal: int
+    reynolds: float
+    kl_divergence: float
+    skewness: float
+    pressure_gradient: float
+    in_sweet_spot: bool
+    direction: int
 
 
-class DSGRobustOptimizer:
-    """Otimizador DSG com validacao anti-overfitting"""
+class FIFNRobustOptimizer:
+    """Otimizador FIFN com validacao anti-overfitting"""
 
     def __init__(self, symbol: str = "EURUSD", periodicity: str = "H1"):
         self.symbol = symbol
@@ -67,17 +66,17 @@ class DSGRobustOptimizer:
         self.backtester = RobustBacktester(pip=0.0001, spread=1.0)
 
         self.bars: List[Bar] = []
-        self.signals: List[DSGSignal] = []
+        self.signals: List[FIFNSignal] = []
         self.train_bars: List[Bar] = []
         self.test_bars: List[Bar] = []
-        self.train_signals: List[DSGSignal] = []
-        self.test_signals: List[DSGSignal] = []
+        self.train_signals: List[FIFNSignal] = []
+        self.test_signals: List[FIFNSignal] = []
 
         self.robust_results: List[RobustResult] = []
         self.best: Optional[RobustResult] = None
 
     async def load_and_precompute(self, start_date: datetime, end_date: datetime):
-        """Carrega dados e pre-calcula sinais DSG"""
+        """Carrega dados e pre-calcula sinais FIFN"""
         print("\n" + "=" * 70)
         print("  CARREGANDO DADOS REAIS")
         print("=" * 70)
@@ -103,18 +102,20 @@ class DSGRobustOptimizer:
         print(f"    Treino: {len(self.train_bars)} barras")
         print(f"    Teste:  {len(self.test_bars)} barras")
 
-        # Pre-calcular DSG
-        print("\n  Pre-calculando sinais DSG (computacionalmente intensivo)...")
+        # Pre-calcular FIFN
+        print("\n  Pre-calculando sinais FIFN...")
 
-        dsg = DetectorSingularidadeGravitacional(
-            ricci_collapse_threshold=-0.5,
-            tidal_force_threshold=0.1,
-            lookback_window=30
+        fifn = FluxoInformacaoFisherNavier(
+            window_size=50,
+            kl_lookback=10,
+            reynolds_sweet_low=2300,
+            reynolds_sweet_high=4000,
+            skewness_threshold=0.5
         )
 
-        prices_buf = deque(maxlen=100)
+        prices_buf = deque(maxlen=200)
         self.signals = []
-        min_prices = 50
+        min_prices = 80  # Minimo para FIFN (window + lookback + buffer)
 
         for i, bar in enumerate(self.bars):
             prices_buf.append(bar.close)
@@ -123,21 +124,27 @@ class DSGRobustOptimizer:
                 continue
 
             try:
-                prices_arr = np.array(prices_buf)
-                result = dsg.analyze(prices_arr)
+                result = fifn.analyze(np.array(prices_buf))
 
-                self.signals.append(DSGSignal(
+                reynolds = result['Reynolds_Number']
+                kl_div = result['KL_Divergence']
+                skewness = result['directional_signal']['skewness']
+                pressure_grad = result['Pressure_Gradient']
+                in_sweet_spot = result['directional_signal']['in_sweet_spot']
+                signal = result['signal']
+                direction = signal  # 1=LONG, -1=SHORT, 0=NEUTRO
+
+                self.signals.append(FIFNSignal(
                     bar_idx=i,
                     price=bar.close,
                     high=bar.high,
                     low=bar.low,
-                    ricci_scalar=result['Ricci_Scalar'],
-                    tidal_force=result['Tidal_Force_Magnitude'],
-                    event_horizon_distance=result['Event_Horizon_Distance'],
-                    ricci_collapsing=result['ricci_collapsing'],
-                    crossing_horizon=result['crossing_horizon'],
-                    geodesic_direction=result['geodesic_direction'],
-                    signal=result['signal']
+                    reynolds=reynolds,
+                    kl_divergence=kl_div,
+                    skewness=skewness,
+                    pressure_gradient=pressure_grad,
+                    in_sweet_spot=in_sweet_spot,
+                    direction=direction
                 ))
 
             except:
@@ -156,16 +163,19 @@ class DSGRobustOptimizer:
 
         # Debug: mostrar distribuicao de valores
         if self.signals:
-            ricci_vals = [s.ricci_scalar for s in self.signals]
-            tidal_vals = [s.tidal_force for s in self.signals]
+            reynolds_vals = [s.reynolds for s in self.signals]
+            skew_vals = [s.skewness for s in self.signals]
+            kl_vals = [s.kl_divergence for s in self.signals]
             print(f"\n  Distribuicao de valores:")
-            print(f"    Ricci: min={min(ricci_vals):.4f}, max={max(ricci_vals):.4f}, mean={np.mean(ricci_vals):.4f}")
-            print(f"    Tidal: min={min(tidal_vals):.6f}, max={max(tidal_vals):.6f}, mean={np.mean(tidal_vals):.6f}")
+            print(f"    Reynolds: min={min(reynolds_vals):.0f}, max={max(reynolds_vals):.0f}, mean={np.mean(reynolds_vals):.0f}")
+            print(f"    Skewness: min={min(skew_vals):.3f}, max={max(skew_vals):.3f}, mean={np.mean(skew_vals):.3f}")
+            print(f"    KL Div: min={min(kl_vals):.4f}, max={max(kl_vals):.4f}, mean={np.mean(kl_vals):.4f}")
 
         return len(self.train_signals) > 50 and len(self.test_signals) > 20
 
-    def _run_backtest(self, signals: List[DSGSignal], bars: List[Bar],
-                      ricci_thresh: float, tidal_thresh: float,
+    def _run_backtest(self, signals: List[FIFNSignal], bars: List[Bar],
+                      reynolds_low: float, reynolds_high: float,
+                      skewness_thresh: float, kl_thresh: float,
                       sl: float, tp: float,
                       bar_offset: int = 0) -> List[float]:
         """Executa backtest em um conjunto de dados"""
@@ -174,16 +184,17 @@ class DSGRobustOptimizer:
 
         entries = []
         for s in signals:
-            # Condicoes de entrada baseadas no DSG
-            ricci_collapse = s.ricci_scalar < ricci_thresh or s.ricci_collapsing
-            high_tidal = s.tidal_force > tidal_thresh
-            crossing = s.crossing_horizon
+            # Verificar se esta na zona de operacao (sweet spot)
+            in_zone = reynolds_low <= s.reynolds <= reynolds_high
 
-            # Precisa de pelo menos 2 condicoes
-            conditions = sum([ricci_collapse, high_tidal, crossing])
-
-            if conditions >= 2 and s.geodesic_direction != 0:
-                entries.append((s.bar_idx - bar_offset, s.price, s.geodesic_direction))
+            # Verificar direcao
+            if in_zone and abs(s.skewness) >= skewness_thresh and s.kl_divergence >= kl_thresh:
+                # LONG: skewness positiva, pressao negativa
+                if s.skewness > skewness_thresh and s.pressure_gradient < 0:
+                    entries.append((s.bar_idx - bar_offset, s.price, 1))
+                # SHORT: skewness negativa, pressao positiva
+                elif s.skewness < -skewness_thresh and s.pressure_gradient > 0:
+                    entries.append((s.bar_idx - bar_offset, s.price, -1))
 
         if len(entries) < 3:
             return []
@@ -206,13 +217,14 @@ class DSGRobustOptimizer:
 
         return pnls
 
-    def _test_params(self, ricci_thresh: float, tidal_thresh: float,
+    def _test_params(self, reynolds_low: float, reynolds_high: float,
+                     skewness_thresh: float, kl_thresh: float,
                      sl: float, tp: float) -> Optional[RobustResult]:
         """Testa parametros em treino e teste"""
 
         train_pnls = self._run_backtest(
             self.train_signals, self.train_bars,
-            ricci_thresh, tidal_thresh, sl, tp,
+            reynolds_low, reynolds_high, skewness_thresh, kl_thresh, sl, tp,
             bar_offset=0
         )
         train_result = self.backtester.calculate_backtest_result(train_pnls)
@@ -232,7 +244,7 @@ class DSGRobustOptimizer:
         split_idx = len(self.train_bars)
         test_pnls = self._run_backtest(
             self.test_signals, self.test_bars,
-            ricci_thresh, tidal_thresh, sl, tp,
+            reynolds_low, reynolds_high, skewness_thresh, kl_thresh, sl, tp,
             bar_offset=split_idx
         )
         test_result = self.backtester.calculate_backtest_result(test_pnls)
@@ -262,8 +274,10 @@ class DSGRobustOptimizer:
             return None
 
         params = {
-            "ricci_collapse_threshold": round(ricci_thresh, 4),
-            "tidal_force_threshold": round(tidal_thresh, 6),
+            "reynolds_sweet_low": round(reynolds_low, 0),
+            "reynolds_sweet_high": round(reynolds_high, 0),
+            "skewness_threshold": round(skewness_thresh, 4),
+            "kl_divergence_threshold": round(kl_thresh, 5),
             "stop_loss_pips": round(sl, 1),
             "take_profit_pips": round(tp, 1)
         }
@@ -284,13 +298,15 @@ class DSGRobustOptimizer:
             return None
 
         print(f"\n{'='*70}")
-        print(f"  OTIMIZACAO ROBUSTA DSG: {n:,} COMBINACOES")
+        print(f"  OTIMIZACAO ROBUSTA FIFN: {n:,} COMBINACOES")
         print(f"  Com validacao Train/Test Split")
         print(f"{'='*70}")
 
-        # Ranges baseados na teoria e distribuicao real
-        ricci_vals = np.linspace(-1.0, -0.1, 20)
-        tidal_vals = np.linspace(0.001, 0.5, 20)
+        # Ranges baseados na teoria (Reynolds ~2000-4000 para sweet spot)
+        reynolds_low_vals = np.linspace(1500, 2800, 15)
+        reynolds_high_vals = np.linspace(3500, 5500, 15)
+        skewness_vals = np.linspace(0.2, 0.8, 12)
+        kl_vals = np.linspace(0.001, 0.05, 10)
         sl_vals = np.linspace(20, 55, 15)
         tp_vals = np.linspace(25, 80, 20)
 
@@ -302,12 +318,18 @@ class DSGRobustOptimizer:
         for _ in range(n):
             tested += 1
 
-            ricci = float(random.choice(ricci_vals))
-            tidal = float(random.choice(tidal_vals))
+            reynolds_low = float(random.choice(reynolds_low_vals))
+            reynolds_high = float(random.choice(reynolds_high_vals))
+            skewness_thresh = float(random.choice(skewness_vals))
+            kl_thresh = float(random.choice(kl_vals))
             sl = float(random.choice(sl_vals))
             tp = float(random.choice(tp_vals))
 
-            result = self._test_params(ricci, tidal, sl, tp)
+            # Reynolds high deve ser maior que low
+            if reynolds_high <= reynolds_low:
+                continue
+
+            result = self._test_params(reynolds_low, reynolds_high, skewness_thresh, kl_thresh, sl, tp)
 
             if result:
                 robust_count += 1
@@ -349,7 +371,7 @@ class DSGRobustOptimizer:
 
         save_robust_config(
             result=self.best,
-            strategy_name="DSG-SingularidadeGravitacional",
+            strategy_name="FIFN-FisherNavier",
             symbol=self.symbol,
             periodicity=self.periodicity,
             n_tested=n_tested,
@@ -359,7 +381,7 @@ class DSGRobustOptimizer:
         # Top 10
         top_file = os.path.join(
             os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-            "configs", "dsg_robust_top10.json"
+            "configs", "fifn_robust_top10.json"
         )
         sorted_results = sorted(self.robust_results, key=lambda x: x.robustness_score, reverse=True)[:10]
         top_data = [r.to_dict() for r in sorted_results]
@@ -372,13 +394,13 @@ async def main():
     N_COMBINATIONS = 100000
 
     print("=" * 70)
-    print("  OTIMIZADOR DSG ROBUSTO")
+    print("  OTIMIZADOR FIFN ROBUSTO")
     print("  Com Validacao Anti-Overfitting")
     print(f"  {N_COMBINATIONS:,} Combinacoes")
     print("  PARA DINHEIRO REAL")
     print("=" * 70)
 
-    opt = DSGRobustOptimizer("EURUSD", "H1")
+    opt = FIFNRobustOptimizer("EURUSD", "H1")
 
     start = datetime(2025, 7, 1, tzinfo=timezone.utc)
     end = datetime.now(timezone.utc)

@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 """
 ================================================================================
-OTIMIZADOR DTT ROBUSTO - COM VALIDACAO ANTI-OVERFITTING
+OTIMIZADOR DSG ROBUSTO - COM VALIDACAO ANTI-OVERFITTING
 ================================================================================
 
-DTT (Detector de Tunelamento Topologico):
-- Usa Homologia Persistente para detectar estruturas topologicas
-- Usa Equacao de Schrodinger para probabilidade de tunelamento
+DSG (Detector de Singularidade Gravitacional):
+- Usa Tensor Metrico Financeiro para modelar espaco-tempo
+- Usa Escalar de Ricci para detectar curvatura
+- Usa Forca de Mare para detectar rompimentos
 
 VALIDACAO:
 1. Divide dados em 70% treino / 30% teste
@@ -31,31 +32,35 @@ from collections import deque
 import warnings
 warnings.filterwarnings('ignore')
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+# Adiciona o diretorio raiz ao path
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
 from api.fxopen_historical_ws import Bar, download_historical_data
-from strategies.alta_volatilidade.dtt_tunelamento_topologico import DetectorTunelamentoTopologico
-from backtesting.robust_optimizer import (
+from strategies.alta_volatilidade.dsg_detector_singularidade import DetectorSingularidadeGravitacional
+from backtesting.common.robust_optimizer import (
     RobustBacktester, RobustResult, BacktestResult,
     save_robust_config
 )
 
 
 @dataclass
-class DTTSignal:
-    """Sinal pre-calculado do DTT"""
+class DSGSignal:
+    """Sinal pre-calculado do DSG"""
     bar_idx: int
     price: float
     high: float
     low: float
-    persistence_entropy: float
-    tunneling_probability: float
-    signal_strength: float
-    direction: int
+    ricci_scalar: float
+    tidal_force: float
+    event_horizon_distance: float
+    ricci_collapsing: bool
+    crossing_horizon: bool
+    geodesic_direction: int
+    signal: int
 
 
-class DTTRobustOptimizer:
-    """Otimizador DTT com validacao anti-overfitting"""
+class DSGRobustOptimizer:
+    """Otimizador DSG com validacao anti-overfitting"""
 
     def __init__(self, symbol: str = "EURUSD", periodicity: str = "H1"):
         self.symbol = symbol
@@ -63,17 +68,17 @@ class DTTRobustOptimizer:
         self.backtester = RobustBacktester(pip=0.0001, spread=1.0)
 
         self.bars: List[Bar] = []
-        self.signals: List[DTTSignal] = []
+        self.signals: List[DSGSignal] = []
         self.train_bars: List[Bar] = []
         self.test_bars: List[Bar] = []
-        self.train_signals: List[DTTSignal] = []
-        self.test_signals: List[DTTSignal] = []
+        self.train_signals: List[DSGSignal] = []
+        self.test_signals: List[DSGSignal] = []
 
         self.robust_results: List[RobustResult] = []
         self.best: Optional[RobustResult] = None
 
     async def load_and_precompute(self, start_date: datetime, end_date: datetime):
-        """Carrega dados e pre-calcula sinais DTT"""
+        """Carrega dados e pre-calcula sinais DSG"""
         print("\n" + "=" * 70)
         print("  CARREGANDO DADOS REAIS")
         print("=" * 70)
@@ -99,20 +104,18 @@ class DTTRobustOptimizer:
         print(f"    Treino: {len(self.train_bars)} barras")
         print(f"    Teste:  {len(self.test_bars)} barras")
 
-        # Pre-calcular DTT
-        print("\n  Pre-calculando sinais DTT (computacionalmente intensivo)...")
+        # Pre-calcular DSG
+        print("\n  Pre-calculando sinais DSG (computacionalmente intensivo)...")
 
-        dtt = DetectorTunelamentoTopologico(
-            max_points=150,
-            use_dimensionality_reduction=True,
-            reduction_method='pca',
-            persistence_entropy_threshold=0.1,
-            tunneling_probability_threshold=0.05
+        dsg = DetectorSingularidadeGravitacional(
+            ricci_collapse_threshold=-0.5,
+            tidal_force_threshold=0.1,
+            lookback_window=30
         )
 
-        prices_buf = deque(maxlen=500)
+        prices_buf = deque(maxlen=100)
         self.signals = []
-        min_prices = 150
+        min_prices = 50
 
         for i, bar in enumerate(self.bars):
             prices_buf.append(bar.close)
@@ -121,23 +124,21 @@ class DTTRobustOptimizer:
                 continue
 
             try:
-                result = dtt.analyze(np.array(prices_buf))
+                prices_arr = np.array(prices_buf)
+                result = dsg.analyze(prices_arr)
 
-                entropy = result['entropy']['persistence_entropy']
-                tunneling = result['tunneling']['tunneling_probability']
-                strength = result['signal_strength']
-                direction_str = result['direction']
-                direction = 1 if direction_str == 'LONG' else (-1 if direction_str == 'SHORT' else 0)
-
-                self.signals.append(DTTSignal(
+                self.signals.append(DSGSignal(
                     bar_idx=i,
                     price=bar.close,
                     high=bar.high,
                     low=bar.low,
-                    persistence_entropy=entropy,
-                    tunneling_probability=tunneling,
-                    signal_strength=strength,
-                    direction=direction
+                    ricci_scalar=result['Ricci_Scalar'],
+                    tidal_force=result['Tidal_Force_Magnitude'],
+                    event_horizon_distance=result['Event_Horizon_Distance'],
+                    ricci_collapsing=result['ricci_collapsing'],
+                    crossing_horizon=result['crossing_horizon'],
+                    geodesic_direction=result['geodesic_direction'],
+                    signal=result['signal']
                 ))
 
             except:
@@ -156,17 +157,17 @@ class DTTRobustOptimizer:
 
         # Debug: mostrar distribuicao de valores
         if self.signals:
-            entropies = [s.persistence_entropy for s in self.signals]
-            tunnelings = [s.tunneling_probability for s in self.signals]
+            ricci_vals = [s.ricci_scalar for s in self.signals]
+            tidal_vals = [s.tidal_force for s in self.signals]
             print(f"\n  Distribuicao de valores:")
-            print(f"    Entropy: min={min(entropies):.3f}, max={max(entropies):.3f}, mean={np.mean(entropies):.3f}")
-            print(f"    Tunneling: min={min(tunnelings):.3f}, max={max(tunnelings):.3f}, mean={np.mean(tunnelings):.3f}")
+            print(f"    Ricci: min={min(ricci_vals):.4f}, max={max(ricci_vals):.4f}, mean={np.mean(ricci_vals):.4f}")
+            print(f"    Tidal: min={min(tidal_vals):.6f}, max={max(tidal_vals):.6f}, mean={np.mean(tidal_vals):.6f}")
 
         return len(self.train_signals) > 50 and len(self.test_signals) > 20
 
-    def _run_backtest(self, signals: List[DTTSignal], bars: List[Bar],
-                      entropy_thresh: float, tunneling_thresh: float,
-                      strength_thresh: float, sl: float, tp: float,
+    def _run_backtest(self, signals: List[DSGSignal], bars: List[Bar],
+                      ricci_thresh: float, tidal_thresh: float,
+                      sl: float, tp: float,
                       bar_offset: int = 0) -> List[float]:
         """Executa backtest em um conjunto de dados"""
         if tp <= sl:
@@ -174,11 +175,16 @@ class DTTRobustOptimizer:
 
         entries = []
         for s in signals:
-            if (s.persistence_entropy >= entropy_thresh and
-                s.tunneling_probability >= tunneling_thresh and
-                s.signal_strength >= strength_thresh and
-                s.direction != 0):
-                entries.append((s.bar_idx - bar_offset, s.price, s.direction))
+            # Condicoes de entrada baseadas no DSG
+            ricci_collapse = s.ricci_scalar < ricci_thresh or s.ricci_collapsing
+            high_tidal = s.tidal_force > tidal_thresh
+            crossing = s.crossing_horizon
+
+            # Precisa de pelo menos 2 condicoes
+            conditions = sum([ricci_collapse, high_tidal, crossing])
+
+            if conditions >= 2 and s.geodesic_direction != 0:
+                entries.append((s.bar_idx - bar_offset, s.price, s.geodesic_direction))
 
         if len(entries) < 3:
             return []
@@ -201,13 +207,13 @@ class DTTRobustOptimizer:
 
         return pnls
 
-    def _test_params(self, entropy_thresh: float, tunneling_thresh: float,
-                     strength_thresh: float, sl: float, tp: float) -> Optional[RobustResult]:
+    def _test_params(self, ricci_thresh: float, tidal_thresh: float,
+                     sl: float, tp: float) -> Optional[RobustResult]:
         """Testa parametros em treino e teste"""
 
         train_pnls = self._run_backtest(
             self.train_signals, self.train_bars,
-            entropy_thresh, tunneling_thresh, strength_thresh, sl, tp,
+            ricci_thresh, tidal_thresh, sl, tp,
             bar_offset=0
         )
         train_result = self.backtester.calculate_backtest_result(train_pnls)
@@ -227,7 +233,7 @@ class DTTRobustOptimizer:
         split_idx = len(self.train_bars)
         test_pnls = self._run_backtest(
             self.test_signals, self.test_bars,
-            entropy_thresh, tunneling_thresh, strength_thresh, sl, tp,
+            ricci_thresh, tidal_thresh, sl, tp,
             bar_offset=split_idx
         )
         test_result = self.backtester.calculate_backtest_result(test_pnls)
@@ -257,9 +263,8 @@ class DTTRobustOptimizer:
             return None
 
         params = {
-            "persistence_entropy_threshold": round(entropy_thresh, 4),
-            "tunneling_probability_threshold": round(tunneling_thresh, 4),
-            "min_signal_strength": round(strength_thresh, 4),
+            "ricci_collapse_threshold": round(ricci_thresh, 4),
+            "tidal_force_threshold": round(tidal_thresh, 6),
             "stop_loss_pips": round(sl, 1),
             "take_profit_pips": round(tp, 1)
         }
@@ -273,21 +278,20 @@ class DTTRobustOptimizer:
             is_robust=is_robust
         )
 
-    def optimize(self, n: int = 300000) -> Optional[RobustResult]:
+    def optimize(self, n: int = 100000) -> Optional[RobustResult]:
         """Executa otimizacao robusta"""
         if not self.train_signals or not self.test_signals:
             print("  ERRO: Dados nao carregados!")
             return None
 
         print(f"\n{'='*70}")
-        print(f"  OTIMIZACAO ROBUSTA DTT: {n:,} COMBINACOES")
+        print(f"  OTIMIZACAO ROBUSTA DSG: {n:,} COMBINACOES")
         print(f"  Com validacao Train/Test Split")
         print(f"{'='*70}")
 
-        # Ranges baseados na distribuicao real (entropy=0.826-0.955, tunneling=0.116-0.925)
-        entropy_vals = np.linspace(0.83, 0.95, 15)
-        tunneling_vals = np.linspace(0.15, 0.50, 15)
-        strength_vals = np.linspace(0.2, 0.7, 10)
+        # Ranges baseados na teoria e distribuicao real
+        ricci_vals = np.linspace(-1.0, -0.1, 20)
+        tidal_vals = np.linspace(0.001, 0.5, 20)
         sl_vals = np.linspace(20, 55, 15)
         tp_vals = np.linspace(25, 80, 20)
 
@@ -299,13 +303,12 @@ class DTTRobustOptimizer:
         for _ in range(n):
             tested += 1
 
-            entropy = float(random.choice(entropy_vals))
-            tunneling = float(random.choice(tunneling_vals))
-            strength = float(random.choice(strength_vals))
+            ricci = float(random.choice(ricci_vals))
+            tidal = float(random.choice(tidal_vals))
             sl = float(random.choice(sl_vals))
             tp = float(random.choice(tp_vals))
 
-            result = self._test_params(entropy, tunneling, strength, sl, tp)
+            result = self._test_params(ricci, tidal, sl, tp)
 
             if result:
                 robust_count += 1
@@ -323,7 +326,7 @@ class DTTRobustOptimizer:
                           f"WR={result.test_result.win_rate:.1%}, "
                           f"PF={result.test_result.profit_factor:.2f}")
 
-            if tested % 30000 == 0:
+            if tested % 20000 == 0:
                 elapsed = (datetime.now() - start).total_seconds()
                 rate = tested / elapsed
                 eta = (n - tested) / rate / 60
@@ -347,7 +350,7 @@ class DTTRobustOptimizer:
 
         save_robust_config(
             result=self.best,
-            strategy_name="DTT-TunelamentoTopologico",
+            strategy_name="DSG-SingularidadeGravitacional",
             symbol=self.symbol,
             periodicity=self.periodicity,
             n_tested=n_tested,
@@ -357,7 +360,7 @@ class DTTRobustOptimizer:
         # Top 10
         top_file = os.path.join(
             os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-            "configs", "dtt_robust_top10.json"
+            "configs", "dsg_robust_top10.json"
         )
         sorted_results = sorted(self.robust_results, key=lambda x: x.robustness_score, reverse=True)[:10]
         top_data = [r.to_dict() for r in sorted_results]
@@ -370,13 +373,13 @@ async def main():
     N_COMBINATIONS = 100000
 
     print("=" * 70)
-    print("  OTIMIZADOR DTT ROBUSTO")
+    print("  OTIMIZADOR DSG ROBUSTO")
     print("  Com Validacao Anti-Overfitting")
     print(f"  {N_COMBINATIONS:,} Combinacoes")
     print("  PARA DINHEIRO REAL")
     print("=" * 70)
 
-    opt = DTTRobustOptimizer("EURUSD", "H1")
+    opt = DSGRobustOptimizer("EURUSD", "H1")
 
     start = datetime(2025, 7, 1, tzinfo=timezone.utc)
     end = datetime.now(timezone.utc)

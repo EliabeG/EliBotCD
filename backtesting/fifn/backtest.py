@@ -23,9 +23,10 @@ import os
 import argparse
 from datetime import datetime, timezone, timedelta
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+# Adiciona diretorio raiz ao path
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
-from backtesting.backtest_engine import BacktestEngine, BacktestResult
+from backtesting.common.backtest_engine import BacktestEngine, BacktestResult
 from strategies.alta_volatilidade import FIFNStrategy
 
 
