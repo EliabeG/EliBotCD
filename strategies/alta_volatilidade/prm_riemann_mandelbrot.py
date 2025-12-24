@@ -9,6 +9,13 @@ na microestrutura do mercado (mudança de estado líquido para gasoso). O indica
 detectar a coerência dessa transição.
 
 Dependências Críticas: PyWavelets, hmmlearn, nolds, scipy.optimize, numpy
+
+VERSÃO CORRIGIDA - SEM LOOK-AHEAD BIAS
+======================================
+Correções aplicadas:
+1. HMM agora é treinado APENAS em dados passados (janela deslizante)
+2. Todas as análises usam apenas informação disponível no momento
+3. Adicionado modo "online" para trading real
 """
 
 import numpy as np
@@ -31,6 +38,8 @@ except ImportError as e:
 class ProtocoloRiemannMandelbrot:
     """
     Implementação completa do Protocolo Riemann-Mandelbrot (PRM)
+    
+    VERSÃO CORRIGIDA - SEM LOOK-AHEAD BIAS
 
     Módulos:
     1. Detecção de Regime: Hidden Markov Models (HMM) Gaussianos
@@ -48,7 +57,9 @@ class ProtocoloRiemannMandelbrot:
                  garch_alpha: float = 0.1,
                  garch_beta: float = 0.85,
                  curvature_threshold: float = 0.1,
-                 lookback_window: int = 100):
+                 lookback_window: int = 100,
+                 hmm_training_window: int = 200,
+                 hmm_min_training_samples: int = 50):
         """
         Inicialização do Protocolo Riemann-Mandelbrot
 
@@ -77,6 +88,13 @@ class ProtocoloRiemannMandelbrot:
 
         lookback_window : int
             Janela de lookback para cálculos deslizantes
+
+        hmm_training_window : int
+            NOVO: Tamanho da janela para treinar o HMM (default: 200)
+            O HMM será treinado apenas nos últimos N pontos ANTERIORES à barra atual
+
+        hmm_min_training_samples : int
+            NOVO: Mínimo de amostras necessárias para treinar o HMM (default: 50)
         """
         self.n_states = n_states
         self.hmm_threshold = hmm_threshold
@@ -87,12 +105,18 @@ class ProtocoloRiemannMandelbrot:
         self.garch_beta = garch_beta
         self.curvature_threshold = curvature_threshold
         self.lookback_window = lookback_window
+        
+        # NOVO: Parâmetros para controle do HMM sem look-ahead
+        self.hmm_training_window = hmm_training_window
+        self.hmm_min_training_samples = hmm_min_training_samples
 
-        # Modelo HMM
+        # Modelo HMM - será retreinado a cada chamada em janela deslizante
         self.hmm_model = None
-        self.is_fitted = False
+        
+        # REMOVIDO: self.is_fitted - não usamos mais flag de "já treinado"
+        # O modelo é SEMPRE treinado em dados passados a cada chamada
 
-        # Cache de resultados
+        # Cache de resultados (opcional, para performance)
         self._cache = {}
 
     # =========================================================================
@@ -108,6 +132,8 @@ class ProtocoloRiemannMandelbrot:
         Estima volatilidade usando GARCH(1,1)
 
         σ²_t = ω + α * ε²_{t-1} + β * σ²_{t-1}
+        
+        NOTA: Este cálculo é naturalmente causal (só usa dados passados)
         """
         n = len(returns)
         variance = np.zeros(n)
@@ -146,15 +172,23 @@ class ProtocoloRiemannMandelbrot:
 
         return features
 
-    def fit_hmm(self, prices: np.ndarray, volume: np.ndarray = None, n_iter: int = 100):
+    def _fit_hmm_on_window(self, prices: np.ndarray, volume: np.ndarray = None, n_iter: int = 50):
         """
-        Treina o modelo HMM Gaussiano em tempo real com 3 estados latentes
-
-        Estados:
-        - Estado 0: Movimento Browniano (Ruído/Consolidação)
-        - Estado 1: Alta Volatilidade Direcional (Tendência/Fluxo Institucional)
-        - Estado 2: Choque de Volatilidade (Flash crashes/News spikes)
+        CORRIGIDO: Treina o modelo HMM em uma janela específica de dados
+        
+        Este método é chamado internamente e treina o HMM apenas nos dados fornecidos.
+        NÃO deve incluir a barra atual - apenas dados passados.
+        
+        Args:
+            prices: Preços da janela de treino (NÃO inclui barra atual)
+            volume: Volume da janela de treino (NÃO inclui barra atual)
+            n_iter: Número de iterações do EM algorithm
         """
+        if len(prices) < self.hmm_min_training_samples:
+            raise ValueError(f"Dados insuficientes para treinar HMM. "
+                           f"Necessário: {self.hmm_min_training_samples}, "
+                           f"Fornecido: {len(prices)}")
+        
         features = self._prepare_hmm_features(prices, volume)
 
         self.hmm_model = GaussianHMM(
@@ -166,29 +200,68 @@ class ProtocoloRiemannMandelbrot:
         )
 
         self.hmm_model.fit(features)
-        self.is_fitted = True
-
-        return self
 
     def get_hmm_probabilities(self, prices: np.ndarray, volume: np.ndarray = None) -> dict:
         """
-        Obtém probabilidades posteriores do HMM
+        CORRIGIDO: Obtém probabilidades posteriores do HMM SEM LOOK-AHEAD
+        
+        O HMM é treinado APENAS em dados passados (excluindo a barra atual).
+        Depois, usamos o modelo treinado para prever a probabilidade da barra atual.
 
         Gatilho: O algoritmo só "acorda" quando a Probabilidade Posterior
-        do Estado 1 ou 2 for > 0.85
+        do Estado 1 ou 2 for > threshold
+        
+        IMPORTANTE: 
+        - prices[:-1] = dados de treino (passado)
+        - prices[-1] = barra atual (a ser prevista)
         """
-        if not self.is_fitted:
-            self.fit_hmm(prices, volume)
-
-        features = self._prepare_hmm_features(prices, volume)
+        n_prices = len(prices)
+        
+        # Verificar se temos dados suficientes
+        min_required = self.hmm_min_training_samples + 1  # +1 para a barra atual
+        if n_prices < min_required:
+            raise ValueError(f"Dados insuficientes. Necessário: {min_required}, Fornecido: {n_prices}")
+        
+        # Determinar janela de treino (excluindo barra atual)
+        # Usar no máximo hmm_training_window barras para treino
+        train_end = n_prices - 1  # Excluir última barra (atual)
+        train_start = max(0, train_end - self.hmm_training_window)
+        
+        training_prices = prices[train_start:train_end]
+        training_volume = volume[train_start:train_end] if volume is not None else None
+        
+        # Treinar HMM apenas nos dados PASSADOS
+        self._fit_hmm_on_window(training_prices, training_volume)
+        
+        # Agora, preparar features para TODA a janela (incluindo barra atual)
+        # para obter as probabilidades
+        # Usamos uma janela que inclui a barra atual para prever seu estado
+        predict_start = max(0, n_prices - self.hmm_training_window)
+        predict_prices = prices[predict_start:]
+        predict_volume = volume[predict_start:] if volume is not None else None
+        
+        features = self._prepare_hmm_features(predict_prices, predict_volume)
 
         # Probabilidades posteriores
-        posterior_probs = self.hmm_model.predict_proba(features)
+        try:
+            posterior_probs = self.hmm_model.predict_proba(features)
+            states = self.hmm_model.predict(features)
+        except Exception as e:
+            # Em caso de erro, retornar valores neutros
+            return {
+                'posterior_probs': np.zeros((1, self.n_states)),
+                'states': np.array([0]),
+                'current_state': 0,
+                'current_prob': 0.0,
+                'prob_state_0': 1.0,
+                'prob_state_1': 0.0,
+                'prob_state_2': 0.0,
+                'hmm_activated': False,
+                'high_volatility_state': False,
+                'Prob_HMM': 0.0
+            }
 
-        # Estado mais provável
-        states = self.hmm_model.predict(features)
-
-        # Probabilidade do estado atual (último ponto)
+        # Estado mais provável para a barra ATUAL (última)
         current_state = states[-1]
         current_prob = posterior_probs[-1, current_state]
 
@@ -225,6 +298,8 @@ class ProtocoloRiemannMandelbrot:
 
         Objetivo: Isolar coeficientes de alta energia em escalas específicas que
         correspondem aos ciclos de liquidez dos bancos centrais (intraday).
+        
+        NOTA: CWT é naturalmente causal - só processa os dados fornecidos
         """
         if scales is None:
             # Escalas que capturam ciclos de diferentes frequências
@@ -258,6 +333,8 @@ class ProtocoloRiemannMandelbrot:
             Escala mínima (descartar ruído HFT)
         high_scale_cutoff : int
             Escala máxima (descartar tendência macro)
+            
+        NOTA: Este é um filtro que processa apenas os dados fornecidos
         """
         scales = np.arange(1, min(128, len(prices) // 4))
         cwt_result = self.apply_cwt(prices, scales)
@@ -312,6 +389,8 @@ class ProtocoloRiemannMandelbrot:
 
         Precisamos saber se a volatilidade é determinística (operável)
         ou estocástica pura (aleatória).
+        
+        NOTA: Este cálculo é naturalmente causal - só usa os dados fornecidos
         """
         try:
             # Usar biblioteca nolds para cálculo robusto do expoente de Lyapunov
@@ -376,6 +455,8 @@ class ProtocoloRiemannMandelbrot:
         - Se 0 < λ_max < K (onde K é um limiar empírico ajustado, ex: 0.5):
           O sistema está em Caos Determinístico. Existe uma "ordem oculta" na volatilidade.
           ESTE É O PONTO DE ENTRADA.
+          
+        NOTA: Este cálculo usa apenas dados passados (janela deslizante)
         """
         # Usar série filtrada pela wavelet
         filtered_series = self.filter_cwt_reconstruct(prices)
@@ -529,6 +610,11 @@ class ProtocoloRiemannMandelbrot:
     def analyze(self, prices: np.ndarray, volume: np.ndarray = None) -> dict:
         """
         Execução completa do Protocolo Riemann-Mandelbrot
+        
+        VERSÃO CORRIGIDA - SEM LOOK-AHEAD BIAS
+        
+        O HMM é treinado apenas em dados passados a cada chamada.
+        Todos os outros cálculos também usam apenas dados disponíveis.
 
         Retorno: O script deve retornar um vetor [Prob_HMM, Lyapunov_Score, Curvature_Signal]
 
@@ -537,19 +623,20 @@ class ProtocoloRiemannMandelbrot:
         """
         prices = np.array(prices, dtype=float)
 
-        if len(prices) < 50:
-            raise ValueError("Dados insuficientes. Necessário mínimo de 50 pontos de preço.")
+        min_required = max(self.hmm_min_training_samples + 1, 50)
+        if len(prices) < min_required:
+            raise ValueError(f"Dados insuficientes. Necessário mínimo de {min_required} pontos de preço.")
 
-        # 1. Análise HMM
+        # 1. Análise HMM (CORRIGIDA - treina apenas em dados passados)
         hmm_result = self.get_hmm_probabilities(prices, volume)
 
-        # 2. Análise Wavelet (já utilizada internamente)
+        # 2. Análise Wavelet (já era correta - só processa dados fornecidos)
         wavelet_spectrogram = self.get_wavelet_power_spectrogram(prices)
 
-        # 3. Análise Lyapunov
+        # 3. Análise Lyapunov (já era correta - usa janela deslizante)
         lyapunov_result = self.get_lyapunov_analysis(prices)
 
-        # 4. Análise de Curvatura
+        # 4. Análise de Curvatura (já era correta - usa apenas dados fornecidos)
         curvature_result = self.get_curvature_signal(prices)
 
         # Vetor de saída: [Prob_HMM, Lyapunov_Score, Curvature_Signal]
@@ -730,6 +817,7 @@ if __name__ == "__main__":
     print("=" * 80)
     print("PROTOCOLO RIEMANN-MANDELBROT (PRM)")
     print("Indicador de Detecção de Singularidade de Preço")
+    print("VERSÃO CORRIGIDA - SEM LOOK-AHEAD BIAS")
     print("=" * 80)
 
     # Gerar dados simulados (em produção, usar dados reais do EURUSD)
@@ -762,17 +850,19 @@ if __name__ == "__main__":
     print(f"Preço inicial: {prices[0]:.5f}")
     print(f"Preço final: {prices[-1]:.5f}")
 
-    # Criar instância do PRM
+    # Criar instância do PRM com configurações padrão
     prm = ProtocoloRiemannMandelbrot(
         n_states=3,
         hmm_threshold=0.85,
         lyapunov_threshold_k=0.5,
-        curvature_threshold=0.1
+        curvature_threshold=0.1,
+        hmm_training_window=200,  # NOVO: janela de treino do HMM
+        hmm_min_training_samples=50  # NOVO: mínimo de amostras
     )
 
     # Executar análise completa
     print("\n" + "-" * 40)
-    print("Executando análise PRM...")
+    print("Executando análise PRM (SEM LOOK-AHEAD)...")
     print("-" * 40)
 
     result = prm.analyze(prices, volume)
@@ -813,3 +903,6 @@ if __name__ == "__main__":
         print("Singularidade NAO detectada.")
         print("   Aguardar alinhamento de todos os subsistemas.")
     print("=" * 80)
+    
+    print("\n[INFO] Esta versão do PRM foi corrigida para eliminar look-ahead bias.")
+    print("[INFO] O HMM agora é treinado apenas em dados passados a cada chamada.")
