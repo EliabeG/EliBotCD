@@ -724,9 +724,17 @@ class RessonadorHilbertHuangFractal:
         # Dimensão fractal baixa (determinística)?
         fractal_low = fractal_result['fractal_trigger']
 
-        # Posição relativa à nuvem
-        price_above_cloud = current_price > current_cloud
-        price_below_cloud = current_price < current_cloud
+        # Usar momentum do preco REAL (ultimas 5 barras vs anteriores 5)
+        if len(prices) >= 10:
+            recent_price = np.mean(prices[-5:])
+            older_price = np.mean(prices[-10:-5])
+            momentum = (recent_price - older_price) / older_price if older_price > 0 else 0
+        else:
+            momentum = 0
+
+        # Preco em alta = momentum positivo, em baixa = momentum negativo
+        price_above_cloud = momentum > 0.0003  # 0.03% threshold
+        price_below_cloud = momentum < -0.0003
 
         # Determinar sinal
         signal = 0

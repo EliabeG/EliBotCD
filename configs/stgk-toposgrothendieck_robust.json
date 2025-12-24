@@ -1,0 +1,51 @@
+{
+  "strategy": "STGK-ToposGrothendieck",
+  "symbol": "EURUSD",
+  "periodicity": "H1",
+  "optimized_at": "2025-12-24T04:25:58.072741+00:00",
+  "validation": {
+    "method": "train_test_split",
+    "train_ratio": 0.7,
+    "test_ratio": 0.3,
+    "combinations_tested": 50000,
+    "robust_found": 19455,
+    "anti_overfitting": true
+  },
+  "parameters": {
+    "confidence_threshold": 0.782,
+    "stop_loss_pips": 42.7,
+    "take_profit_pips": 58.0
+  },
+  "performance": {
+    "train": {
+      "trades": 105,
+      "win_rate": 0.5048,
+      "profit_factor": 1.3293,
+      "total_pnl_pips": 748.29,
+      "max_drawdown": 0.1136
+    },
+    "test": {
+      "trades": 80,
+      "win_rate": 0.6,
+      "profit_factor": 2.3519,
+      "total_pnl_pips": 1469.46,
+      "max_drawdown": 0.0546
+    },
+    "robustness_score": 1,
+    "degradation_pct": -47.9
+  },
+  "filters_applied": {
+    "min_trades_train": 30,
+    "min_trades_test": 15,
+    "win_rate_range": [
+      0.3,
+      0.65
+    ],
+    "profit_factor_range": [
+      1.1,
+      4.0
+    ],
+    "max_drawdown": 0.4,
+    "min_robustness": 0.6
+  }
+}

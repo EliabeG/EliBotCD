@@ -335,10 +335,11 @@ class IsingPhase:
         """Determina fase do sistema."""
         abs_mag = np.abs(magnetization)
 
-        if abs_mag > 0.5 and correlation > 0.3:
+        # Thresholds ajustados para dados reais (mag tipica: -0.07 a 0.08)
+        if abs_mag > 0.025:
             phase = "FERROMAGNETICO"
             desc = "Ordem Ferromagnética - Tendência"
-        elif abs_mag < 0.2 and correlation < 0.2:
+        elif abs_mag < 0.01:
             phase = "PARAMAGNETICO"
             desc = "Desordem Paramagnética - Ruído"
         else:

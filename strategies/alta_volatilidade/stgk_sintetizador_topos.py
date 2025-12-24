@@ -596,20 +596,21 @@ class ForgetfulFunctor:
         else:
             recent_trend = 0
 
+        # Trend como principal discriminador - espelhado para balanceamento
         buy_conditions = {
-            'H1_collapsed': H1_dim == 0 and H1_obstruction < 0.2,
-            'K_decreasing': K < 0.6,
+            'H1_low': H1_obstruction < 0.1,
+            'K_moderate': K < 4.0,
             'bull_morphism': bull_iso,
-            'trend_up': recent_trend > 0,
-            'consistency_high': H0_consistency > 0.5
+            'trend_up': recent_trend > 0.0008,  # Trend positivo
+            'positive_consistency': H0_consistency > 0
         }
 
         sell_conditions = {
-            'H1_high': H1_dim > 0 or H1_obstruction > 0.5,
-            'K_artificial': K < 0.3 and recent_trend > 0.02,
+            'H1_high': H1_obstruction >= 0.1,
+            'K_moderate': K < 4.0,  # Mesma condicao
             'bear_morphism': bear_iso,
-            'trend_down': recent_trend < 0,
-            'consistency_low': H0_consistency < 0.3
+            'trend_down': recent_trend < -0.0008,  # Trend negativo
+            'negative_consistency': H0_consistency <= 0
         }
 
         buy_score = sum(buy_conditions.values())
