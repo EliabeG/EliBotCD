@@ -136,28 +136,35 @@ class PRMStrategy(BaseStrategy):
                 if direction == SignalType.HOLD:
                     return None
 
-                # Calcula níveis de stop e take profit
+                # CORREÇÃO #5: Não calcular níveis de stop/take aqui!
+                # O BacktestEngine calculará baseado no entry_price REAL (OPEN da próxima barra)
+                # Passamos apenas os valores em PIPS para o BacktestEngine recalcular
                 pip_value = 0.0001  # Para EURUSD
 
-                if direction == SignalType.BUY:
-                    stop_loss = price - (self.stop_loss_pips * pip_value)
-                    take_profit = price + (self.take_profit_pips * pip_value)
-                else:  # SELL
-                    stop_loss = price + (self.stop_loss_pips * pip_value)
-                    take_profit = price - (self.take_profit_pips * pip_value)
+                # ANTES (ERRADO): Calculava stop/take baseado no CLOSE atual
+                # if direction == SignalType.BUY:
+                #     stop_loss = price - (self.stop_loss_pips * pip_value)
+                #     take_profit = price + (self.take_profit_pips * pip_value)
+                # else:  # SELL
+                #     stop_loss = price + (self.stop_loss_pips * pip_value)
+                #     take_profit = price - (self.take_profit_pips * pip_value)
 
                 # Calcula confiança baseada nos scores
                 confidence = self._calculate_confidence(result)
 
-                # Cria sinal
+                # CORREÇÃO #5: Cria sinal com stop/take em PIPS (não níveis de preço)
+                # O BacktestEngine usará stop_loss_pips e take_profit_pips para
+                # calcular os níveis reais baseados no entry_price (OPEN da próxima barra)
                 signal = Signal(
                     type=direction,
                     price=price,
                     timestamp=timestamp,
                     strategy_name=self.name,
                     confidence=confidence,
-                    stop_loss=stop_loss,
-                    take_profit=take_profit,
+                    stop_loss=None,        # CORREÇÃO #5: Será calculado pelo BacktestEngine
+                    take_profit=None,      # CORREÇÃO #5: Será calculado pelo BacktestEngine
+                    stop_loss_pips=self.stop_loss_pips,       # NOVO
+                    take_profit_pips=self.take_profit_pips,   # NOVO
                     reason=self._generate_reason(result)
                 )
 

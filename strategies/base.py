@@ -27,6 +27,11 @@ class Signal:
     take_profit: Optional[float] = None
     reason: str = ""
 
+    # CORREÇÃO #5: Campos para stop/take em PIPS
+    # O BacktestEngine usará estes para calcular níveis reais baseados na entrada
+    stop_loss_pips: Optional[float] = None
+    take_profit_pips: Optional[float] = None
+
     def __str__(self) -> str:
         direction = "COMPRA" if self.type == SignalType.BUY else "VENDA" if self.type == SignalType.SELL else "AGUARDAR"
         return (f"[{self.strategy_name}] {direction} @ {self.price:.5f} | "

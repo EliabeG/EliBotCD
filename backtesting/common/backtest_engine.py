@@ -177,9 +177,12 @@ class BacktestEngine:
         self.current_position: Optional[Position] = None
         self.trades: List[Trade] = []
         self.signals_generated: List[Signal] = []
-        
+
         # NOVO: Sinal pendente para execução na próxima barra
         self.pending_signal: Optional[Signal] = None
+
+        # CORREÇÃO #1: Fechamento pendente para executar no OPEN da próxima barra
+        self.pending_close_signal: bool = False
 
     def run(self,
             strategy: BaseStrategy,
@@ -251,6 +254,14 @@ class BacktestEngine:
         # Processa cada barra
         for i, bar in enumerate(bars):
             # ================================================================
+            # PASSO 0: CORREÇÃO #1 - Fechar posição PENDENTE no OPEN desta barra
+            # (Quando sinal oposto foi gerado na barra anterior)
+            # ================================================================
+            if self.pending_close_signal and self.current_position:
+                self._close_position(bar.open, bar.timestamp, "signal")
+                self.pending_close_signal = False
+
+            # ================================================================
             # PASSO 1: Executar sinal PENDENTE no OPEN desta barra
             # ================================================================
             if self.pending_signal is not None:
@@ -286,16 +297,17 @@ class BacktestEngine:
                 self.signals_generated.append(signal)
 
                 # Verificar se devemos armazenar como pendente ou processar
-                # Se tem posição aberta e sinal é oposto, fechar posição
+                # Se tem posição aberta e sinal é oposto, marcar para fechar na PRÓXIMA barra
                 if self.current_position:
                     should_close = (
                         (self.current_position.type == PositionType.LONG and signal.type == SignalType.SELL) or
                         (self.current_position.type == PositionType.SHORT and signal.type == SignalType.BUY)
                     )
                     if should_close:
-                        # Fechar posição no CLOSE desta barra (sinal de saída)
-                        self._close_position(bar.close, bar.timestamp, "signal")
-                
+                        # CORREÇÃO #1: Marcar para fechar no OPEN da PRÓXIMA barra
+                        # (antes era: self._close_position(bar.close, ...) - ERRADO!)
+                        self.pending_close_signal = True
+
                 # Armazenar sinal para executar na PRÓXIMA barra
                 if not self.current_position:
                     self.pending_signal = signal
@@ -332,7 +344,8 @@ class BacktestEngine:
         self.current_position = None
         self.trades = []
         self.signals_generated = []
-        self.pending_signal = None  # NOVO
+        self.pending_signal = None
+        self.pending_close_signal = False  # CORREÇÃO #1
 
     def _update_equity(self, current_price: float):
         """Atualiza curva de equity"""
@@ -353,16 +366,18 @@ class BacktestEngine:
     def _execute_pending_signal(self, signal: Signal, bar: Bar):
         """
         NOVO: Executa um sinal pendente no OPEN da barra atual
-        
+
         Esta é a forma CORRETA de executar sinais:
         - O sinal foi gerado no CLOSE da barra anterior
         - A execução acontece no OPEN desta barra
         - Isso reflete a realidade do trading
+
+        CORREÇÃO #5: Stop/Take são recalculados baseados no entry_price REAL
         """
         if self.current_position:
             # Já tem posição, não abrir outra
             return
-            
+
         # Aplicar spread e slippage ao OPEN
         slippage = self.slippage_pips * self.pip_value
         spread = self.spread_pips * self.pip_value
@@ -376,13 +391,29 @@ class BacktestEngine:
             entry_price = bar.open - spread / 2 - slippage
             pos_type = PositionType.SHORT
 
+        # CORREÇÃO #5: Recalcular stop/take baseado no entry_price REAL
+        # Se o sinal tem stop_loss_pips/take_profit_pips, usar esses valores
+        # para calcular os níveis reais baseados na entrada
+        if signal.stop_loss_pips is not None and signal.take_profit_pips is not None:
+            # Calcular níveis baseados no entry_price REAL
+            if pos_type == PositionType.LONG:
+                actual_stop_loss = entry_price - (signal.stop_loss_pips * self.pip_value)
+                actual_take_profit = entry_price + (signal.take_profit_pips * self.pip_value)
+            else:  # SHORT
+                actual_stop_loss = entry_price + (signal.stop_loss_pips * self.pip_value)
+                actual_take_profit = entry_price - (signal.take_profit_pips * self.pip_value)
+        else:
+            # Compatibilidade: usar valores fixos se não tiver pips
+            actual_stop_loss = signal.stop_loss
+            actual_take_profit = signal.take_profit
+
         self.current_position = Position(
             type=pos_type,
             entry_price=entry_price,
             entry_time=bar.timestamp,
             size=self.position_size,
-            stop_loss=signal.stop_loss,
-            take_profit=signal.take_profit,
+            stop_loss=actual_stop_loss,      # CORREÇÃO #5: Baseado na entrada real
+            take_profit=actual_take_profit,  # CORREÇÃO #5: Baseado na entrada real
             strategy_name=signal.strategy_name,
             signal_confidence=signal.confidence
         )

@@ -277,9 +277,16 @@ class PRMRobustOptimizer:
         pip = 0.0001
         spread = 1.0 * pip  # 1 pip de spread
         slippage = 0.5 * pip  # 0.5 pip de slippage
-        
+
+        # CORREÇÃO #2: Rastrear último índice de saída para evitar trades simultâneos
+        last_exit_idx = -1
+
         for entry_idx, entry_price_raw, direction in entries:
             if entry_idx < 0 or entry_idx >= len(bars) - 1:
+                continue
+
+            # CORREÇÃO #2: Pular se ainda estamos em um trade anterior
+            if entry_idx <= last_exit_idx:
                 continue
 
             # Aplicar spread e slippage na entrada
@@ -295,9 +302,10 @@ class PRMRobustOptimizer:
             # Simular execução nas barras seguintes
             exit_price = None
             exit_reason = None
-            
+            exit_bar_idx = entry_idx  # CORREÇÃO #2: Inicializar índice de saída
+
             max_bars = min(200, len(bars) - entry_idx - 1)
-            
+
             for j in range(1, max_bars + 1):
                 bar_idx = entry_idx + j
                 if bar_idx >= len(bars):
@@ -313,24 +321,28 @@ class PRMRobustOptimizer:
                     if bar.open <= stop_price:
                         exit_price = bar.open - slippage  # Pior execução
                         exit_reason = "stop_gap"
+                        exit_bar_idx = bar_idx  # CORREÇÃO #2
                         break
                     # Gap up - take atingido no open
                     if bar.open >= take_price:
                         exit_price = bar.open - slippage  # Execução no open
                         exit_reason = "take_gap"
+                        exit_bar_idx = bar_idx  # CORREÇÃO #2
                         break
                 else:  # SHORT
                     # Gap up - stop atingido no open
                     if bar.open >= stop_price:
                         exit_price = bar.open + slippage  # Pior execução
                         exit_reason = "stop_gap"
+                        exit_bar_idx = bar_idx  # CORREÇÃO #2
                         break
                     # Gap down - take atingido no open
                     if bar.open <= take_price:
                         exit_price = bar.open + slippage  # Execução no open
                         exit_reason = "take_gap"
+                        exit_bar_idx = bar_idx  # CORREÇÃO #2
                         break
-                
+
                 # ============================================================
                 # VERIFICAR DURANTE A BARRA (HIGH/LOW)
                 # Stop tem prioridade (conservador)
@@ -340,40 +352,49 @@ class PRMRobustOptimizer:
                     if bar.low <= stop_price:
                         exit_price = stop_price - slippage
                         exit_reason = "stop"
+                        exit_bar_idx = bar_idx  # CORREÇÃO #2
                         break
                     # Take profit
                     if bar.high >= take_price:
                         exit_price = take_price - slippage
                         exit_reason = "take"
+                        exit_bar_idx = bar_idx  # CORREÇÃO #2
                         break
                 else:  # SHORT
                     # Stop loss primeiro
                     if bar.high >= stop_price:
                         exit_price = stop_price + slippage
                         exit_reason = "stop"
+                        exit_bar_idx = bar_idx  # CORREÇÃO #2
                         break
                     # Take profit
                     if bar.low <= take_price:
                         exit_price = take_price + slippage
                         exit_reason = "take"
+                        exit_bar_idx = bar_idx  # CORREÇÃO #2
                         break
             
             # Se não saiu por stop/take, fechar no último close disponível
             if exit_price is None:
-                last_bar = bars[min(entry_idx + max_bars, len(bars) - 1)]
+                exit_bar_idx = min(entry_idx + max_bars, len(bars) - 1)
+                last_bar = bars[exit_bar_idx]
                 if direction == 1:
                     exit_price = last_bar.close - slippage
                 else:
                     exit_price = last_bar.close + slippage
                 exit_reason = "timeout"
-            
+            # (exit_bar_idx já foi definido dentro do loop quando exit_price foi setado)
+
             # Calcular PnL em pips
             if direction == 1:
                 pnl_pips = (exit_price - entry_price) / pip
             else:
                 pnl_pips = (entry_price - exit_price) / pip
-            
+
             pnls.append(pnl_pips)
+
+            # CORREÇÃO #2: Atualizar último índice de saída
+            last_exit_idx = exit_bar_idx
 
         return pnls
 

@@ -323,36 +323,76 @@ class ProtocoloRiemannMandelbrot:
                                 low_scale_cutoff: int = 5,
                                 high_scale_cutoff: int = 64) -> np.ndarray:
         """
-        Filtro: Reconstruir o sinal (iCWT) descartando os coeficientes de alta
-        frequência (ruído de HFT) e de frequência ultra-baixa (tendência macro),
-        focando apenas na "Banda de Volatilidade Operável".
+        CORREÇÃO #4: Substituir CWT não-causal por filtro CAUSAL
 
-        Parâmetros:
+        O problema original: A CWT (Continuous Wavelet Transform) usa convolução
+        que naturalmente olha para pontos futuros, introduzindo look-ahead bias.
+
+        Solução: Usar média móvel exponencial (EMA) que é 100% causal.
+        A EMA suaviza ruído de alta frequência mantendo a estrutura de preços,
+        similar ao objetivo original da CWT mas sem look-ahead.
+
+        Parâmetros mantidos para compatibilidade, mas agora usam EMA adaptativa:
         -----------
         low_scale_cutoff : int
-            Escala mínima (descartar ruído HFT)
+            Controla suavização rápida (janela curta)
         high_scale_cutoff : int
-            Escala máxima (descartar tendência macro)
-            
-        NOTA: Este é um filtro que processa apenas os dados fornecidos
+            Controla suavização lenta (janela longa)
+        """
+        n = len(prices)
+        if n < 3:
+            return prices.copy()
+
+        # CORREÇÃO #4: Usar filtro causal baseado em EMA adaptativa
+        # Combina duas EMAs: uma rápida e uma lenta, para filtrar ruído
+        # mantendo estrutura de preços (similar ao objetivo da wavelet)
+
+        # EMA rápida (equivalente a low_scale_cutoff)
+        # alpha_fast = 2 / (low_scale_cutoff + 1)
+        fast_window = max(3, low_scale_cutoff)
+        alpha_fast = 2.0 / (fast_window + 1)
+
+        # EMA lenta (equivalente a high_scale_cutoff)
+        slow_window = min(high_scale_cutoff, n // 2)
+        alpha_slow = 2.0 / (slow_window + 1)
+
+        # Calcular EMA rápida (causal - só usa dados passados)
+        ema_fast = np.zeros(n)
+        ema_fast[0] = prices[0]
+        for i in range(1, n):
+            ema_fast[i] = alpha_fast * prices[i] + (1 - alpha_fast) * ema_fast[i-1]
+
+        # Calcular EMA lenta (causal - só usa dados passados)
+        ema_slow = np.zeros(n)
+        ema_slow[0] = prices[0]
+        for i in range(1, n):
+            ema_slow[i] = alpha_slow * prices[i] + (1 - alpha_slow) * ema_slow[i-1]
+
+        # Combinar: usar média das duas EMAs para suavização balanceada
+        # Isso captura a "Banda de Volatilidade Operável" de forma causal
+        filtered = (ema_fast + ema_slow) / 2.0
+
+        return filtered
+
+    def filter_cwt_reconstruct_original(self, prices: np.ndarray,
+                                         low_scale_cutoff: int = 5,
+                                         high_scale_cutoff: int = 64) -> np.ndarray:
+        """
+        DEPRECATED: Versão original com CWT (NÃO-CAUSAL - tem look-ahead bias!)
+
+        Mantido apenas para referência e comparação.
+        NÃO USAR EM PRODUÇÃO OU BACKTESTING!
         """
         scales = np.arange(1, min(128, len(prices) // 4))
         cwt_result = self.apply_cwt(prices, scales)
         coefficients = cwt_result['coefficients']
 
-        # Filtrar: manter apenas escalas na "Banda de Volatilidade Operável"
         filtered_coeffs = coefficients.copy()
-
-        # Zerar coeficientes fora da banda
         for i, scale in enumerate(scales):
             if scale < low_scale_cutoff or scale > high_scale_cutoff:
                 filtered_coeffs[i, :] = 0
 
-        # Reconstrução aproximada (soma ponderada dos coeficientes filtrados)
-        # Usando método de reconstrução por soma
         reconstructed = np.real(np.sum(filtered_coeffs, axis=0))
-
-        # Normalizar para mesma escala do preço original
         reconstructed = reconstructed - np.mean(reconstructed)
         reconstructed = reconstructed / (np.std(reconstructed) + 1e-10)
         reconstructed = reconstructed * np.std(prices) + np.mean(prices)
@@ -511,26 +551,33 @@ class ProtocoloRiemannMandelbrot:
         1. Calcule o vetor tangente unitário (T) e o vetor normal unitário (N)
            da série de preços suavizada pela Wavelet.
         2. Calcule a Curvatura (κ) local.
+
+        CORREÇÃO #3: Usar diferenças BACKWARD (causais) ao invés de np.gradient
+        que usa diferenças centrais e introduz look-ahead bias.
         """
-        # Usar série suavizada pela wavelet
+        # Usar série suavizada pela wavelet (CORREÇÃO #4 torna isso causal)
         filtered_prices = self.filter_cwt_reconstruct(prices)
 
         n = len(filtered_prices)
         t = np.arange(n, dtype=float)  # x = tempo
         y = filtered_prices  # y = preço
 
-        # Derivadas numéricas (diferenças finitas centradas)
+        # CORREÇÃO #3: Usar diferenças BACKWARD (apenas dados passados)
         # x' = dx/dt = 1 (tempo é uniforme)
         x_prime = np.ones(n)
 
-        # y' = dy/dt
-        y_prime = np.gradient(y)
+        # y' = dy/dt usando diferença backward (causal)
+        # ANTES (ERRADO): y_prime = np.gradient(y)  # Usava diferenças centrais!
+        y_prime = np.zeros(n)
+        y_prime[1:] = y[1:] - y[:-1]  # Diferença backward: y[i] - y[i-1]
 
         # x'' = d²x/dt² = 0
         x_double_prime = np.zeros(n)
 
-        # y'' = d²y/dt²
-        y_double_prime = np.gradient(y_prime)
+        # y'' = d²y/dt² usando diferença backward (causal)
+        # ANTES (ERRADO): y_double_prime = np.gradient(y_prime)  # Usava diferenças centrais!
+        y_double_prime = np.zeros(n)
+        y_double_prime[2:] = y_prime[2:] - y_prime[1:-1]  # Diferença backward da derivada
 
         # Curvatura: κ = |x'y'' - y'x''| / (x'^2 + y'^2)^(3/2)
         numerator = np.abs(x_prime * y_double_prime - y_prime * x_double_prime)
@@ -544,13 +591,17 @@ class ProtocoloRiemannMandelbrot:
     def calculate_tangent_normal_vectors(self, prices: np.ndarray) -> dict:
         """
         Calcule o vetor tangente unitário (T) e o vetor normal unitário (N)
+
+        CORREÇÃO #3: Usar diferenças BACKWARD (causais) ao invés de np.gradient
         """
         filtered_prices = self.filter_cwt_reconstruct(prices)
 
         n = len(filtered_prices)
 
-        # Derivadas
-        dy = np.gradient(filtered_prices)
+        # CORREÇÃO #3: Derivadas usando diferença backward (causal)
+        # ANTES (ERRADO): dy = np.gradient(filtered_prices)
+        dy = np.zeros(n)
+        dy[1:] = filtered_prices[1:] - filtered_prices[:-1]
         dx = np.ones(n)  # dt = 1
 
         # Vetor tangente
@@ -576,11 +627,15 @@ class ProtocoloRiemannMandelbrot:
         3. A Aceleração da Curvatura (Δκ) excede um limite crítico (indica que a
            "força G" do mercado mudou de direção drasticamente, sinalizando
            entrada de grandes players).
+
+        CORREÇÃO #3: Usar diferenças BACKWARD (causais) ao invés de np.gradient
         """
         curvature = self.calculate_curvature(prices)
 
-        # Aceleração da Curvatura (Δκ)
-        curvature_acceleration = np.gradient(curvature)
+        # CORREÇÃO #3: Aceleração da Curvatura (Δκ) usando diferença backward
+        # ANTES (ERRADO): curvature_acceleration = np.gradient(curvature)
+        curvature_acceleration = np.zeros_like(curvature)
+        curvature_acceleration[1:] = curvature[1:] - curvature[:-1]
 
         # Verificar se excede limite crítico
         current_acceleration = curvature_acceleration[-1]
