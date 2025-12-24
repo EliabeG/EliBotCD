@@ -1,0 +1,53 @@
+{
+  "strategy": "DTT-TunelamentoTopologico",
+  "symbol": "EURUSD",
+  "periodicity": "H1",
+  "optimized_at": "2025-12-24T00:50:42.712344+00:00",
+  "validation": {
+    "method": "train_test_split",
+    "train_ratio": 0.7,
+    "test_ratio": 0.3,
+    "combinations_tested": 100000,
+    "robust_found": 7779,
+    "anti_overfitting": true
+  },
+  "parameters": {
+    "persistence_entropy_threshold": 0.9071,
+    "tunneling_probability_threshold": 0.5,
+    "min_signal_strength": 0.3111,
+    "stop_loss_pips": 27.5,
+    "take_profit_pips": 65.5
+  },
+  "performance": {
+    "train": {
+      "trades": 179,
+      "win_rate": 0.419,
+      "profit_factor": 1.6328,
+      "total_pnl_pips": 1875.47,
+      "max_drawdown": 0.0446
+    },
+    "test": {
+      "trades": 59,
+      "win_rate": 0.4237,
+      "profit_factor": 1.6648,
+      "total_pnl_pips": 644.16,
+      "max_drawdown": 0.0721
+    },
+    "robustness_score": 1,
+    "degradation_pct": -1.55
+  },
+  "filters_applied": {
+    "min_trades_train": 30,
+    "min_trades_test": 15,
+    "win_rate_range": [
+      0.3,
+      0.65
+    ],
+    "profit_factor_range": [
+      1.1,
+      4.0
+    ],
+    "max_drawdown": 0.4,
+    "min_robustness": 0.6
+  }
+}

@@ -1,0 +1,54 @@
+{
+  "strategy": "FIFN-FisherNavier",
+  "symbol": "EURUSD",
+  "periodicity": "H1",
+  "optimized_at": "2025-12-24T00:58:08.003516+00:00",
+  "validation": {
+    "method": "train_test_split",
+    "train_ratio": 0.7,
+    "test_ratio": 0.3,
+    "combinations_tested": 100000,
+    "robust_found": 5955,
+    "anti_overfitting": true
+  },
+  "parameters": {
+    "reynolds_sweet_low": 2521.0,
+    "reynolds_sweet_high": 3786.0,
+    "skewness_threshold": 0.3091,
+    "kl_divergence_threshold": 0.01733,
+    "stop_loss_pips": 22.5,
+    "take_profit_pips": 27.9
+  },
+  "performance": {
+    "train": {
+      "trades": 25,
+      "win_rate": 0.48,
+      "profit_factor": 1.0564,
+      "total_pnl_pips": 17.24,
+      "max_drawdown": 0.0114
+    },
+    "test": {
+      "trades": 14,
+      "win_rate": 0.5714,
+      "profit_factor": 1.5259,
+      "total_pnl_pips": 74.16,
+      "max_drawdown": 0.0046
+    },
+    "robustness_score": 1,
+    "degradation_pct": -31.75
+  },
+  "filters_applied": {
+    "min_trades_train": 30,
+    "min_trades_test": 15,
+    "win_rate_range": [
+      0.3,
+      0.65
+    ],
+    "profit_factor_range": [
+      1.1,
+      4.0
+    ],
+    "max_drawdown": 0.4,
+    "min_robustness": 0.6
+  }
+}

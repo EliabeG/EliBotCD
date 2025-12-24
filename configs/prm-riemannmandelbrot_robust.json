@@ -1,0 +1,56 @@
+{
+  "strategy": "PRM-RiemannMandelbrot",
+  "symbol": "EURUSD",
+  "periodicity": "H1",
+  "optimized_at": "2025-12-24T00:23:36.722519+00:00",
+  "validation": {
+    "method": "train_test_split",
+    "train_ratio": 0.7,
+    "test_ratio": 0.3,
+    "combinations_tested": 500000,
+    "robust_found": 14249,
+    "anti_overfitting": true
+  },
+  "parameters": {
+    "hmm_threshold": 0.5,
+    "lyapunov_threshold": 0.0679,
+    "hmm_states_allowed": [
+      0,
+      1
+    ],
+    "stop_loss_pips": 45.7,
+    "take_profit_pips": 72.1
+  },
+  "performance": {
+    "train": {
+      "trades": 398,
+      "win_rate": 0.4271,
+      "profit_factor": 1.0832,
+      "total_pnl_pips": 878.3,
+      "max_drawdown": 0.1354
+    },
+    "test": {
+      "trades": 190,
+      "win_rate": 0.4474,
+      "profit_factor": 1.0949,
+      "total_pnl_pips": 447.86,
+      "max_drawdown": 0.113
+    },
+    "robustness_score": 1,
+    "degradation_pct": -2.91
+  },
+  "filters_applied": {
+    "min_trades_train": 30,
+    "min_trades_test": 15,
+    "win_rate_range": [
+      0.3,
+      0.65
+    ],
+    "profit_factor_range": [
+      1.1,
+      4.0
+    ],
+    "max_drawdown": 0.4,
+    "min_robustness": 0.6
+  }
+}

@@ -1,0 +1,262 @@
+[
+  {
+    "params": {
+      "persistence_entropy_threshold": 0.9071,
+      "tunneling_probability_threshold": 0.5,
+      "min_signal_strength": 0.3111,
+      "stop_loss_pips": 27.5,
+      "take_profit_pips": 65.5
+    },
+    "train": {
+      "trades": 179,
+      "win_rate": 0.419,
+      "profit_factor": 1.6328,
+      "total_pnl": 1875.47,
+      "max_drawdown": 0.0446
+    },
+    "test": {
+      "trades": 59,
+      "win_rate": 0.4237,
+      "profit_factor": 1.6648,
+      "total_pnl": 644.16,
+      "max_drawdown": 0.0721
+    },
+    "robustness_score": 1,
+    "degradation_pct": -1.55,
+    "is_robust": true
+  },
+  {
+    "params": {
+      "persistence_entropy_threshold": 0.8643,
+      "tunneling_probability_threshold": 0.5,
+      "min_signal_strength": 0.4222,
+      "stop_loss_pips": 25.0,
+      "take_profit_pips": 68.4
+    },
+    "train": {
+      "trades": 241,
+      "win_rate": 0.3361,
+      "profit_factor": 1.3128,
+      "total_pnl": 1301.11,
+      "max_drawdown": 0.0613
+    },
+    "test": {
+      "trades": 92,
+      "win_rate": 0.413,
+      "profit_factor": 1.8248,
+      "total_pnl": 1158.0,
+      "max_drawdown": 0.0911
+    },
+    "robustness_score": 1,
+    "degradation_pct": -30.95,
+    "is_robust": true
+  },
+  {
+    "params": {
+      "persistence_entropy_threshold": 0.9329,
+      "tunneling_probability_threshold": 0.475,
+      "min_signal_strength": 0.2,
+      "stop_loss_pips": 45.0,
+      "take_profit_pips": 68.4
+    },
+    "train": {
+      "trades": 21,
+      "win_rate": 0.5714,
+      "profit_factor": 1.9542,
+      "total_pnl": 395.05,
+      "max_drawdown": 0.0219
+    },
+    "test": {
+      "trades": 10,
+      "win_rate": 0.7,
+      "profit_factor": 3.4199,
+      "total_pnl": 333.95,
+      "max_drawdown": 0.0132
+    },
+    "robustness_score": 1,
+    "degradation_pct": -48.75,
+    "is_robust": true
+  },
+  {
+    "params": {
+      "persistence_entropy_threshold": 0.9329,
+      "tunneling_probability_threshold": 0.475,
+      "min_signal_strength": 0.7,
+      "stop_loss_pips": 32.5,
+      "take_profit_pips": 59.7
+    },
+    "train": {
+      "trades": 21,
+      "win_rate": 0.5238,
+      "profit_factor": 1.9287,
+      "total_pnl": 311.11,
+      "max_drawdown": 0.0162
+    },
+    "test": {
+      "trades": 10,
+      "win_rate": 0.7,
+      "profit_factor": 4.0911,
+      "total_pnl": 310.66,
+      "max_drawdown": 0.0097
+    },
+    "robustness_score": 1,
+    "degradation_pct": -72.88,
+    "is_robust": true
+  },
+  {
+    "params": {
+      "persistence_entropy_threshold": 0.8729,
+      "tunneling_probability_threshold": 0.5,
+      "min_signal_strength": 0.3667,
+      "stop_loss_pips": 25.0,
+      "take_profit_pips": 65.5
+    },
+    "train": {
+      "trades": 240,
+      "win_rate": 0.3708,
+      "profit_factor": 1.4628,
+      "total_pnl": 1816.84,
+      "max_drawdown": 0.0616
+    },
+    "test": {
+      "trades": 92,
+      "win_rate": 0.413,
+      "profit_factor": 1.7464,
+      "total_pnl": 1048.0,
+      "max_drawdown": 0.0919
+    },
+    "robustness_score": 1,
+    "degradation_pct": -15.39,
+    "is_robust": true
+  },
+  {
+    "params": {
+      "persistence_entropy_threshold": 0.9329,
+      "tunneling_probability_threshold": 0.4,
+      "min_signal_strength": 0.6444,
+      "stop_loss_pips": 25.0,
+      "take_profit_pips": 36.6
+    },
+    "train": {
+      "trades": 40,
+      "win_rate": 0.675,
+      "profit_factor": 2.8421,
+      "total_pnl": 622.63,
+      "max_drawdown": 0.0099
+    },
+    "test": {
+      "trades": 12,
+      "win_rate": 0.75,
+      "profit_factor": 4.1053,
+      "total_pnl": 242.21,
+      "max_drawdown": 0.0076
+    },
+    "robustness_score": 1,
+    "degradation_pct": -27.78,
+    "is_robust": true
+  },
+  {
+    "params": {
+      "persistence_entropy_threshold": 0.83,
+      "tunneling_probability_threshold": 0.5,
+      "min_signal_strength": 0.2556,
+      "stop_loss_pips": 22.5,
+      "take_profit_pips": 62.6
+    },
+    "train": {
+      "trades": 242,
+      "win_rate": 0.3802,
+      "profit_factor": 1.6085,
+      "total_pnl": 2145.11,
+      "max_drawdown": 0.0643
+    },
+    "test": {
+      "trades": 92,
+      "win_rate": 0.413,
+      "profit_factor": 1.8455,
+      "total_pnl": 1073.0,
+      "max_drawdown": 0.0836
+    },
+    "robustness_score": 1,
+    "degradation_pct": -11.69,
+    "is_robust": true
+  },
+  {
+    "params": {
+      "persistence_entropy_threshold": 0.9329,
+      "tunneling_probability_threshold": 0.4,
+      "min_signal_strength": 0.3111,
+      "stop_loss_pips": 25.0,
+      "take_profit_pips": 62.6
+    },
+    "train": {
+      "trades": 40,
+      "win_rate": 0.575,
+      "profit_factor": 3.2071,
+      "total_pnl": 975.53,
+      "max_drawdown": 0.0096
+    },
+    "test": {
+      "trades": 12,
+      "win_rate": 0.5833,
+      "profit_factor": 3.3186,
+      "total_pnl": 301.42,
+      "max_drawdown": 0.0125
+    },
+    "robustness_score": 1,
+    "degradation_pct": -2.46,
+    "is_robust": true
+  },
+  {
+    "params": {
+      "persistence_entropy_threshold": 0.9157,
+      "tunneling_probability_threshold": 0.475,
+      "min_signal_strength": 0.5889,
+      "stop_loss_pips": 32.5,
+      "take_profit_pips": 74.2
+    },
+    "train": {
+      "trades": 120,
+      "win_rate": 0.3667,
+      "profit_factor": 1.2652,
+      "total_pnl": 675.26,
+      "max_drawdown": 0.09
+    },
+    "test": {
+      "trades": 42,
+      "win_rate": 0.381,
+      "profit_factor": 1.3449,
+      "total_pnl": 300.37,
+      "max_drawdown": 0.0752
+    },
+    "robustness_score": 1,
+    "degradation_pct": -5.09,
+    "is_robust": true
+  },
+  {
+    "params": {
+      "persistence_entropy_threshold": 0.9329,
+      "tunneling_probability_threshold": 0.425,
+      "min_signal_strength": 0.4778,
+      "stop_loss_pips": 32.5,
+      "take_profit_pips": 42.4
+    },
+    "train": {
+      "trades": 35,
+      "win_rate": 0.6571,
+      "profit_factor": 2.3668,
+      "total_pnl": 549.47,
+      "max_drawdown": 0.0159
+    },
+    "test": {
+      "trades": 11,
+      "win_rate": 0.7273,
+      "profit_factor": 3.293,
+      "total_pnl": 230.45,
+      "max_drawdown": 0.0097
+    },
+    "robustness_score": 1,
+    "degradation_pct": -24.9,
+    "is_robust": true
+  }
+]
