@@ -1,7 +1,17 @@
 """
+================================================================================
 Adaptador de Estratégia para o Detector de Tunelamento Topológico
-Integra o indicador DTT com o sistema de trading
+================================================================================
+
+VERSÃO V2.1 - CORREÇÕES DA AUDITORIA 24/12/2025:
+1. Usa módulo compartilhado para cálculo de direção (consistência)
+2. Tratamento de erros com logging (não silencia erros)
+3. Documentação clara sobre look-ahead
+
+Integra o indicador DTT com o sistema de trading.
+================================================================================
 """
+import logging
 from datetime import datetime
 from typing import Optional
 from collections import deque
@@ -9,6 +19,23 @@ import numpy as np
 
 from ..base import BaseStrategy, Signal, SignalType
 from .dtt_tunelamento_topologico import DetectorTunelamentoTopologico
+
+# Importar módulo compartilhado de direção
+try:
+    from backtesting.common.direction_calculator import (
+        calculate_direction_from_closes,
+        DEFAULT_DIRECTION_LOOKBACK,
+        DIRECTION_LONG,
+        DIRECTION_SHORT,
+        DIRECTION_NEUTRAL
+    )
+    USE_SHARED_DIRECTION = True
+except ImportError:
+    USE_SHARED_DIRECTION = False
+    DEFAULT_DIRECTION_LOOKBACK = 12
+
+# Configurar logger
+logger = logging.getLogger(__name__)
 
 
 class DTTStrategy(BaseStrategy):
@@ -18,9 +45,16 @@ class DTTStrategy(BaseStrategy):
     Detecta "Tunnelling Events" - momentos onde a topologia do mercado
     indica que o preço está atravessando uma barreira de liquidez.
 
-    VERSÃO V2.0 - SEM LOOK-AHEAD BIAS:
-    - Direção baseada em barras FECHADAS (não usa momentum_direction)
+    VERSÃO V2.1 - CORREÇÕES DA AUDITORIA:
+    - Direção via módulo compartilhado (consistência entre componentes)
+    - Tratamento de erros com logging
     - Entry no OPEN da próxima barra (via BacktestEngine)
+
+    NOTA SOBRE DIREÇÃO:
+    A direção é calculada por momentum de barras fechadas, NÃO pela
+    análise topológica. O DTT serve como FILTRO (trade_on/off), não
+    como gerador de direção. Isso é intencional para evitar look-ahead
+    no momentum_direction calculado pelo Schrödinger.
     """
 
     def __init__(self,
@@ -30,7 +64,7 @@ class DTTStrategy(BaseStrategy):
                  persistence_entropy_threshold: float = 0.5,
                  tunneling_probability_threshold: float = 0.15,
                  min_signal_strength: float = 0.3,
-                 direction_lookback: int = 12):
+                 direction_lookback: int = DEFAULT_DIRECTION_LOOKBACK):
         """
         Inicializa a estratégia DTT
 
@@ -67,50 +101,54 @@ class DTTStrategy(BaseStrategy):
         # Estado
         self.last_analysis = None
         self.signal_cooldown = 0
+        self.error_count = 0
+        self.max_errors_to_log = 10  # Limitar logging de erros repetidos
+
+        logger.info(f"DTTStrategy inicializada: min_prices={min_prices}, "
+                    f"direction_lookback={direction_lookback}, "
+                    f"use_shared_direction={USE_SHARED_DIRECTION}")
 
     def add_price(self, price: float):
         """Adiciona um preço ao buffer"""
         self.prices.append(price)
         self.closes.append(price)  # Para cálculo de direção
 
-    def _calculate_direction_from_closes(self) -> int:
+    def _calculate_direction(self) -> int:
         """
-        CORREÇÃO V2.0: Calcula direção baseada APENAS em barras FECHADAS (sem look-ahead)
+        Calcula direção usando módulo compartilhado ou fallback local.
 
-        No contexto do BacktestEngine:
-        - analyze() é chamado com bar.close da barra que ACABOU de fechar
-        - Portanto, closes[-1] é a barra que acabou de fechar (momento do sinal)
-        - Para evitar look-ahead, usamos closes[-2] (barra ANTERIOR à do sinal)
-        - E closes[-(direction_lookback+1)] para comparação
-
-        Isso garante que a direção é baseada apenas em informação
-        que estava disponível ANTES do momento do sinal.
+        REGRAS ANTI LOOK-AHEAD:
+        - closes[-1] = barra atual (momento do sinal) - NÃO USAR
+        - closes[-2] = última barra completamente fechada - USAR
+        - closes[-(lookback+1)] = barra de comparação - USAR
 
         Returns:
             1 para LONG, -1 para SHORT, 0 para NEUTRAL
         """
-        # Precisamos de pelo menos direction_lookback + 2 barras
-        # (+1 para o lookback + 1 para a barra atual que não usamos)
-        if len(self.closes) < self.direction_lookback + 2:
-            return 0
+        if USE_SHARED_DIRECTION:
+            # Usar módulo compartilhado para consistência
+            return calculate_direction_from_closes(
+                list(self.closes),
+                self.direction_lookback
+            )
+        else:
+            # Fallback: cálculo local (mantido para compatibilidade)
+            if len(self.closes) < self.direction_lookback + 2:
+                return 0
 
-        # closes[-1] = barra atual (momento do sinal) - NÃO USAR
-        # closes[-2] = barra anterior (já fechada) - USAR
-        # closes[-(direction_lookback+1)] = N barras antes da atual
-        recent_close = self.closes[-2]
-        past_close = self.closes[-(self.direction_lookback + 1)]
-
-        trend = recent_close - past_close
-        return 1 if trend > 0 else -1
+            recent_close = self.closes[-2]
+            past_close = self.closes[-(self.direction_lookback + 1)]
+            trend = recent_close - past_close
+            return 1 if trend > 0 else -1
 
     def analyze(self, price: float, timestamp: datetime, **indicators) -> Optional[Signal]:
         """
         Analisa o mercado e retorna sinal se houver tunnelling event
 
-        VERSÃO V2.0 - SEM LOOK-AHEAD BIAS:
-        - Direção é calculada usando apenas barras FECHADAS
+        VERSÃO V2.1 - CORREÇÕES:
+        - Direção via módulo compartilhado
+        - Tratamento de erros com logging
         - Entry será no OPEN da próxima barra (via BacktestEngine)
-        - stop_loss_pips e take_profit_pips são passados no Signal
 
         Args:
             price: Preço atual
@@ -146,9 +184,8 @@ class DTTStrategy(BaseStrategy):
                 if result['signal_strength'] < self.min_signal_strength:
                     return None
 
-                # CORREÇÃO V2.0: Calcula direção baseada em barras FECHADAS
-                # NÃO usa result['direction'] que pode ter look-ahead
-                direction_num = self._calculate_direction_from_closes()
+                # V2.1: Calcula direção via módulo compartilhado
+                direction_num = self._calculate_direction()
 
                 if direction_num == 0:
                     return None
@@ -169,8 +206,6 @@ class DTTStrategy(BaseStrategy):
                 confidence = result['signal_strength']
 
                 # Cria sinal COM stop_loss_pips e take_profit_pips
-                # Isso permite que o BacktestEngine recalcule os níveis
-                # baseado no preço de entrada REAL (OPEN da próxima barra)
                 signal = Signal(
                     type=direction,
                     price=price,
@@ -179,8 +214,8 @@ class DTTStrategy(BaseStrategy):
                     confidence=confidence,
                     stop_loss=stop_loss,
                     take_profit=take_profit,
-                    stop_loss_pips=self.stop_loss_pips,      # CORREÇÃO V2.0
-                    take_profit_pips=self.take_profit_pips,  # CORREÇÃO V2.0
+                    stop_loss_pips=self.stop_loss_pips,
+                    take_profit_pips=self.take_profit_pips,
                     reason=self._generate_reason(result)
                 )
 
@@ -190,38 +225,17 @@ class DTTStrategy(BaseStrategy):
                 return signal
 
         except Exception as e:
-            # Silenciar erros para não poluir log
-            pass
+            # V2.1: Tratamento de erros com logging (não silencia)
+            self.error_count += 1
+            if self.error_count <= self.max_errors_to_log:
+                logger.warning(f"DTT análise falhou [{self.error_count}]: {e}")
+            elif self.error_count == self.max_errors_to_log + 1:
+                logger.warning(f"DTT: Erros subsequentes serão suprimidos...")
 
         return None
 
-    def _get_direction(self, result: dict) -> SignalType:
-        """
-        DEPRECATED - NÃO USAR!
-
-        Este método usa result['direction'] que pode ter look-ahead bias.
-        Use _calculate_direction_from_closes() ao invés.
-
-        Mantido apenas para compatibilidade, não é chamado no código atual.
-        """
-        import warnings
-        warnings.warn(
-            "_get_direction() is deprecated. Use _calculate_direction_from_closes() instead.",
-            DeprecationWarning,
-            stacklevel=2
-        )
-        direction = result['direction']
-
-        if direction == 'LONG':
-            return SignalType.BUY
-        elif direction == 'SHORT':
-            return SignalType.SELL
-        else:
-            return SignalType.HOLD
-
     def _generate_reason(self, result: dict) -> str:
         """Gera descrição do motivo do sinal"""
-        decision = result['decision']
         entropy = result['entropy']
         tunneling = result['tunneling']
 
@@ -237,6 +251,7 @@ class DTTStrategy(BaseStrategy):
         self.last_analysis = None
         self.last_signal = None
         self.signal_cooldown = 0
+        self.error_count = 0
 
     def get_analysis_summary(self) -> Optional[dict]:
         """Retorna resumo da última análise"""
@@ -252,3 +267,7 @@ class DTTStrategy(BaseStrategy):
             'betti_1': self.last_analysis['topology']['betti_1'],
             'tda_backend': self.last_analysis['tda_backend']
         }
+
+    def get_error_count(self) -> int:
+        """Retorna contagem de erros para diagnóstico"""
+        return self.error_count

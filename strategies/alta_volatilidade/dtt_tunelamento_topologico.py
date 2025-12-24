@@ -514,9 +514,19 @@ class DetectorTunelamentoTopologico:
         o potencial é baixo (fundo do poço).
 
         Trate o preço x como uma partícula em um poço de potencial V(x).
+
+        CORREÇÃO V2.1 (24/12/2025):
+        - Exclui preço atual (prices[-1]) do KDE para evitar look-ahead bias
+        - A densidade é estimada apenas com preços PASSADOS
         """
-        # Usar preços recentes
-        recent_prices = prices[-min(len(prices), 500):]
+        # Usar preços recentes EXCLUINDO o ponto atual (anti look-ahead)
+        # prices[-1] = preço atual (momento da análise) - NÃO USAR no KDE
+        # prices[:-1] = preços passados - USAR no KDE
+        recent_prices = prices[-min(len(prices), 501):-1]  # Até 500 preços PASSADOS
+
+        # Validação: garantir dados suficientes para KDE
+        if len(recent_prices) < 10:
+            raise ValueError(f"Dados insuficientes para KDE: {len(recent_prices)} preços (mínimo: 10)")
 
         # Criar grid de preços
         price_min = np.min(recent_prices) * 0.995
