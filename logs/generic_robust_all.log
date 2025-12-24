@@ -1,0 +1,360 @@
+AVISO: networkx não disponível. Algumas funcionalidades serão limitadas.
+
+================================================================================
+  INICIANDO OTIMIZACAO: PHM
+================================================================================
+======================================================================
+  OTIMIZADOR PHM ROBUSTO
+  Com Validacao Anti-Overfitting
+  50,000 Combinacoes
+  PARA DINHEIRO REAL
+======================================================================
+
+  Periodo: 2025-07-01 a 2025-12-24
+
+======================================================================
+  CARREGANDO DADOS REAIS - PHM
+======================================================================
+
+============================================================
+  DOWNLOAD DE DADOS HISTORICOS REAIS (FXOpen WebSocket)
+============================================================
+  Simbolo: EURUSD
+  Periodicidade: H1
+  Periodo: 2025-07-01 00:00 a 2025-12-24 02:29
+  Tipo de preco: bid
+============================================================
+
+  Conectando ao WebSocket FXOpen...
+  Autenticado com sucesso!
+  Baixando barras de 2025-07-01 a 2025-12-24...
+    Batch 1: 1000 barras (total: 1000)
+    Batch 2: 310 barras (total: 1310)
+
+  Total de barras baixadas: 1310
+  Primeira barra: 2025-07-01 00:00:00+00:00
+  Ultima barra: 2025-12-24 02:00:00+00:00
+  Total de barras: 1310
+
+  DIVISAO TRAIN/TEST:
+    Treino: 916 barras
+    Teste:  394 barras
+
+  Pre-calculando sinais PHM...
+    500/1310 barras...
+    1000/1310 barras...
+
+  Sinais pre-calculados:
+    Treino: 817 sinais
+    Teste:  394 sinais
+
+  Distribuicao de sinais:
+    BUY: 0, SELL: 185, HOLD: 1026
+
+======================================================================
+  OTIMIZACAO ROBUSTA PHM: 50,000 COMBINACOES
+  Com validacao Train/Test Split
+======================================================================
+  10,000/50,000 (20.0%) | Robustos: 0 | Vel: 2059/s | ETA: 0min
+  20,000/50,000 (40.0%) | Robustos: 0 | Vel: 2057/s | ETA: 0min
+  30,000/50,000 (60.0%) | Robustos: 0 | Vel: 2062/s | ETA: 0min
+  40,000/50,000 (80.0%) | Robustos: 0 | Vel: 2070/s | ETA: 0min
+  50,000/50,000 (100.0%) | Robustos: 0 | Vel: 2073/s | ETA: 0min
+
+======================================================================
+  CONCLUIDO em 0.4min
+  Testados: 50,000 | Robustos: 0
+======================================================================
+
+  AVISO: Nenhuma configuracao passou nos filtros!
+
+
+
+================================================================================
+  INICIANDO OTIMIZACAO: RHHF
+================================================================================
+======================================================================
+  OTIMIZADOR RHHF ROBUSTO
+  Com Validacao Anti-Overfitting
+  50,000 Combinacoes
+  PARA DINHEIRO REAL
+======================================================================
+
+  Periodo: 2025-07-01 a 2025-12-24
+
+======================================================================
+  CARREGANDO DADOS REAIS - RHHF
+======================================================================
+
+============================================================
+  DOWNLOAD DE DADOS HISTORICOS REAIS (FXOpen WebSocket)
+============================================================
+  Simbolo: EURUSD
+  Periodicidade: H1
+  Periodo: 2025-07-01 00:00 a 2025-12-24 02:37
+  Tipo de preco: bid
+============================================================
+
+  Conectando ao WebSocket FXOpen...
+  Autenticado com sucesso!
+  Baixando barras de 2025-07-01 a 2025-12-24...
+    Batch 1: 1000 barras (total: 1000)
+    Batch 2: 310 barras (total: 1310)
+
+  Total de barras baixadas: 1310
+  Primeira barra: 2025-07-01 00:00:00+00:00
+  Ultima barra: 2025-12-24 02:00:00+00:00
+  Total de barras: 1310
+
+  DIVISAO TRAIN/TEST:
+    Treino: 916 barras
+    Teste:  394 barras
+
+  Pre-calculando sinais RHHF...
+    500/1310 barras...
+    1000/1310 barras...
+
+  Sinais pre-calculados:
+    Treino: 817 sinais
+    Teste:  394 sinais
+
+  Distribuicao de sinais:
+    BUY: 1209, SELL: 2, HOLD: 0
+
+======================================================================
+  OTIMIZACAO ROBUSTA RHHF: 50,000 COMBINACOES
+  Com validacao Train/Test Split
+======================================================================
+  10,000/50,000 (20.0%) | Robustos: 0 | Vel: 535/s | ETA: 1min
+  20,000/50,000 (40.0%) | Robustos: 0 | Vel: 533/s | ETA: 1min
+  30,000/50,000 (60.0%) | Robustos: 0 | Vel: 533/s | ETA: 1min
+  40,000/50,000 (80.0%) | Robustos: 0 | Vel: 533/s | ETA: 0min
+  50,000/50,000 (100.0%) | Robustos: 0 | Vel: 533/s | ETA: 0min
+
+======================================================================
+  CONCLUIDO em 1.6min
+  Testados: 50,000 | Robustos: 0
+======================================================================
+
+  AVISO: Nenhuma configuracao passou nos filtros!
+
+
+
+================================================================================
+  INICIANDO OTIMIZACAO: SEED
+================================================================================
+======================================================================
+  OTIMIZADOR SEED ROBUSTO
+  Com Validacao Anti-Overfitting
+  50,000 Combinacoes
+  PARA DINHEIRO REAL
+======================================================================
+
+  Periodo: 2025-07-01 a 2025-12-24
+
+======================================================================
+  CARREGANDO DADOS REAIS - SEED
+======================================================================
+
+============================================================
+  DOWNLOAD DE DADOS HISTORICOS REAIS (FXOpen WebSocket)
+============================================================
+  Simbolo: EURUSD
+  Periodicidade: H1
+  Periodo: 2025-07-01 00:00 a 2025-12-24 02:50
+  Tipo de preco: bid
+============================================================
+
+  Conectando ao WebSocket FXOpen...
+  Autenticado com sucesso!
+  Baixando barras de 2025-07-01 a 2025-12-24...
+    Batch 1: 1000 barras (total: 1000)
+    Batch 2: 1000 barras (total: 2000)
+    Batch 3: 1000 barras (total: 3000)
+    Batch 4: 27 barras (total: 3027)
+
+  Total de barras baixadas: 3027
+  Primeira barra: 2025-07-01 00:00:00+00:00
+  Ultima barra: 2025-12-24 02:00:00+00:00
+  Total de barras: 3027
+
+  DIVISAO TRAIN/TEST:
+    Treino: 2118 barras
+    Teste:  909 barras
+
+  Pre-calculando sinais SEED...
+    500/3027 barras...
+    1000/3027 barras...
+    1500/3027 barras...
+    2000/3027 barras...
+    2500/3027 barras...
+    3000/3027 barras...
+
+  Sinais pre-calculados:
+    Treino: 2019 sinais
+    Teste:  909 sinais
+
+  Distribuicao de sinais:
+    BUY: 39, SELL: 17, HOLD: 2872
+
+======================================================================
+  OTIMIZACAO ROBUSTA SEED: 50,000 COMBINACOES
+  Com validacao Train/Test Split
+======================================================================
+
+  [ROBUSTO #1] Robustez=0.7717
+    TREINO: 27 trades, WR=25.9%, PF=1.23
+    TESTE:  29 trades, WR=20.7%, PF=0.92
+
+  [ROBUSTO #2] Robustez=1.0000
+    TREINO: 27 trades, WR=44.4%, PF=1.06
+    TESTE:  29 trades, WR=44.8%, PF=1.07
+  10,000/50,000 (20.0%) | Robustos: 483 | Vel: 9778/s | ETA: 0min
+  20,000/50,000 (40.0%) | Robustos: 928 | Vel: 9852/s | ETA: 0min
+  30,000/50,000 (60.0%) | Robustos: 1367 | Vel: 9877/s | ETA: 0min
+  40,000/50,000 (80.0%) | Robustos: 1793 | Vel: 9908/s | ETA: 0min
+  50,000/50,000 (100.0%) | Robustos: 2215 | Vel: 9904/s | ETA: 0min
+
+======================================================================
+  CONCLUIDO em 0.1min
+  Testados: 50,000 | Robustos: 2215
+======================================================================
+
+======================================================================
+  MELHOR RESULTADO ROBUSTO:
+======================================================================
+  TREINO: 27 trades, WR=44.4%, PF=1.06
+  TESTE:  29 trades, WR=44.8%, PF=1.07
+  Degradacao: -1.2%
+======================================================================
+
+  Configuracao robusta salva em: /home/azureuser/EliBotCD/configs/seed-sintetizadorevolutivo_robust.json
+  Top 10 robustos salvo em: /home/azureuser/EliBotCD/configs/seed_robust_top10.json
+
+
+
+================================================================================
+  INICIANDO OTIMIZACAO: SEMA
+================================================================================
+======================================================================
+  OTIMIZADOR SEMA ROBUSTO
+  Com Validacao Anti-Overfitting
+  50,000 Combinacoes
+  PARA DINHEIRO REAL
+======================================================================
+
+  Periodo: 2025-07-01 a 2025-12-24
+
+======================================================================
+  CARREGANDO DADOS REAIS - SEMA
+======================================================================
+
+============================================================
+  DOWNLOAD DE DADOS HISTORICOS REAIS (FXOpen WebSocket)
+============================================================
+  Simbolo: EURUSD
+  Periodicidade: H1
+  Periodo: 2025-07-01 00:00 a 2025-12-24 02:50
+  Tipo de preco: bid
+============================================================
+
+  Conectando ao WebSocket FXOpen...
+  Autenticado com sucesso!
+  Baixando barras de 2025-07-01 a 2025-12-24...
+    Batch 1: 1000 barras (total: 1000)
+    Batch 2: 310 barras (total: 1310)
+
+  Total de barras baixadas: 1310
+  Primeira barra: 2025-07-01 00:00:00+00:00
+  Ultima barra: 2025-12-24 02:00:00+00:00
+  Total de barras: 1310
+
+  DIVISAO TRAIN/TEST:
+    Treino: 916 barras
+    Teste:  394 barras
+
+  Pre-calculando sinais SEMA...
+
+  Sinais pre-calculados:
+    Treino: 0 sinais
+    Teste:  0 sinais
+
+  ERRO: Falha ao carregar dados!
+
+
+
+================================================================================
+  INICIANDO OTIMIZACAO: STGK
+================================================================================
+======================================================================
+  OTIMIZADOR STGK ROBUSTO
+  Com Validacao Anti-Overfitting
+  50,000 Combinacoes
+  PARA DINHEIRO REAL
+======================================================================
+
+  Periodo: 2025-07-01 a 2025-12-24
+
+======================================================================
+  CARREGANDO DADOS REAIS - STGK
+======================================================================
+
+============================================================
+  DOWNLOAD DE DADOS HISTORICOS REAIS (FXOpen WebSocket)
+============================================================
+  Simbolo: EURUSD
+  Periodicidade: H1
+  Periodo: 2025-07-01 00:00 a 2025-12-24 02:50
+  Tipo de preco: bid
+============================================================
+
+  Conectando ao WebSocket FXOpen...
+  Autenticado com sucesso!
+  Baixando barras de 2025-07-01 a 2025-12-24...
+    Batch 1: 1000 barras (total: 1000)
+    Batch 2: 1000 barras (total: 2000)
+    Batch 3: 1000 barras (total: 3000)
+    Batch 4: 27 barras (total: 3027)
+
+  Total de barras baixadas: 3027
+  Primeira barra: 2025-07-01 00:00:00+00:00
+  Ultima barra: 2025-12-24 02:00:00+00:00
+  Total de barras: 3027
+
+  DIVISAO TRAIN/TEST:
+    Treino: 2118 barras
+    Teste:  909 barras
+
+  Pre-calculando sinais STGK...
+    500/3027 barras...
+    1000/3027 barras...
+    1500/3027 barras...
+    2000/3027 barras...
+    2500/3027 barras...
+    3000/3027 barras...
+
+  Sinais pre-calculados:
+    Treino: 2019 sinais
+    Teste:  909 sinais
+
+  Distribuicao de sinais:
+    BUY: 72, SELL: 0, HOLD: 2856
+
+======================================================================
+  OTIMIZACAO ROBUSTA STGK: 50,000 COMBINACOES
+  Com validacao Train/Test Split
+======================================================================
+  10,000/50,000 (20.0%) | Robustos: 0 | Vel: 8249/s | ETA: 0min
+  20,000/50,000 (40.0%) | Robustos: 0 | Vel: 8325/s | ETA: 0min
+  30,000/50,000 (60.0%) | Robustos: 0 | Vel: 8325/s | ETA: 0min
+  40,000/50,000 (80.0%) | Robustos: 0 | Vel: 8318/s | ETA: 0min
+  50,000/50,000 (100.0%) | Robustos: 0 | Vel: 8347/s | ETA: 0min
+
+======================================================================
+  CONCLUIDO em 0.1min
+  Testados: 50,000 | Robustos: 0
+======================================================================
+
+  AVISO: Nenhuma configuracao passou nos filtros!
+
+

@@ -1,0 +1,157 @@
+AVISO: networkx não disponível. Algumas funcionalidades serão limitadas.
+======================================================================
+  OTIMIZADOR DTT ULTRA-RAPIDO
+  Detector de Tunelamento Topologico
+  2,000,000 Combinacoes
+  Dados REAIS do Mercado Forex
+======================================================================
+
+  Periodo: 2025-07-01 a 2025-12-23
+
+  Carregando dados REAIS...
+
+============================================================
+  DOWNLOAD DE DADOS HISTORICOS REAIS (FXOpen WebSocket)
+============================================================
+  Simbolo: EURUSD
+  Periodicidade: H1
+  Periodo: 2025-07-01 00:00 a 2025-12-23 21:22
+  Tipo de preco: bid
+============================================================
+
+  Conectando ao WebSocket FXOpen...
+  Autenticado com sucesso!
+  Baixando barras de 2025-07-01 a 2025-12-23...
+    Batch 1: 1000 barras (total: 1000)
+    Batch 2: 1000 barras (total: 2000)
+    Batch 3: 1000 barras (total: 3000)
+    Batch 4: 22 barras (total: 3022)
+
+  Total de barras baixadas: 3022
+  Primeira barra: 2025-07-01 00:00:00+00:00
+  Ultima barra: 2025-12-23 21:00:00+00:00
+  Barras: 3022
+
+  Pre-calculando valores DTT (isso leva alguns minutos)...
+  NOTA: DTT e' computacionalmente intensivo (Homologia Persistente)
+    200/3022 barras... (51 pontos validos)
+    400/3022 barras... (251 pontos validos)
+    600/3022 barras... (451 pontos validos)
+    800/3022 barras... (651 pontos validos)
+    1000/3022 barras... (851 pontos validos)
+    1200/3022 barras... (1051 pontos validos)
+    1400/3022 barras... (1251 pontos validos)
+    1600/3022 barras... (1451 pontos validos)
+    1800/3022 barras... (1651 pontos validos)
+    2000/3022 barras... (1851 pontos validos)
+    2200/3022 barras... (2051 pontos validos)
+    2400/3022 barras... (2251 pontos validos)
+    2600/3022 barras... (2451 pontos validos)
+    2800/3022 barras... (2651 pontos validos)
+    3000/3022 barras... (2851 pontos validos)
+  Pre-calculado: 2873 pontos de dados
+
+======================================================================
+  OTIMIZACAO DTT: 2,000,000 COMBINACOES
+======================================================================
+
+  [MELHOR SCORE #1] Score=0.3789 Trades=830 WR=25.2% PF=1.10 PnL=2358pips
+    entropy=0.510 tunneling=0.338 strength=0.78 SL=37 TP=128
+
+  [MELHOR SCORE #2] Score=0.6047 Trades=375 WR=68.0% PF=2.16 PnL=6035pips
+    entropy=0.633 tunneling=0.465 strength=0.24 SL=42 TP=45
+
+  [MAIS TRADES #2] Trades=375 Score=0.6047 WR=68.0% PF=2.16 PnL=6035pips
+    entropy=0.633 tunneling=0.465
+
+  [MAIS TRADES #24] Trades=448 Score=0.5499 WR=40.6% PF=1.65 PnL=3846pips
+    entropy=0.408 tunneling=0.454
+
+  [MAIS TRADES #59] Trades=533 Score=0.5323 WR=51.2% PF=1.61 PnL=4564pips
+    entropy=0.674 tunneling=0.431
+
+  [MAIS TRADES #63] Trades=559 Score=0.3855 WR=17.4% PF=1.54 PnL=4289pips
+    entropy=0.346 tunneling=0.419
+
+  [MELHOR SCORE #107] Score=0.6112 Trades=375 WR=67.2% PF=2.24 PnL=6575pips
+    entropy=0.654 tunneling=0.465 strength=0.20 SL=42 TP=48
+
+  [MAIS TRADES #160] Trades=603 Score=0.5145 WR=39.6% PF=1.59 PnL=4725pips
+    entropy=0.859 tunneling=0.408
+
+  [MAIS TRADES #225] Trades=605 Score=0.5361 WR=58.2% PF=1.93 PnL=10157pips
+    entropy=0.797 tunneling=0.408
+
+  [MAIS TRADES #365] Trades=690 Score=0.4910 WR=60.0% PF=1.52 PnL=7503pips
+    entropy=0.162 tunneling=0.385
+
+  [MELHOR SCORE #388] Score=0.6695 Trades=334 WR=71.6% PF=2.47 PnL=7164pips
+    entropy=0.490 tunneling=0.500 strength=0.53 SL=50 TP=51
+
+  [MAIS TRADES #2491] Trades=711 Score=0.3802 WR=16.0% PF=1.50 PnL=5678pips
+    entropy=0.859 tunneling=0.373
+
+  [MELHOR SCORE #6237] Score=0.6731 Trades=334 WR=70.1% PF=2.54 PnL=7141pips
+    entropy=0.264 tunneling=0.500 strength=0.41 SL=45 TP=51
+
+  [MELHOR SCORE #6268] Score=0.6889 Trades=334 WR=73.1% PF=2.66 PnL=6702pips
+    entropy=0.756 tunneling=0.500 strength=0.46 SL=44 TP=45
+
+  [MELHOR SCORE #6818] Score=0.6933 Trades=334 WR=72.2% PF=2.73 PnL=7202pips
+    entropy=0.264 tunneling=0.500 strength=0.32 SL=44 TP=48
+
+  [MAIS TRADES #7957] Trades=713 Score=0.4824 WR=56.5% PF=1.52 PnL=6931pips
+    entropy=0.203 tunneling=0.373
+
+  [MELHOR SCORE #34293] Score=0.6946 Trades=334 WR=73.1% PF=2.75 PnL=7333pips
+    entropy=0.551 tunneling=0.500 strength=0.22 SL=45 TP=48
+  100,000/2,000,000 (5.0%) | Lucrativos: 52,478 | Vel: 314/s | ETA: 101min
+
+  [MELHOR SCORE #65823] Score=0.6961 Trades=334 WR=71.6% PF=2.75 PnL=7172pips
+    entropy=0.203 tunneling=0.500 strength=0.68 SL=42 TP=48
+  200,000/2,000,000 (10.0%) | Lucrativos: 105,134 | Vel: 315/s | ETA: 95min
+  300,000/2,000,000 (15.0%) | Lucrativos: 157,688 | Vel: 315/s | ETA: 90min
+  400,000/2,000,000 (20.0%) | Lucrativos: 210,505 | Vel: 315/s | ETA: 85min
+  500,000/2,000,000 (25.0%) | Lucrativos: 263,078 | Vel: 315/s | ETA: 79min
+  600,000/2,000,000 (30.0%) | Lucrativos: 315,820 | Vel: 315/s | ETA: 74min
+  700,000/2,000,000 (35.0%) | Lucrativos: 368,792 | Vel: 315/s | ETA: 69min
+  800,000/2,000,000 (40.0%) | Lucrativos: 421,397 | Vel: 315/s | ETA: 63min
+  900,000/2,000,000 (45.0%) | Lucrativos: 473,868 | Vel: 315/s | ETA: 58min
+  1,000,000/2,000,000 (50.0%) | Lucrativos: 526,614 | Vel: 315/s | ETA: 53min
+  1,100,000/2,000,000 (55.0%) | Lucrativos: 579,072 | Vel: 315/s | ETA: 48min
+  1,200,000/2,000,000 (60.0%) | Lucrativos: 631,762 | Vel: 315/s | ETA: 42min
+  1,300,000/2,000,000 (65.0%) | Lucrativos: 684,137 | Vel: 315/s | ETA: 37min
+  1,400,000/2,000,000 (70.0%) | Lucrativos: 736,976 | Vel: 316/s | ETA: 32min
+
+  [MELHOR SCORE #737783] Score=0.7033 Trades=288 WR=71.9% PF=2.79 PnL=6267pips
+    entropy=0.900 tunneling=0.500 strength=0.70 SL=42 TP=48
+  1,500,000/2,000,000 (75.0%) | Lucrativos: 789,435 | Vel: 316/s | ETA: 26min
+  1,600,000/2,000,000 (80.0%) | Lucrativos: 841,769 | Vel: 316/s | ETA: 21min
+  1,700,000/2,000,000 (85.0%) | Lucrativos: 894,430 | Vel: 315/s | ETA: 16min
+  1,800,000/2,000,000 (90.0%) | Lucrativos: 946,719 | Vel: 315/s | ETA: 11min
+  1,900,000/2,000,000 (95.0%) | Lucrativos: 999,259 | Vel: 315/s | ETA: 5min
+  2,000,000/2,000,000 (100.0%) | Lucrativos: 1,052,181 | Vel: 315/s | ETA: 0min
+
+======================================================================
+  CONCLUIDO em 105.7min
+  Testados: 2,000,000 | Lucrativos: 1,052,181
+======================================================================
+
+  MELHOR RESULTADO (SCORE):
+    Trades: 288
+    Win Rate: 71.9%
+    Profit Factor: 2.79
+    PnL: 6267.0 pips
+    Score: 0.7033
+
+  MELHOR RESULTADO (MAIS TRADES):
+    Trades: 713
+    Win Rate: 56.5%
+    Profit Factor: 1.52
+    PnL: 6930.5 pips
+    Score: 0.4824
+
+  Melhor Score salvo em: /home/azureuser/EliBotCD/configs/dtt_optimized.json
+  Mais Trades salvo em: /home/azureuser/EliBotCD/configs/dtt_optimized_max_trades.json
+  Top 100 (score) salvo em: /home/azureuser/EliBotCD/configs/dtt_optimized_top100.json
+  Top 100 (trades) salvo em: /home/azureuser/EliBotCD/configs/dtt_optimized_top100_by_trades.json

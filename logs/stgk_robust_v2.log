@@ -1,0 +1,78 @@
+AVISO: networkx não disponível. Algumas funcionalidades serão limitadas.
+======================================================================
+  OTIMIZADOR STGK ROBUSTO
+  Com Validacao Anti-Overfitting
+  50,000 Combinacoes
+  PARA DINHEIRO REAL
+======================================================================
+
+  Periodo: 2025-07-01 a 2025-12-24
+
+======================================================================
+  CARREGANDO DADOS REAIS - STGK
+======================================================================
+
+============================================================
+  DOWNLOAD DE DADOS HISTORICOS REAIS (FXOpen WebSocket)
+============================================================
+  Simbolo: EURUSD
+  Periodicidade: H1
+  Periodo: 2025-07-01 00:00 a 2025-12-24 04:23
+  Tipo de preco: bid
+============================================================
+
+  Conectando ao WebSocket FXOpen...
+  Autenticado com sucesso!
+  Baixando barras de 2025-07-01 a 2025-12-24...
+    Batch 1: 1000 barras (total: 1000)
+    Batch 2: 312 barras (total: 1312)
+
+  Total de barras baixadas: 1312
+  Primeira barra: 2025-07-01 00:00:00+00:00
+  Ultima barra: 2025-12-24 04:00:00+00:00
+  Total de barras: 1312
+
+  DIVISAO TRAIN/TEST:
+    Treino: 918 barras
+    Teste:  394 barras
+
+  Pre-calculando sinais STGK...
+    500/1312 barras...
+    1000/1312 barras...
+
+  Sinais pre-calculados:
+    Treino: 819 sinais
+    Teste:  394 sinais
+
+  Distribuicao de sinais:
+    BUY: 742, SELL: 240, HOLD: 231
+
+======================================================================
+  OTIMIZACAO ROBUSTA STGK: 50,000 COMBINACOES
+  Com validacao Train/Test Split
+======================================================================
+
+  [ROBUSTO #1] Robustez=1.0000
+    TREINO: 105 trades, WR=50.5%, PF=1.33
+    TESTE:  80 trades, WR=60.0%, PF=2.35
+  10,000/50,000 (20.0%) | Robustos: 3955 | Vel: 665/s | ETA: 1min
+  20,000/50,000 (40.0%) | Robustos: 7861 | Vel: 672/s | ETA: 1min
+  30,000/50,000 (60.0%) | Robustos: 11748 | Vel: 675/s | ETA: 0min
+  40,000/50,000 (80.0%) | Robustos: 15535 | Vel: 679/s | ETA: 0min
+  50,000/50,000 (100.0%) | Robustos: 19455 | Vel: 679/s | ETA: 0min
+
+======================================================================
+  CONCLUIDO em 1.2min
+  Testados: 50,000 | Robustos: 19455
+======================================================================
+
+======================================================================
+  MELHOR RESULTADO ROBUSTO:
+======================================================================
+  TREINO: 105 trades, WR=50.5%, PF=1.33
+  TESTE:  80 trades, WR=60.0%, PF=2.35
+  Degradacao: -47.9%
+======================================================================
+
+  Configuracao robusta salva em: /home/azureuser/EliBotCD/configs/stgk-toposgrothendieck_robust.json
+  Top 10 robustos salvo em: /home/azureuser/EliBotCD/configs/stgk_robust_top10.json

@@ -1,0 +1,99 @@
+AVISO: networkx não disponível. Algumas funcionalidades serão limitadas.
+======================================================================
+  OTIMIZADOR FIFN ROBUSTO
+  Com Validacao Anti-Overfitting
+  100,000 Combinacoes
+  PARA DINHEIRO REAL
+======================================================================
+
+  Periodo: 2025-07-01 a 2025-12-24
+
+======================================================================
+  CARREGANDO DADOS REAIS
+======================================================================
+
+============================================================
+  DOWNLOAD DE DADOS HISTORICOS REAIS (FXOpen WebSocket)
+============================================================
+  Simbolo: EURUSD
+  Periodicidade: H1
+  Periodo: 2025-07-01 00:00 a 2025-12-24 00:52
+  Tipo de preco: bid
+============================================================
+
+  Conectando ao WebSocket FXOpen...
+  Autenticado com sucesso!
+  Baixando barras de 2025-07-01 a 2025-12-24...
+    Batch 1: 1000 barras (total: 1000)
+    Batch 2: 1000 barras (total: 2000)
+    Batch 3: 1000 barras (total: 3000)
+    Batch 4: 25 barras (total: 3025)
+
+  Total de barras baixadas: 3025
+  Primeira barra: 2025-07-01 00:00:00+00:00
+  Ultima barra: 2025-12-24 00:00:00+00:00
+  Total de barras: 3025
+
+  DIVISAO TRAIN/TEST:
+    Treino: 2117 barras
+    Teste:  908 barras
+
+  Pre-calculando sinais FIFN...
+    200/3025 barras...
+    400/3025 barras...
+    600/3025 barras...
+    800/3025 barras...
+    1000/3025 barras...
+    1200/3025 barras...
+    1400/3025 barras...
+    1600/3025 barras...
+    1800/3025 barras...
+    2000/3025 barras...
+    2200/3025 barras...
+    2400/3025 barras...
+    2600/3025 barras...
+    2800/3025 barras...
+    3000/3025 barras...
+
+  Sinais pre-calculados:
+    Treino: 2038 sinais
+    Teste:  908 sinais
+
+  Distribuicao de valores:
+    Reynolds: min=1, max=10000, mean=5959
+    Skewness: min=-2.411, max=4.901, mean=0.247
+    KL Div: min=0.0001, max=0.2653, mean=0.0230
+
+======================================================================
+  OTIMIZACAO ROBUSTA FIFN: 100,000 COMBINACOES
+  Com validacao Train/Test Split
+======================================================================
+
+  [ROBUSTO #1] Robustez=0.9848
+    TREINO: 28 trades, WR=42.9%, PF=1.12
+    TESTE:  11 trades, WR=45.5%, PF=1.01
+
+  [ROBUSTO #2] Robustez=1.0000
+    TREINO: 25 trades, WR=48.0%, PF=1.06
+    TESTE:  14 trades, WR=57.1%, PF=1.53
+  20,000/100,000 (20.0%) | Robustos: 1220 | Vel: 3408/s | ETA: 0min
+  40,000/100,000 (40.0%) | Robustos: 2413 | Vel: 3421/s | ETA: 0min
+  60,000/100,000 (60.0%) | Robustos: 3560 | Vel: 3426/s | ETA: 0min
+  80,000/100,000 (80.0%) | Robustos: 4782 | Vel: 3431/s | ETA: 0min
+  100,000/100,000 (100.0%) | Robustos: 5955 | Vel: 3429/s | ETA: 0min
+
+======================================================================
+  CONCLUIDO em 0.5min
+  Testados: 100,000 | Robustos: 5955
+======================================================================
+
+======================================================================
+  MELHOR RESULTADO ROBUSTO:
+======================================================================
+  TREINO: 25 trades, WR=48.0%, PF=1.06
+  TESTE:  14 trades, WR=57.1%, PF=1.53
+  Degradacao: -31.7%
+======================================================================
+
+  Configuracao robusta salva em: /home/azureuser/EliBotCD/configs/fifn-fishernavier_robust.json
+  Top 10 robustos salvo em: /home/azureuser/EliBotCD/configs/fifn_robust_top10.json

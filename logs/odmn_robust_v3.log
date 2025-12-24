@@ -1,0 +1,76 @@
+AVISO: networkx não disponível. Algumas funcionalidades serão limitadas.
+======================================================================
+  OTIMIZADOR ODMN ROBUSTO
+  Com Validacao Anti-Overfitting
+  100,000 Combinacoes
+  PARA DINHEIRO REAL
+======================================================================
+
+  Periodo: 2025-07-01 a 2025-12-24
+
+======================================================================
+  CARREGANDO DADOS REAIS
+======================================================================
+
+============================================================
+  DOWNLOAD DE DADOS HISTORICOS REAIS (FXOpen WebSocket)
+============================================================
+  Simbolo: EURUSD
+  Periodicidade: H1
+  Periodo: 2025-07-01 00:00 a 2025-12-24 01:53
+  Tipo de preco: bid
+============================================================
+
+  Conectando ao WebSocket FXOpen...
+  Autenticado com sucesso!
+  Baixando barras de 2025-07-01 a 2025-12-24...
+    Batch 1: 1000 barras (total: 1000)
+    Batch 2: 1000 barras (total: 2000)
+    Batch 3: 1000 barras (total: 3000)
+    Batch 4: 26 barras (total: 3026)
+
+  Total de barras baixadas: 3026
+  Primeira barra: 2025-07-01 00:00:00+00:00
+  Ultima barra: 2025-12-24 01:00:00+00:00
+  Total de barras: 3026
+
+  DIVISAO TRAIN/TEST:
+    Treino: 2118 barras
+    Teste:  908 barras
+
+  Pre-calculando sinais ODMN (computacionalmente intensivo)...
+    200/3026 barras...
+    400/3026 barras...
+    600/3026 barras...
+    800/3026 barras...
+    1000/3026 barras...
+    1200/3026 barras...
+    1400/3026 barras...
+    1600/3026 barras...
+    1800/3026 barras...
+    2000/3026 barras...
+    2200/3026 barras...
+    2400/3026 barras...
+    2600/3026 barras...
+    2800/3026 barras...
+    3000/3026 barras...
+
+  Sinais pre-calculados:
+    Treino: 2009 sinais
+    Teste:  908 sinais
+
+  Distribuicao de valores:
+    Fragility: min=0.0680, max=8.1714, mean=1.6946
+    MFG Dir: min=-0.0000, max=-0.0000, mean=0.0000
+
+======================================================================
+  OTIMIZACAO ROBUSTA ODMN: 100,000 COMBINACOES
+  Com validacao Train/Test Split
+======================================================================
+
+  [ROBUSTO #1] Robustez=1.0000
+    TREINO: 1332 trades, WR=33.5%, PF=1.08
+    TESTE:  616 trades, WR=33.9%, PF=1.11
+  20,000/100,000 (20.0%) | Robustos: 3639 | Vel: 152/s | ETA: 9min
+  40,000/100,000 (40.0%) | Robustos: 7382 | Vel: 152/s | ETA: 7min
+  60,000/100,000 (60.0%) | Robustos: 11080 | Vel: 152/s | ETA: 4min

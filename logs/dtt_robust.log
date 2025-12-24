@@ -1,0 +1,78 @@
+AVISO: networkx não disponível. Algumas funcionalidades serão limitadas.
+======================================================================
+  OTIMIZADOR DTT ROBUSTO
+  Com Validacao Anti-Overfitting
+  300,000 Combinacoes
+  PARA DINHEIRO REAL
+======================================================================
+
+  Periodo: 2025-07-01 a 2025-12-24
+
+======================================================================
+  CARREGANDO DADOS REAIS
+======================================================================
+
+============================================================
+  DOWNLOAD DE DADOS HISTORICOS REAIS (FXOpen WebSocket)
+============================================================
+  Simbolo: EURUSD
+  Periodicidade: H1
+  Periodo: 2025-07-01 00:00 a 2025-12-24 00:26
+  Tipo de preco: bid
+============================================================
+
+  Conectando ao WebSocket FXOpen...
+  Autenticado com sucesso!
+  Baixando barras de 2025-07-01 a 2025-12-24...
+    Batch 1: 1000 barras (total: 1000)
+    Batch 2: 1000 barras (total: 2000)
+    Batch 3: 1000 barras (total: 3000)
+    Batch 4: 25 barras (total: 3025)
+
+  Total de barras baixadas: 3025
+  Primeira barra: 2025-07-01 00:00:00+00:00
+  Ultima barra: 2025-12-24 00:00:00+00:00
+  Total de barras: 3025
+
+  DIVISAO TRAIN/TEST:
+    Treino: 2117 barras
+    Teste:  908 barras
+
+  Pre-calculando sinais DTT (computacionalmente intensivo)...
+    200/3025 barras...
+    400/3025 barras...
+    600/3025 barras...
+    800/3025 barras...
+    1000/3025 barras...
+    1200/3025 barras...
+    1400/3025 barras...
+    1600/3025 barras...
+    1800/3025 barras...
+    2000/3025 barras...
+    2200/3025 barras...
+    2400/3025 barras...
+    2600/3025 barras...
+    2800/3025 barras...
+    3000/3025 barras...
+
+  Sinais pre-calculados:
+    Treino: 1968 sinais
+    Teste:  908 sinais
+
+  Distribuicao de valores:
+    Entropy: min=0.826, max=0.955, mean=0.911
+    Tunneling: min=0.116, max=0.925, mean=0.233
+
+======================================================================
+  OTIMIZACAO ROBUSTA DTT: 300,000 COMBINACOES
+  Com validacao Train/Test Split
+======================================================================
+
+  [ROBUSTO #1] Robustez=0.7886
+    TREINO: 242 trades, WR=52.5%, PF=1.54
+    TESTE:  92 trades, WR=44.6%, PF=1.12
+
+  [ROBUSTO #2] Robustez=1.0000
+    TREINO: 242 trades, WR=31.4%, PF=1.31
+    TESTE:  92 trades, WR=41.3%, PF=2.02
+  30,000/300,000 (10.0%) | Robustos: 2375 | Vel: 401/s | ETA: 11min

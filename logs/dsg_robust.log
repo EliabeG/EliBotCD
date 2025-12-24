@@ -1,0 +1,118 @@
+AVISO: networkx não disponível. Algumas funcionalidades serão limitadas.
+======================================================================
+  OTIMIZADOR DSG ROBUSTO
+  Com Validacao Anti-Overfitting
+  100,000 Combinacoes
+  PARA DINHEIRO REAL
+======================================================================
+
+  Periodo: 2025-07-01 a 2025-12-24
+
+======================================================================
+  CARREGANDO DADOS REAIS
+======================================================================
+
+============================================================
+  DOWNLOAD DE DADOS HISTORICOS REAIS (FXOpen WebSocket)
+============================================================
+  Simbolo: EURUSD
+  Periodicidade: H1
+  Periodo: 2025-07-01 00:00 a 2025-12-24 01:18
+  Tipo de preco: bid
+============================================================
+
+  Conectando ao WebSocket FXOpen...
+  Autenticado com sucesso!
+  Baixando barras de 2025-07-01 a 2025-12-24...
+    Batch 1: 1000 barras (total: 1000)
+    Batch 2: 309 barras (total: 1309)
+
+  Total de barras baixadas: 1309
+  Primeira barra: 2025-07-01 00:00:00+00:00
+  Ultima barra: 2025-12-24 01:00:00+00:00
+  Total de barras: 1309
+
+  DIVISAO TRAIN/TEST:
+    Treino: 916 barras
+    Teste:  393 barras
+
+  Pre-calculando sinais DSG (computacionalmente intensivo)...
+    200/1309 barras...
+    400/1309 barras...
+    600/1309 barras...
+    800/1309 barras...
+    1000/1309 barras...
+    1200/1309 barras...
+
+  Sinais pre-calculados:
+    Treino: 867 sinais
+    Teste:  393 sinais
+
+  Distribuicao de valores:
+    Ricci: min=0.0762, max=0.7916, mean=0.1469
+    Tidal: min=0.000092, max=0.047856, mean=0.005431
+
+======================================================================
+  OTIMIZACAO ROBUSTA DSG: 100,000 COMBINACOES
+  Com validacao Train/Test Split
+======================================================================
+
+  [ROBUSTO #1] Robustez=0.9311
+    TREINO: 807 trades, WR=45.1%, PF=1.13
+    TESTE:  374 trades, WR=43.3%, PF=1.02
+
+  [ROBUSTO #3] Robustez=0.9862
+    TREINO: 807 trades, WR=49.7%, PF=1.21
+    TESTE:  374 trades, WR=50.0%, PF=1.16
+
+  [ROBUSTO #18] Robustez=0.9930
+    TREINO: 807 trades, WR=49.3%, PF=1.23
+    TESTE:  374 trades, WR=50.0%, PF=1.20
+
+  [ROBUSTO #74] Robustez=1.0000
+    TREINO: 807 trades, WR=48.8%, PF=1.24
+    TESTE:  374 trades, WR=50.0%, PF=1.23
+  20,000/100,000 (20.0%) | Robustos: 175 | Vel: 893/s | ETA: 1min
+  40,000/100,000 (40.0%) | Robustos: 363 | Vel: 897/s | ETA: 1min
+  60,000/100,000 (60.0%) | Robustos: 553 | Vel: 893/s | ETA: 1min
+  80,000/100,000 (80.0%) | Robustos: 725 | Vel: 896/s | ETA: 0min
+  100,000/100,000 (100.0%) | Robustos: 930 | Vel: 895/s | ETA: 0min
+
+======================================================================
+  CONCLUIDO em 1.9min
+  Testados: 100,000 | Robustos: 930
+======================================================================
+
+======================================================================
+  MELHOR RESULTADO ROBUSTO:
+======================================================================
+  TREINO: 807 trades, WR=48.8%, PF=1.24
+  TESTE:  374 trades, WR=50.0%, PF=1.23
+  Degradacao: -0.5%
+======================================================================
+
+  Configuracao robusta salva em: /home/azureuser/EliBotCD/configs/dsg-singularidadegravitacional_robust.json
+Traceback (most recent call last):
+  File "/home/azureuser/EliBotCD/backtesting/optimizer_dsg_robust.py", line 411, in <module>
+    asyncio.run(main())
+  File "/usr/lib/python3.10/asyncio/runners.py", line 44, in run
+    return loop.run_until_complete(main)
+  File "/usr/lib/python3.10/asyncio/base_events.py", line 649, in run_until_complete
+    return future.result()
+  File "/home/azureuser/EliBotCD/backtesting/optimizer_dsg_robust.py", line 403, in main
+    opt.save(n_tested=N_COMBINATIONS)
+  File "/home/azureuser/EliBotCD/backtesting/optimizer_dsg_robust.py", line 367, in save
+    json.dump(top_data, f, indent=2)
+  File "/usr/lib/python3.10/json/__init__.py", line 179, in dump
+    for chunk in iterable:
+  File "/usr/lib/python3.10/json/encoder.py", line 429, in _iterencode
+    yield from _iterencode_list(o, _current_indent_level)
+  File "/usr/lib/python3.10/json/encoder.py", line 325, in _iterencode_list
+    yield from chunks
+  File "/usr/lib/python3.10/json/encoder.py", line 405, in _iterencode_dict
+    yield from chunks
+  File "/usr/lib/python3.10/json/encoder.py", line 438, in _iterencode
+    o = _default(o)
+  File "/usr/lib/python3.10/json/encoder.py", line 179, in default
+    raise TypeError(f'Object of type {o.__class__.__name__} '
+TypeError: Object of type bool is not JSON serializable

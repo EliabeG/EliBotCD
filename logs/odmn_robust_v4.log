@@ -1,0 +1,83 @@
+AVISO: networkx não disponível. Algumas funcionalidades serão limitadas.
+======================================================================
+  OTIMIZADOR ODMN ROBUSTO
+  Com Validacao Anti-Overfitting
+  100,000 Combinacoes
+  PARA DINHEIRO REAL
+======================================================================
+
+  Periodo: 2025-07-01 a 2025-12-24
+
+======================================================================
+  CARREGANDO DADOS REAIS
+======================================================================
+
+============================================================
+  DOWNLOAD DE DADOS HISTORICOS REAIS (FXOpen WebSocket)
+============================================================
+  Simbolo: EURUSD
+  Periodicidade: H1
+  Periodo: 2025-07-01 00:00 a 2025-12-24 02:09
+  Tipo de preco: bid
+============================================================
+
+  Conectando ao WebSocket FXOpen...
+  Autenticado com sucesso!
+  Baixando barras de 2025-07-01 a 2025-12-24...
+    Batch 1: 1000 barras (total: 1000)
+    Batch 2: 310 barras (total: 1310)
+
+  Total de barras baixadas: 1310
+  Primeira barra: 2025-07-01 00:00:00+00:00
+  Ultima barra: 2025-12-24 02:00:00+00:00
+  Total de barras: 1310
+
+  DIVISAO TRAIN/TEST:
+    Treino: 916 barras
+    Teste:  394 barras
+
+  Pre-calculando sinais ODMN (computacionalmente intensivo)...
+    200/1310 barras...
+    400/1310 barras...
+    600/1310 barras...
+    800/1310 barras...
+    1000/1310 barras...
+    1200/1310 barras...
+
+  Sinais pre-calculados:
+    Treino: 807 sinais
+    Teste:  394 sinais
+
+  Distribuicao de valores:
+    Fragility: min=0.1486, max=7.7496, mean=1.5528
+    MFG Dir: min=-0.0000, max=-0.0000, mean=0.0000
+
+======================================================================
+  OTIMIZACAO ROBUSTA ODMN: 100,000 COMBINACOES
+  Com validacao Train/Test Split
+======================================================================
+
+  [ROBUSTO #1] Robustez=1.0000
+    TREINO: 317 trades, WR=43.5%, PF=1.10
+    TESTE:  86 trades, WR=50.0%, PF=1.39
+  20,000/100,000 (20.0%) | Robustos: 5010 | Vel: 316/s | ETA: 4min
+  40,000/100,000 (40.0%) | Robustos: 9885 | Vel: 318/s | ETA: 3min
+  60,000/100,000 (60.0%) | Robustos: 14855 | Vel: 318/s | ETA: 2min
+  80,000/100,000 (80.0%) | Robustos: 19940 | Vel: 318/s | ETA: 1min
+  100,000/100,000 (100.0%) | Robustos: 24904 | Vel: 318/s | ETA: 0min
+
+======================================================================
+  CONCLUIDO em 5.2min
+  Testados: 100,000 | Robustos: 24904
+======================================================================
+
+======================================================================
+  MELHOR RESULTADO ROBUSTO:
+======================================================================
+  TREINO: 317 trades, WR=43.5%, PF=1.10
+  TESTE:  86 trades, WR=50.0%, PF=1.39
+  Degradacao: -20.8%
+======================================================================
+
+  Configuracao robusta salva em: /home/azureuser/EliBotCD/configs/odmn-malliavinnash_robust.json
+  Top 10 robustos salvo em: /home/azureuser/EliBotCD/configs/odmn_robust_top10.json

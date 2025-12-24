@@ -1,0 +1,70 @@
+AVISO: networkx não disponível. Algumas funcionalidades serão limitadas.
+======================================================================
+  OTIMIZADOR ODMN ROBUSTO
+  Com Validacao Anti-Overfitting
+  100,000 Combinacoes
+  PARA DINHEIRO REAL
+======================================================================
+
+  Periodo: 2025-07-01 a 2025-12-24
+
+======================================================================
+  CARREGANDO DADOS REAIS
+======================================================================
+
+============================================================
+  DOWNLOAD DE DADOS HISTORICOS REAIS (FXOpen WebSocket)
+============================================================
+  Simbolo: EURUSD
+  Periodicidade: H1
+  Periodo: 2025-07-01 00:00 a 2025-12-24 01:47
+  Tipo de preco: bid
+============================================================
+
+  Conectando ao WebSocket FXOpen...
+  Autenticado com sucesso!
+  Baixando barras de 2025-07-01 a 2025-12-24...
+    Batch 1: 1000 barras (total: 1000)
+    Batch 2: 309 barras (total: 1309)
+
+  Total de barras baixadas: 1309
+  Primeira barra: 2025-07-01 00:00:00+00:00
+  Ultima barra: 2025-12-24 01:00:00+00:00
+  Total de barras: 1309
+
+  DIVISAO TRAIN/TEST:
+    Treino: 916 barras
+    Teste:  393 barras
+
+  Pre-calculando sinais ODMN (computacionalmente intensivo)...
+    200/1309 barras...
+    400/1309 barras...
+    600/1309 barras...
+    800/1309 barras...
+    1000/1309 barras...
+    1200/1309 barras...
+
+  Sinais pre-calculados:
+    Treino: 807 sinais
+    Teste:  393 sinais
+
+  Distribuicao de valores:
+    Fragility: min=0.1486, max=7.7496, mean=1.5532
+    MFG Dir: min=-0.0000, max=-0.0000, mean=0.0000
+
+======================================================================
+  OTIMIZACAO ROBUSTA ODMN: 100,000 COMBINACOES
+  Com validacao Train/Test Split
+======================================================================
+  20,000/100,000 (20.0%) | Robustos: 0 | Vel: 16310/s | ETA: 0min
+  40,000/100,000 (40.0%) | Robustos: 0 | Vel: 16487/s | ETA: 0min
+  60,000/100,000 (60.0%) | Robustos: 0 | Vel: 16646/s | ETA: 0min
+  80,000/100,000 (80.0%) | Robustos: 0 | Vel: 16761/s | ETA: 0min
+  100,000/100,000 (100.0%) | Robustos: 0 | Vel: 16799/s | ETA: 0min
+
+======================================================================
+  CONCLUIDO em 0.1min
+  Testados: 100,000 | Robustos: 0
+======================================================================
+
+  AVISO: Nenhuma configuracao passou nos filtros!

@@ -1,0 +1,105 @@
+AVISO: networkx não disponível. Algumas funcionalidades serão limitadas.
+======================================================================
+  OTIMIZADOR PRM ROBUSTO
+  Com Validacao Anti-Overfitting
+  500,000 Combinacoes
+  PARA DINHEIRO REAL
+======================================================================
+
+  Periodo: 2025-07-01 a 2025-12-24
+
+======================================================================
+  CARREGANDO DADOS REAIS
+======================================================================
+
+============================================================
+  DOWNLOAD DE DADOS HISTORICOS REAIS (FXOpen WebSocket)
+============================================================
+  Simbolo: EURUSD
+  Periodicidade: H1
+  Periodo: 2025-07-01 00:00 a 2025-12-24 00:17
+  Tipo de preco: bid
+============================================================
+
+  Conectando ao WebSocket FXOpen...
+  Autenticado com sucesso!
+  Baixando barras de 2025-07-01 a 2025-12-24...
+    Batch 1: 1000 barras (total: 1000)
+    Batch 2: 309 barras (total: 1309)
+
+  Total de barras baixadas: 1308
+  Primeira barra: 2025-07-01 00:00:00+00:00
+  Ultima barra: 2025-12-24 00:00:00+00:00
+  Total de barras: 1308
+
+  DIVISAO TRAIN/TEST:
+    Treino: 915 barras (2025-07-01 a 2025-12-01)
+    Teste:  393 barras (2025-12-01 a 2025-12-24)
+
+  Pre-calculando sinais PRM...
+    500/1308 barras...
+    1000/1308 barras...
+
+  Sinais pre-calculados:
+    Treino: 866 sinais
+    Teste:  393 sinais
+
+======================================================================
+  OTIMIZACAO ROBUSTA PRM: 500,000 COMBINACOES
+  Com validacao Train/Test Split
+======================================================================
+
+  DEBUG #1: hmm=0.71, lyap=0.059, sl=46, tp=33
+
+  DEBUG #2: hmm=0.61, lyap=0.074, sl=44, tp=48
+    DEBUG TRAIN: 57 trades, WR=0.42, PF=0.77
+
+  DEBUG #3: hmm=0.58, lyap=0.076, sl=48, tp=64
+    DEBUG TRAIN: 59 trades, WR=0.49, PF=1.25
+
+  DEBUG #4: hmm=0.67, lyap=0.085, sl=31, tp=77
+    DEBUG TRAIN: 45 trades, WR=0.29, PF=0.98
+
+  DEBUG #5: hmm=0.58, lyap=0.068, sl=50, tp=48
+
+  [ROBUSTO #1] Robustez=1.0000
+    TREINO: 398 trades, WR=42.7%, PF=1.08, PnL=878pips
+    TESTE:  190 trades, WR=44.7%, PF=1.09, PnL=448pips
+    Degradacao: -2.9%
+  50,000/500,000 (10.0%) | Robustos: 1423 | Vel: 1734/s | ETA: 4min
+  100,000/500,000 (20.0%) | Robustos: 2897 | Vel: 1735/s | ETA: 4min
+  150,000/500,000 (30.0%) | Robustos: 4346 | Vel: 1735/s | ETA: 3min
+  200,000/500,000 (40.0%) | Robustos: 5827 | Vel: 1731/s | ETA: 3min
+  250,000/500,000 (50.0%) | Robustos: 7241 | Vel: 1730/s | ETA: 2min
+  300,000/500,000 (60.0%) | Robustos: 8601 | Vel: 1729/s | ETA: 2min
+  350,000/500,000 (70.0%) | Robustos: 10011 | Vel: 1730/s | ETA: 1min
+  400,000/500,000 (80.0%) | Robustos: 11433 | Vel: 1729/s | ETA: 1min
+  450,000/500,000 (90.0%) | Robustos: 12855 | Vel: 1728/s | ETA: 0min
+  500,000/500,000 (100.0%) | Robustos: 14249 | Vel: 1728/s | ETA: 0min
+
+======================================================================
+  CONCLUIDO em 4.8min
+  Testados: 500,000 | Robustos: 14249
+======================================================================
+
+======================================================================
+  MELHOR RESULTADO ROBUSTO:
+======================================================================
+  Robustez: 1.0000
+  Degradacao Train->Test: -2.9%
+
+  TREINO:
+    Trades: 398
+    Win Rate: 42.7%
+    Profit Factor: 1.08
+    PnL: 878.3 pips
+
+  TESTE (Out-of-Sample):
+    Trades: 190
+    Win Rate: 44.7%
+    Profit Factor: 1.09
+    PnL: 447.9 pips
+======================================================================
+
+  Configuracao robusta salva em: /home/azureuser/EliBotCD/configs/prm-riemannmandelbrot_robust.json
+  Top 10 robustos salvo em: /home/azureuser/EliBotCD/configs/prm_robust_top10.json

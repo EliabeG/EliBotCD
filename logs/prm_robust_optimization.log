@@ -1,0 +1,74 @@
+AVISO: networkx não disponível. Algumas funcionalidades serão limitadas.
+======================================================================
+  OTIMIZADOR PRM ROBUSTO
+  Com Validacao Anti-Overfitting
+  500,000 Combinacoes
+  PARA DINHEIRO REAL
+======================================================================
+
+  Periodo: 2025-07-01 a 2025-12-23
+
+======================================================================
+  CARREGANDO DADOS REAIS
+======================================================================
+
+============================================================
+  DOWNLOAD DE DADOS HISTORICOS REAIS (FXOpen WebSocket)
+============================================================
+  Simbolo: EURUSD
+  Periodicidade: H1
+  Periodo: 2025-07-01 00:00 a 2025-12-23 23:49
+  Tipo de preco: bid
+============================================================
+
+  Conectando ao WebSocket FXOpen...
+  Autenticado com sucesso!
+  Baixando barras de 2025-07-01 a 2025-12-23...
+    Batch 1: 1000 barras (total: 1000)
+    Batch 2: 1000 barras (total: 2000)
+    Batch 3: 1000 barras (total: 3000)
+    Batch 4: 24 barras (total: 3024)
+
+  Total de barras baixadas: 3024
+  Primeira barra: 2025-07-01 00:00:00+00:00
+  Ultima barra: 2025-12-23 23:00:00+00:00
+  Total de barras: 3024
+
+  DIVISAO TRAIN/TEST:
+    Treino: 2116 barras (2025-07-01 a 2025-10-31)
+    Teste:  908 barras (2025-10-31 a 2025-12-23)
+
+  Pre-calculando sinais PRM...
+    500/3024 barras...
+    1000/3024 barras...
+    1500/3024 barras...
+    2000/3024 barras...
+    2500/3024 barras...
+    3000/3024 barras...
+
+  Sinais pre-calculados:
+    Treino: 2067 sinais
+    Teste:  908 sinais
+
+======================================================================
+  OTIMIZACAO ROBUSTA PRM: 500,000 COMBINACOES
+  Com validacao Train/Test Split
+======================================================================
+  50,000/500,000 (10.0%) | Robustos: 0 | Vel: 1273/s | ETA: 6min
+  100,000/500,000 (20.0%) | Robustos: 0 | Vel: 1267/s | ETA: 5min
+  150,000/500,000 (30.0%) | Robustos: 0 | Vel: 1264/s | ETA: 5min
+  200,000/500,000 (40.0%) | Robustos: 0 | Vel: 1269/s | ETA: 4min
+  250,000/500,000 (50.0%) | Robustos: 0 | Vel: 1269/s | ETA: 3min
+  300,000/500,000 (60.0%) | Robustos: 0 | Vel: 1265/s | ETA: 3min
+  350,000/500,000 (70.0%) | Robustos: 0 | Vel: 1266/s | ETA: 2min
+  400,000/500,000 (80.0%) | Robustos: 0 | Vel: 1266/s | ETA: 1min
+  450,000/500,000 (90.0%) | Robustos: 0 | Vel: 1265/s | ETA: 1min
+  500,000/500,000 (100.0%) | Robustos: 0 | Vel: 1266/s | ETA: 0min
+
+======================================================================
+  CONCLUIDO em 6.6min
+  Testados: 500,000 | Robustos: 0
+======================================================================
+
+  AVISO: Nenhuma configuracao passou nos filtros de robustez!
+  Isso pode indicar que o indicador nao e' adequado para este periodo.

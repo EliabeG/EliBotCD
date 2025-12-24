@@ -1,0 +1,96 @@
+AVISO: networkx não disponível. Algumas funcionalidades serão limitadas.
+======================================================================
+  OTIMIZADOR DTT ROBUSTO
+  Com Validacao Anti-Overfitting
+  100,000 Combinacoes
+  PARA DINHEIRO REAL
+======================================================================
+
+  Periodo: 2025-07-01 a 2025-12-24
+
+======================================================================
+  CARREGANDO DADOS REAIS
+======================================================================
+
+============================================================
+  DOWNLOAD DE DADOS HISTORICOS REAIS (FXOpen WebSocket)
+============================================================
+  Simbolo: EURUSD
+  Periodicidade: H1
+  Periodo: 2025-07-01 00:00 a 2025-12-24 00:39
+  Tipo de preco: bid
+============================================================
+
+  Conectando ao WebSocket FXOpen...
+  Autenticado com sucesso!
+  Baixando barras de 2025-07-01 a 2025-12-24...
+    Batch 1: 1000 barras (total: 1000)
+    Batch 2: 1000 barras (total: 2000)
+    Batch 3: 1000 barras (total: 3000)
+    Batch 4: 25 barras (total: 3025)
+
+  Total de barras baixadas: 3025
+  Primeira barra: 2025-07-01 00:00:00+00:00
+  Ultima barra: 2025-12-24 00:00:00+00:00
+  Total de barras: 3025
+
+  DIVISAO TRAIN/TEST:
+    Treino: 2117 barras
+    Teste:  908 barras
+
+  Pre-calculando sinais DTT (computacionalmente intensivo)...
+    200/3025 barras...
+    400/3025 barras...
+    600/3025 barras...
+    800/3025 barras...
+    1000/3025 barras...
+    1200/3025 barras...
+    1400/3025 barras...
+    1600/3025 barras...
+    1800/3025 barras...
+    2000/3025 barras...
+    2200/3025 barras...
+    2400/3025 barras...
+    2600/3025 barras...
+    2800/3025 barras...
+    3000/3025 barras...
+
+  Sinais pre-calculados:
+    Treino: 1968 sinais
+    Teste:  908 sinais
+
+  Distribuicao de valores:
+    Entropy: min=0.826, max=0.955, mean=0.911
+    Tunneling: min=0.116, max=0.925, mean=0.233
+
+======================================================================
+  OTIMIZACAO ROBUSTA DTT: 100,000 COMBINACOES
+  Com validacao Train/Test Split
+======================================================================
+
+  [ROBUSTO #1] Robustez=0.8390
+    TREINO: 241 trades, WR=46.9%, PF=1.74
+    TESTE:  92 trades, WR=41.3%, PF=1.39
+
+  [ROBUSTO #2] Robustez=1.0000
+    TREINO: 179 trades, WR=41.9%, PF=1.63
+    TESTE:  59 trades, WR=42.4%, PF=1.66
+  30,000/100,000 (30.0%) | Robustos: 2375 | Vel: 670/s | ETA: 2min
+  60,000/100,000 (60.0%) | Robustos: 4703 | Vel: 666/s | ETA: 1min
+  90,000/100,000 (90.0%) | Robustos: 7022 | Vel: 665/s | ETA: 0min
+
+======================================================================
+  CONCLUIDO em 2.5min
+  Testados: 100,000 | Robustos: 7779
+======================================================================
+
+======================================================================
+  MELHOR RESULTADO ROBUSTO:
+======================================================================
+  TREINO: 179 trades, WR=41.9%, PF=1.63
+  TESTE:  59 trades, WR=42.4%, PF=1.66
+  Degradacao: -1.5%
+======================================================================
+
+  Configuracao robusta salva em: /home/azureuser/EliBotCD/configs/dtt-tunelamentotopologico_robust.json
+  Top 10 robustos salvo em: /home/azureuser/EliBotCD/configs/dtt_robust_top10.json
