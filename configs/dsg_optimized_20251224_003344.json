@@ -1,0 +1,196 @@
+{
+  "timestamp": "2025-12-24T00:33:44.375552",
+  "symbol": "EURUSD",
+  "n_folds": 3,
+  "total_tested": 8448,
+  "passed_rate": 0.05587121212121212,
+  "best_config": {
+    "parameters": {
+      "ricci_percentile": 5,
+      "tidal_percentile": 10,
+      "eh_percentile": 5,
+      "min_confidence": 0.7,
+      "signal_cooldown": 50,
+      "sl_pips": 25.0,
+      "tp_pips": 50.0
+    },
+    "performance": {
+      "trades": 8,
+      "pnl": 185.4,
+      "win_rate": 0.8333333333333334,
+      "pf": 61167.01333333333
+    }
+  },
+  "approved_configs": [
+    {
+      "parameters": {
+        "ricci_percentile": 5,
+        "tidal_percentile": 10,
+        "eh_percentile": 5,
+        "min_confidence": 0.7,
+        "signal_cooldown": 50,
+        "sl_pips": 25.0,
+        "tp_pips": 50.0
+      },
+      "performance": {
+        "trades": 8,
+        "pnl": 185.4,
+        "win_rate": 0.8333333333333334,
+        "pf": 61167.01333333333
+      }
+    },
+    {
+      "parameters": {
+        "ricci_percentile": 5,
+        "tidal_percentile": 10,
+        "eh_percentile": 10,
+        "min_confidence": 0.7,
+        "signal_cooldown": 50,
+        "sl_pips": 25.0,
+        "tp_pips": 50.0
+      },
+      "performance": {
+        "trades": 8,
+        "pnl": 185.4,
+        "win_rate": 0.8333333333333334,
+        "pf": 61167.01333333333
+      }
+    },
+    {
+      "parameters": {
+        "ricci_percentile": 5,
+        "tidal_percentile": 10,
+        "eh_percentile": 15,
+        "min_confidence": 0.7,
+        "signal_cooldown": 50,
+        "sl_pips": 25.0,
+        "tp_pips": 50.0
+      },
+      "performance": {
+        "trades": 8,
+        "pnl": 185.4,
+        "win_rate": 0.8333333333333334,
+        "pf": 61167.01333333333
+      }
+    },
+    {
+      "parameters": {
+        "ricci_percentile": 5,
+        "tidal_percentile": 10,
+        "eh_percentile": 20,
+        "min_confidence": 0.7,
+        "signal_cooldown": 50,
+        "sl_pips": 25.0,
+        "tp_pips": 50.0
+      },
+      "performance": {
+        "trades": 8,
+        "pnl": 185.4,
+        "win_rate": 0.8333333333333334,
+        "pf": 61167.01333333333
+      }
+    },
+    {
+      "parameters": {
+        "ricci_percentile": 10,
+        "tidal_percentile": 10,
+        "eh_percentile": 5,
+        "min_confidence": 0.7,
+        "signal_cooldown": 50,
+        "sl_pips": 25.0,
+        "tp_pips": 50.0
+      },
+      "performance": {
+        "trades": 8,
+        "pnl": 185.4,
+        "win_rate": 0.8333333333333334,
+        "pf": 61167.01333333333
+      }
+    },
+    {
+      "parameters": {
+        "ricci_percentile": 10,
+        "tidal_percentile": 10,
+        "eh_percentile": 10,
+        "min_confidence": 0.7,
+        "signal_cooldown": 50,
+        "sl_pips": 25.0,
+        "tp_pips": 50.0
+      },
+      "performance": {
+        "trades": 8,
+        "pnl": 185.4,
+        "win_rate": 0.8333333333333334,
+        "pf": 61167.01333333333
+      }
+    },
+    {
+      "parameters": {
+        "ricci_percentile": 10,
+        "tidal_percentile": 10,
+        "eh_percentile": 15,
+        "min_confidence": 0.7,
+        "signal_cooldown": 50,
+        "sl_pips": 25.0,
+        "tp_pips": 50.0
+      },
+      "performance": {
+        "trades": 8,
+        "pnl": 185.4,
+        "win_rate": 0.8333333333333334,
+        "pf": 61167.01333333333
+      }
+    },
+    {
+      "parameters": {
+        "ricci_percentile": 10,
+        "tidal_percentile": 10,
+        "eh_percentile": 20,
+        "min_confidence": 0.7,
+        "signal_cooldown": 50,
+        "sl_pips": 25.0,
+        "tp_pips": 50.0
+      },
+      "performance": {
+        "trades": 8,
+        "pnl": 185.4,
+        "win_rate": 0.8333333333333334,
+        "pf": 61167.01333333333
+      }
+    },
+    {
+      "parameters": {
+        "ricci_percentile": 15,
+        "tidal_percentile": 10,
+        "eh_percentile": 5,
+        "min_confidence": 0.7,
+        "signal_cooldown": 50,
+        "sl_pips": 25.0,
+        "tp_pips": 50.0
+      },
+      "performance": {
+        "trades": 8,
+        "pnl": 185.4,
+        "win_rate": 0.8333333333333334,
+        "pf": 61167.01333333333
+      }
+    },
+    {
+      "parameters": {
+        "ricci_percentile": 15,
+        "tidal_percentile": 10,
+        "eh_percentile": 10,
+        "min_confidence": 0.7,
+        "signal_cooldown": 50,
+        "sl_pips": 25.0,
+        "tp_pips": 50.0
+      },
+      "performance": {
+        "trades": 8,
+        "pnl": 185.4,
+        "win_rate": 0.8333333333333334,
+        "pf": 61167.01333333333
+      }
+    }
+  ]
+}
