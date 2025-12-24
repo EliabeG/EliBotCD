@@ -315,16 +315,24 @@ class PRMOptimizer:
         # Media por trade
         result.avg_trade = result.total_pnl_pips / result.total_trades if result.total_trades > 0 else 0
 
-        # Drawdown
+        # Drawdown - CORRIGIDO
         equity = np.array(equity_curve)
         peak = np.maximum.accumulate(equity)
-        drawdown = (peak - equity) / peak
-        result.max_drawdown = np.max(drawdown) if len(drawdown) > 0 else 0
+        # Evita divisão por zero
+        drawdown = np.where(peak > 0, (peak - equity) / peak, 0)
+        result.max_drawdown = float(np.max(drawdown)) if len(drawdown) > 0 else 0.0
 
-        # Sharpe Ratio simplificado
-        returns = np.diff(equity) / equity[:-1]
-        if len(returns) > 1 and np.std(returns) > 0:
-            result.sharpe_ratio = np.sqrt(252 * 24 * 4) * np.mean(returns) / np.std(returns)  # M15
+        # Sharpe Ratio - CORRIGIDO
+        # Para H1 (periodicidade padrão do PRM): ~6048 períodos por ano (252 * 24)
+        # O fator de anualização correto depende da periodicidade usada
+        periods_per_year = 252 * 24  # Para H1 (hourly)
+        returns = np.diff(equity) / np.maximum(equity[:-1], 1.0)
+        if len(returns) > 1:
+            returns_std = np.std(returns)
+            if returns_std > 0:
+                result.sharpe_ratio = np.sqrt(periods_per_year) * np.mean(returns) / returns_std
+            else:
+                result.sharpe_ratio = 0.0
 
         # Score combinado para ranking
         result.score = self._calculate_score(result)

@@ -150,11 +150,18 @@ class RobustBacktester:
         gross_loss = abs(sum(p for p in pnls if p <= 0)) or 0.001
         profit_factor = gross_profit / gross_loss
 
-        # Drawdown
-        equity = np.cumsum([0] + pnls)
-        peak = np.maximum.accumulate(equity + 10000)
-        drawdowns = (peak - (equity + 10000)) / peak
-        max_dd = np.max(drawdowns) if len(drawdowns) > 0 else 0
+        # Drawdown - CORRIGIDO: cálculo correto sem adicionar constante arbitrária
+        # Iniciamos com capital base de 10000 para ter valores positivos
+        initial_capital = 10000.0
+        equity = initial_capital + np.cumsum([0] + pnls)
+
+        # Peak é o máximo histórico do equity
+        peak = np.maximum.accumulate(equity)
+
+        # Drawdown é a queda percentual do pico atual
+        # Evita divisão por zero usando np.maximum
+        drawdowns = (peak - equity) / np.maximum(peak, 1.0)
+        max_dd = float(np.max(drawdowns)) if len(drawdowns) > 0 else 0.0
 
         avg_trade = total_pnl / len(pnls) if pnls else 0
         largest_win = max(pnls) if pnls else 0

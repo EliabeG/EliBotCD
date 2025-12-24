@@ -76,8 +76,61 @@ class ODMNRobustOptimizer:
         self.robust_results: List[RobustResult] = []
         self.best: Optional[RobustResult] = None
 
+    def _compute_signals_for_bars(self, bars: List[Bar], start_idx: int = 0) -> List[ODMNSignal]:
+        """
+        Calcula sinais ODMN para um conjunto de barras SEM look-ahead bias.
+
+        IMPORTANTE: Usa apenas dados disponíveis até cada momento (sem dados futuros).
+        """
+        odmn = OracloDerivativosMalliavinNash(
+            lookback_window=100,
+            fragility_threshold=2.0,
+            mfg_direction_threshold=0.1,
+            use_deep_galerkin=False,
+            malliavin_paths=1000,
+            malliavin_steps=30
+        )
+
+        prices_buf = deque(maxlen=150)
+        signals = []
+        min_prices = 110
+
+        for i, bar in enumerate(bars):
+            prices_buf.append(bar.close)
+
+            if len(prices_buf) < min_prices:
+                continue
+
+            try:
+                # CORRIGIDO: Usa apenas dados até o momento atual (sem look-ahead)
+                prices_arr = np.array(prices_buf)
+                result = odmn.analyze(prices_arr)
+
+                signals.append(ODMNSignal(
+                    bar_idx=start_idx + i,
+                    price=bar.close,
+                    high=bar.high,
+                    low=bar.low,
+                    fragility_index=result['fragility_index'],
+                    fragility_percentile=result['fragility_percentile'],
+                    mfg_direction=result['mfg_direction'],
+                    mfg_equilibrium=result['mfg_equilibrium'],
+                    regime=result['regime'],
+                    signal=result['signal'],
+                    confidence=result['confidence']
+                ))
+
+            except:
+                continue
+
+        return signals
+
     async def load_and_precompute(self, start_date: datetime, end_date: datetime):
-        """Carrega dados e pre-calcula sinais ODMN"""
+        """
+        Carrega dados e pre-calcula sinais ODMN SEM LOOK-AHEAD BIAS.
+
+        CORRIGIDO: Calcula sinais separadamente para treino e teste.
+        """
         print("\n" + "=" * 70)
         print("  CARREGANDO DADOS REAIS")
         print("=" * 70)
@@ -103,64 +156,33 @@ class ODMNRobustOptimizer:
         print(f"    Treino: {len(self.train_bars)} barras")
         print(f"    Teste:  {len(self.test_bars)} barras")
 
-        # Pre-calcular ODMN
-        print("\n  Pre-calculando sinais ODMN (computacionalmente intensivo)...")
+        # CORRIGIDO: Calcula sinais SEPARADAMENTE para evitar look-ahead bias
+        print("\n  Pre-calculando sinais ODMN (SEM look-ahead)...")
 
-        odmn = OracloDerivativosMalliavinNash(
-            lookback_window=100,
-            fragility_threshold=2.0,
-            mfg_direction_threshold=0.1,
-            use_deep_galerkin=False,  # Usar solucao analitica para velocidade
-            malliavin_paths=1000,
-            malliavin_steps=30
-        )
+        # 1. Calcular sinais do TREINO (apenas dados de treino)
+        print("    Calculando sinais do treino...")
+        self.train_signals = self._compute_signals_for_bars(self.train_bars, start_idx=0)
 
-        prices_buf = deque(maxlen=150)
-        self.signals = []
-        min_prices = 110
+        # 2. Para o TESTE: usar warmup com últimas barras do treino
+        warmup_size = min(150, len(self.train_bars))
+        warmup_bars = self.train_bars[-warmup_size:]
+        test_with_warmup = warmup_bars + self.test_bars
 
-        for i, bar in enumerate(self.bars):
-            prices_buf.append(bar.close)
+        print("    Calculando sinais do teste (com warmup do treino)...")
+        all_test_signals = self._compute_signals_for_bars(test_with_warmup, start_idx=split_idx - warmup_size)
 
-            if len(prices_buf) < min_prices:
-                continue
+        # Filtrar apenas sinais que estão no período de teste
+        self.test_signals = [s for s in all_test_signals if s.bar_idx >= split_idx]
 
-            try:
-                prices_arr = np.array(prices_buf)
-                result = odmn.analyze(prices_arr)
-
-                self.signals.append(ODMNSignal(
-                    bar_idx=i,
-                    price=bar.close,
-                    high=bar.high,
-                    low=bar.low,
-                    fragility_index=result['fragility_index'],
-                    fragility_percentile=result['fragility_percentile'],
-                    mfg_direction=result['mfg_direction'],
-                    mfg_equilibrium=result['mfg_equilibrium'],
-                    regime=result['regime'],
-                    signal=result['signal'],
-                    confidence=result['confidence']
-                ))
-
-            except:
-                continue
-
-            if (i + 1) % 200 == 0:
-                print(f"    {i+1}/{len(self.bars)} barras...")
-
-        # Separar sinais
-        self.train_signals = [s for s in self.signals if s.bar_idx < split_idx]
-        self.test_signals = [s for s in self.signals if s.bar_idx >= split_idx]
-
-        print(f"\n  Sinais pre-calculados:")
+        print(f"\n  Sinais pre-calculados (SEM LOOK-AHEAD):")
         print(f"    Treino: {len(self.train_signals)} sinais")
         print(f"    Teste:  {len(self.test_signals)} sinais")
 
         # Debug: mostrar distribuicao de valores
-        if self.signals:
-            frag_vals = [s.fragility_index for s in self.signals]
-            mfg_vals = [s.mfg_direction for s in self.signals]
+        all_signals = self.train_signals + self.test_signals
+        if all_signals:
+            frag_vals = [s.fragility_index for s in all_signals]
+            mfg_vals = [s.mfg_direction for s in all_signals]
             print(f"\n  Distribuicao de valores:")
             print(f"    Fragility: min={min(frag_vals):.4f}, max={max(frag_vals):.4f}, mean={np.mean(frag_vals):.4f}")
             print(f"    MFG Dir: min={min(mfg_vals):.4f}, max={max(mfg_vals):.4f}, mean={np.mean(mfg_vals):.4f}")

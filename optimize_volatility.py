@@ -93,18 +93,60 @@ class VolatilityOptimizer:
 
     def calculate_future_move(self, close: np.ndarray, forward_periods: int = 5) -> np.ndarray:
         """
-        Calcula o movimento futuro do preço (para validação)
-        Retorna o range em pips nos próximos N períodos
+        Calcula o movimento futuro do preço (APENAS PARA ANÁLISE EXPLORATÓRIA).
+
+        ⚠️ AVISO CRÍTICO - LOOK-AHEAD BIAS:
+        Esta função usa dados FUTUROS e NÃO pode ser usada para:
+        - Validação de estratégias
+        - Otimização de parâmetros para trading real
+        - Qualquer decisão de trading
+
+        Uso permitido APENAS para:
+        - Análise exploratória offline
+        - Estudos acadêmicos
+        - Entender a distribuição histórica de volatilidade
+
+        Args:
+            close: Array de preços de fechamento
+            forward_periods: Número de períodos à frente para calcular
+
+        Returns:
+            Array com o range em pips nos próximos N períodos (DADOS FUTUROS!)
         """
         n = len(close)
         future_move = np.full(n, np.nan)
 
+        # ⚠️ LOOK-AHEAD: Este loop usa close[i:i + forward_periods + 1] que são preços FUTUROS!
         for i in range(n - forward_periods):
             future_prices = close[i:i + forward_periods + 1]
             move = (np.max(future_prices) - np.min(future_prices)) * 10000  # em pips
             future_move[i] = move
 
         return future_move
+
+    def calculate_historical_volatility(self, close: np.ndarray, lookback: int = 20) -> np.ndarray:
+        """
+        Calcula a volatilidade histórica SEM look-ahead bias.
+
+        Esta é a alternativa SEGURA para uso em trading real.
+        Usa apenas dados passados disponíveis até cada momento.
+
+        Args:
+            close: Array de preços de fechamento
+            lookback: Número de períodos passados para calcular
+
+        Returns:
+            Array com a volatilidade histórica em pips
+        """
+        n = len(close)
+        hist_vol = np.full(n, np.nan)
+
+        for i in range(lookback, n):
+            past_prices = close[i - lookback:i + 1]  # Usa apenas dados PASSADOS
+            vol = (np.max(past_prices) - np.min(past_prices)) * 10000  # em pips
+            hist_vol[i] = vol
+
+        return hist_vol
 
     def analyze_volatility_distribution(self):
         """Analisa a distribuição da volatilidade nos dados históricos"""

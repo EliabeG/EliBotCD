@@ -74,8 +74,66 @@ class FIFNRobustOptimizer:
         self.robust_results: List[RobustResult] = []
         self.best: Optional[RobustResult] = None
 
+    def _compute_signals_for_bars(self, bars: List[Bar], start_idx: int = 0) -> List[FIFNSignal]:
+        """
+        Calcula sinais FIFN para um conjunto de barras SEM look-ahead bias.
+
+        IMPORTANTE: Usa apenas dados disponíveis até cada momento (sem dados futuros).
+        """
+        fifn = FluxoInformacaoFisherNavier(
+            window_size=50,
+            kl_lookback=10,
+            reynolds_sweet_low=2300,
+            reynolds_sweet_high=4000,
+            skewness_threshold=0.5
+        )
+
+        prices_buf = deque(maxlen=200)
+        signals = []
+        min_prices = 80  # Minimo para FIFN (window + lookback + buffer)
+
+        for i, bar in enumerate(bars):
+            prices_buf.append(bar.close)
+
+            if len(prices_buf) < min_prices:
+                continue
+
+            try:
+                # CORRIGIDO: Usa apenas dados até o momento atual (sem look-ahead)
+                result = fifn.analyze(np.array(prices_buf))
+
+                reynolds = result['Reynolds_Number']
+                kl_div = result['KL_Divergence']
+                skewness = result['directional_signal']['skewness']
+                pressure_grad = result['Pressure_Gradient']
+                in_sweet_spot = result['directional_signal']['in_sweet_spot']
+                signal = result['signal']
+                direction = signal  # 1=LONG, -1=SHORT, 0=NEUTRO
+
+                signals.append(FIFNSignal(
+                    bar_idx=start_idx + i,
+                    price=bar.close,
+                    high=bar.high,
+                    low=bar.low,
+                    reynolds=reynolds,
+                    kl_divergence=kl_div,
+                    skewness=skewness,
+                    pressure_gradient=pressure_grad,
+                    in_sweet_spot=in_sweet_spot,
+                    direction=direction
+                ))
+
+            except:
+                continue
+
+        return signals
+
     async def load_and_precompute(self, start_date: datetime, end_date: datetime):
-        """Carrega dados e pre-calcula sinais FIFN"""
+        """
+        Carrega dados e pre-calcula sinais FIFN SEM LOOK-AHEAD BIAS.
+
+        CORRIGIDO: Calcula sinais separadamente para treino e teste.
+        """
         print("\n" + "=" * 70)
         print("  CARREGANDO DADOS REAIS")
         print("=" * 70)
@@ -101,70 +159,34 @@ class FIFNRobustOptimizer:
         print(f"    Treino: {len(self.train_bars)} barras")
         print(f"    Teste:  {len(self.test_bars)} barras")
 
-        # Pre-calcular FIFN
-        print("\n  Pre-calculando sinais FIFN...")
+        # CORRIGIDO: Calcula sinais SEPARADAMENTE para evitar look-ahead bias
+        print("\n  Pre-calculando sinais FIFN (SEM look-ahead)...")
 
-        fifn = FluxoInformacaoFisherNavier(
-            window_size=50,
-            kl_lookback=10,
-            reynolds_sweet_low=2300,
-            reynolds_sweet_high=4000,
-            skewness_threshold=0.5
-        )
+        # 1. Calcular sinais do TREINO (apenas dados de treino)
+        print("    Calculando sinais do treino...")
+        self.train_signals = self._compute_signals_for_bars(self.train_bars, start_idx=0)
 
-        prices_buf = deque(maxlen=200)
-        self.signals = []
-        min_prices = 80  # Minimo para FIFN (window + lookback + buffer)
+        # 2. Para o TESTE: usar warmup com últimas barras do treino
+        warmup_size = min(200, len(self.train_bars))
+        warmup_bars = self.train_bars[-warmup_size:]
+        test_with_warmup = warmup_bars + self.test_bars
 
-        for i, bar in enumerate(self.bars):
-            prices_buf.append(bar.close)
+        print("    Calculando sinais do teste (com warmup do treino)...")
+        all_test_signals = self._compute_signals_for_bars(test_with_warmup, start_idx=split_idx - warmup_size)
 
-            if len(prices_buf) < min_prices:
-                continue
+        # Filtrar apenas sinais que estão no período de teste
+        self.test_signals = [s for s in all_test_signals if s.bar_idx >= split_idx]
 
-            try:
-                result = fifn.analyze(np.array(prices_buf))
-
-                reynolds = result['Reynolds_Number']
-                kl_div = result['KL_Divergence']
-                skewness = result['directional_signal']['skewness']
-                pressure_grad = result['Pressure_Gradient']
-                in_sweet_spot = result['directional_signal']['in_sweet_spot']
-                signal = result['signal']
-                direction = signal  # 1=LONG, -1=SHORT, 0=NEUTRO
-
-                self.signals.append(FIFNSignal(
-                    bar_idx=i,
-                    price=bar.close,
-                    high=bar.high,
-                    low=bar.low,
-                    reynolds=reynolds,
-                    kl_divergence=kl_div,
-                    skewness=skewness,
-                    pressure_gradient=pressure_grad,
-                    in_sweet_spot=in_sweet_spot,
-                    direction=direction
-                ))
-
-            except:
-                continue
-
-            if (i + 1) % 200 == 0:
-                print(f"    {i+1}/{len(self.bars)} barras...")
-
-        # Separar sinais
-        self.train_signals = [s for s in self.signals if s.bar_idx < split_idx]
-        self.test_signals = [s for s in self.signals if s.bar_idx >= split_idx]
-
-        print(f"\n  Sinais pre-calculados:")
+        print(f"\n  Sinais pre-calculados (SEM LOOK-AHEAD):")
         print(f"    Treino: {len(self.train_signals)} sinais")
         print(f"    Teste:  {len(self.test_signals)} sinais")
 
         # Debug: mostrar distribuicao de valores
-        if self.signals:
-            reynolds_vals = [s.reynolds for s in self.signals]
-            skew_vals = [s.skewness for s in self.signals]
-            kl_vals = [s.kl_divergence for s in self.signals]
+        all_signals = self.train_signals + self.test_signals
+        if all_signals:
+            reynolds_vals = [s.reynolds for s in all_signals]
+            skew_vals = [s.skewness for s in all_signals]
+            kl_vals = [s.kl_divergence for s in all_signals]
             print(f"\n  Distribuicao de valores:")
             print(f"    Reynolds: min={min(reynolds_vals):.0f}, max={max(reynolds_vals):.0f}, mean={np.mean(reynolds_vals):.0f}")
             print(f"    Skewness: min={min(skew_vals):.3f}, max={max(skew_vals):.3f}, mean={np.mean(skew_vals):.3f}")

@@ -72,8 +72,62 @@ class DTTRobustOptimizer:
         self.robust_results: List[RobustResult] = []
         self.best: Optional[RobustResult] = None
 
+    def _compute_signals_for_bars(self, bars: List[Bar], start_idx: int = 0) -> List[DTTSignal]:
+        """
+        Calcula sinais DTT para um conjunto de barras SEM look-ahead bias.
+
+        IMPORTANTE: Usa apenas dados disponíveis até cada momento (sem dados futuros).
+        """
+        dtt = DetectorTunelamentoTopologico(
+            max_points=150,
+            use_dimensionality_reduction=True,
+            reduction_method='pca',
+            persistence_entropy_threshold=0.1,
+            tunneling_probability_threshold=0.05
+        )
+
+        prices_buf = deque(maxlen=500)
+        signals = []
+        min_prices = 150
+
+        for i, bar in enumerate(bars):
+            prices_buf.append(bar.close)
+
+            if len(prices_buf) < min_prices:
+                continue
+
+            try:
+                # CORRIGIDO: Usa apenas dados até o momento atual (sem look-ahead)
+                result = dtt.analyze(np.array(prices_buf))
+
+                entropy = result['entropy']['persistence_entropy']
+                tunneling = result['tunneling']['tunneling_probability']
+                strength = result['signal_strength']
+                direction_str = result['direction']
+                direction = 1 if direction_str == 'LONG' else (-1 if direction_str == 'SHORT' else 0)
+
+                signals.append(DTTSignal(
+                    bar_idx=start_idx + i,
+                    price=bar.close,
+                    high=bar.high,
+                    low=bar.low,
+                    persistence_entropy=entropy,
+                    tunneling_probability=tunneling,
+                    signal_strength=strength,
+                    direction=direction
+                ))
+
+            except:
+                continue
+
+        return signals
+
     async def load_and_precompute(self, start_date: datetime, end_date: datetime):
-        """Carrega dados e pre-calcula sinais DTT"""
+        """
+        Carrega dados e pre-calcula sinais DTT SEM LOOK-AHEAD BIAS.
+
+        CORRIGIDO: Calcula sinais separadamente para treino e teste.
+        """
         print("\n" + "=" * 70)
         print("  CARREGANDO DADOS REAIS")
         print("=" * 70)
@@ -99,65 +153,33 @@ class DTTRobustOptimizer:
         print(f"    Treino: {len(self.train_bars)} barras")
         print(f"    Teste:  {len(self.test_bars)} barras")
 
-        # Pre-calcular DTT
-        print("\n  Pre-calculando sinais DTT (computacionalmente intensivo)...")
+        # CORRIGIDO: Calcula sinais SEPARADAMENTE para evitar look-ahead bias
+        print("\n  Pre-calculando sinais DTT (SEM look-ahead)...")
 
-        dtt = DetectorTunelamentoTopologico(
-            max_points=150,
-            use_dimensionality_reduction=True,
-            reduction_method='pca',
-            persistence_entropy_threshold=0.1,
-            tunneling_probability_threshold=0.05
-        )
+        # 1. Calcular sinais do TREINO (apenas dados de treino)
+        print("    Calculando sinais do treino...")
+        self.train_signals = self._compute_signals_for_bars(self.train_bars, start_idx=0)
 
-        prices_buf = deque(maxlen=500)
-        self.signals = []
-        min_prices = 150
+        # 2. Para o TESTE: usar warmup com últimas barras do treino
+        warmup_size = min(500, len(self.train_bars))
+        warmup_bars = self.train_bars[-warmup_size:]
+        test_with_warmup = warmup_bars + self.test_bars
 
-        for i, bar in enumerate(self.bars):
-            prices_buf.append(bar.close)
+        print("    Calculando sinais do teste (com warmup do treino)...")
+        all_test_signals = self._compute_signals_for_bars(test_with_warmup, start_idx=split_idx - warmup_size)
 
-            if len(prices_buf) < min_prices:
-                continue
+        # Filtrar apenas sinais que estão no período de teste
+        self.test_signals = [s for s in all_test_signals if s.bar_idx >= split_idx]
 
-            try:
-                result = dtt.analyze(np.array(prices_buf))
-
-                entropy = result['entropy']['persistence_entropy']
-                tunneling = result['tunneling']['tunneling_probability']
-                strength = result['signal_strength']
-                direction_str = result['direction']
-                direction = 1 if direction_str == 'LONG' else (-1 if direction_str == 'SHORT' else 0)
-
-                self.signals.append(DTTSignal(
-                    bar_idx=i,
-                    price=bar.close,
-                    high=bar.high,
-                    low=bar.low,
-                    persistence_entropy=entropy,
-                    tunneling_probability=tunneling,
-                    signal_strength=strength,
-                    direction=direction
-                ))
-
-            except:
-                continue
-
-            if (i + 1) % 200 == 0:
-                print(f"    {i+1}/{len(self.bars)} barras...")
-
-        # Separar sinais
-        self.train_signals = [s for s in self.signals if s.bar_idx < split_idx]
-        self.test_signals = [s for s in self.signals if s.bar_idx >= split_idx]
-
-        print(f"\n  Sinais pre-calculados:")
+        print(f"\n  Sinais pre-calculados (SEM LOOK-AHEAD):")
         print(f"    Treino: {len(self.train_signals)} sinais")
         print(f"    Teste:  {len(self.test_signals)} sinais")
 
         # Debug: mostrar distribuicao de valores
-        if self.signals:
-            entropies = [s.persistence_entropy for s in self.signals]
-            tunnelings = [s.tunneling_probability for s in self.signals]
+        all_signals = self.train_signals + self.test_signals
+        if all_signals:
+            entropies = [s.persistence_entropy for s in all_signals]
+            tunnelings = [s.tunneling_probability for s in all_signals]
             print(f"\n  Distribuicao de valores:")
             print(f"    Entropy: min={min(entropies):.3f}, max={max(entropies):.3f}, mean={np.mean(entropies):.3f}")
             print(f"    Tunneling: min={min(tunnelings):.3f}, max={max(tunnelings):.3f}, mean={np.mean(tunnelings):.3f}")

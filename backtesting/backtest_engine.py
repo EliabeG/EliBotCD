@@ -439,29 +439,52 @@ class BacktestEngine:
         result.max_win = max(winners) if winners else 0
         result.max_loss = min(losers) if losers else 0
 
-        # Drawdown
+        # Drawdown - CORRIGIDO
         equity = np.array(self.equity_curve)
         peak = np.maximum.accumulate(equity)
-        drawdown = (peak - equity) / peak
-        result.max_drawdown = np.max(drawdown) if len(drawdown) > 0 else 0
+        # Evita divisão por zero
+        drawdown = np.where(peak > 0, (peak - equity) / peak, 0)
+        result.max_drawdown = float(np.max(drawdown)) if len(drawdown) > 0 else 0.0
 
-        drawdown_pips = (peak - equity) / self.pip_value
-        result.max_drawdown_pips = np.max(drawdown_pips) if len(drawdown_pips) > 0 else 0
+        # Drawdown em USD (não em pips - cálculo anterior estava errado)
+        drawdown_usd = peak - equity
+        result.max_drawdown_pips = float(np.max(drawdown_usd)) if len(drawdown_usd) > 0 else 0.0
 
-        # Sharpe Ratio (anualizado)
-        returns = np.diff(equity) / equity[:-1]
-        if len(returns) > 1 and np.std(returns) > 0:
-            result.sharpe_ratio = np.sqrt(252) * np.mean(returns) / np.std(returns)
+        # Determinar fator de anualização baseado na periodicidade
+        # Períodos por ano aproximados para diferentes timeframes
+        periods_per_year = self._get_periods_per_year(periodicity)
 
-        # Sortino Ratio
-        negative_returns = returns[returns < 0]
-        if len(negative_returns) > 1 and np.std(negative_returns) > 0:
-            result.sortino_ratio = np.sqrt(252) * np.mean(returns) / np.std(negative_returns)
+        # Sharpe Ratio (anualizado) - CORRIGIDO
+        returns = np.diff(equity) / np.maximum(equity[:-1], 1.0)
+        if len(returns) > 1:
+            returns_std = np.std(returns)
+            if returns_std > 0:
+                # Anualiza usando o fator correto para a periodicidade
+                result.sharpe_ratio = np.sqrt(periods_per_year) * np.mean(returns) / returns_std
+            else:
+                result.sharpe_ratio = 0.0
 
-        # Calmar Ratio
-        if result.max_drawdown > 0:
-            annual_return = result.total_pnl / self.initial_capital
-            result.calmar_ratio = annual_return / result.max_drawdown
+        # Sortino Ratio - CORRIGIDO
+        # Sortino usa downside deviation (sqrt(mean(min(returns, 0)^2)))
+        if len(returns) > 1:
+            downside_returns = np.minimum(returns, 0)
+            downside_std = np.sqrt(np.mean(downside_returns ** 2))
+            if downside_std > 0:
+                result.sortino_ratio = np.sqrt(periods_per_year) * np.mean(returns) / downside_std
+            else:
+                result.sortino_ratio = 0.0
+
+        # Calmar Ratio - CORRIGIDO (agora anualizado corretamente)
+        if result.max_drawdown > 0 and len(self.trades) > 0:
+            # Calcular duração do backtest em dias
+            total_days = (end_time - start_time).days
+            if total_days > 0:
+                # Anualizar o retorno
+                total_return = result.total_pnl / self.initial_capital
+                annual_return = total_return * (365.0 / total_days)
+                result.calmar_ratio = annual_return / result.max_drawdown
+            else:
+                result.calmar_ratio = 0.0
 
         # Duracao dos trades
         durations = [t.duration for t in self.trades]
@@ -471,6 +494,26 @@ class BacktestEngine:
             result.shortest_trade = min(durations)
 
         return result
+
+    def _get_periods_per_year(self, periodicity: str) -> float:
+        """
+        Retorna o número aproximado de períodos por ano para cada timeframe.
+
+        Usado para anualizar métricas como Sharpe Ratio.
+        """
+        # Trading days per year ~252, hours per day ~24, etc.
+        periods_map = {
+            'M1': 252 * 24 * 60,      # 362880 (1-minute bars)
+            'M5': 252 * 24 * 12,      # 72576 (5-minute bars)
+            'M15': 252 * 24 * 4,      # 24192 (15-minute bars)
+            'M30': 252 * 24 * 2,      # 12096 (30-minute bars)
+            'H1': 252 * 24,           # 6048 (hourly bars)
+            'H4': 252 * 6,            # 1512 (4-hour bars)
+            'D1': 252,                # 252 (daily bars)
+            'W1': 52,                 # 52 (weekly bars)
+            'MN': 12,                 # 12 (monthly bars)
+        }
+        return periods_map.get(periodicity.upper(), 252)  # Default to daily
 
     def _print_results(self, result: BacktestResult):
         """Imprime resultados do backtest"""

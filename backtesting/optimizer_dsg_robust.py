@@ -76,8 +76,58 @@ class DSGRobustOptimizer:
         self.robust_results: List[RobustResult] = []
         self.best: Optional[RobustResult] = None
 
+    def _compute_signals_for_bars(self, bars: List[Bar], start_idx: int = 0) -> List[DSGSignal]:
+        """
+        Calcula sinais DSG para um conjunto de barras SEM look-ahead bias.
+
+        IMPORTANTE: Usa apenas dados disponíveis até cada momento (sem dados futuros).
+        """
+        dsg = DetectorSingularidadeGravitacional(
+            ricci_collapse_threshold=-0.5,
+            tidal_force_threshold=0.1,
+            lookback_window=30
+        )
+
+        prices_buf = deque(maxlen=100)
+        signals = []
+        min_prices = 50
+
+        for i, bar in enumerate(bars):
+            prices_buf.append(bar.close)
+
+            if len(prices_buf) < min_prices:
+                continue
+
+            try:
+                # CORRIGIDO: Usa apenas dados até o momento atual (sem look-ahead)
+                prices_arr = np.array(prices_buf)
+                result = dsg.analyze(prices_arr)
+
+                signals.append(DSGSignal(
+                    bar_idx=start_idx + i,
+                    price=bar.close,
+                    high=bar.high,
+                    low=bar.low,
+                    ricci_scalar=result['Ricci_Scalar'],
+                    tidal_force=result['Tidal_Force_Magnitude'],
+                    event_horizon_distance=result['Event_Horizon_Distance'],
+                    ricci_collapsing=result['ricci_collapsing'],
+                    crossing_horizon=result['crossing_horizon'],
+                    geodesic_direction=result['geodesic_direction'],
+                    signal=result['signal']
+                ))
+
+            except:
+                continue
+
+        return signals
+
     async def load_and_precompute(self, start_date: datetime, end_date: datetime):
-        """Carrega dados e pre-calcula sinais DSG"""
+        """
+        Carrega dados e pre-calcula sinais DSG SEM LOOK-AHEAD BIAS.
+
+        CORRIGIDO: Calcula sinais separadamente para treino e teste.
+        """
         print("\n" + "=" * 70)
         print("  CARREGANDO DADOS REAIS")
         print("=" * 70)
@@ -103,61 +153,33 @@ class DSGRobustOptimizer:
         print(f"    Treino: {len(self.train_bars)} barras")
         print(f"    Teste:  {len(self.test_bars)} barras")
 
-        # Pre-calcular DSG
-        print("\n  Pre-calculando sinais DSG (computacionalmente intensivo)...")
+        # CORRIGIDO: Calcula sinais SEPARADAMENTE para evitar look-ahead bias
+        print("\n  Pre-calculando sinais DSG (SEM look-ahead)...")
 
-        dsg = DetectorSingularidadeGravitacional(
-            ricci_collapse_threshold=-0.5,
-            tidal_force_threshold=0.1,
-            lookback_window=30
-        )
+        # 1. Calcular sinais do TREINO (apenas dados de treino)
+        print("    Calculando sinais do treino...")
+        self.train_signals = self._compute_signals_for_bars(self.train_bars, start_idx=0)
 
-        prices_buf = deque(maxlen=100)
-        self.signals = []
-        min_prices = 50
+        # 2. Para o TESTE: usar warmup com últimas barras do treino
+        warmup_size = min(100, len(self.train_bars))
+        warmup_bars = self.train_bars[-warmup_size:]
+        test_with_warmup = warmup_bars + self.test_bars
 
-        for i, bar in enumerate(self.bars):
-            prices_buf.append(bar.close)
+        print("    Calculando sinais do teste (com warmup do treino)...")
+        all_test_signals = self._compute_signals_for_bars(test_with_warmup, start_idx=split_idx - warmup_size)
 
-            if len(prices_buf) < min_prices:
-                continue
+        # Filtrar apenas sinais que estão no período de teste
+        self.test_signals = [s for s in all_test_signals if s.bar_idx >= split_idx]
 
-            try:
-                prices_arr = np.array(prices_buf)
-                result = dsg.analyze(prices_arr)
-
-                self.signals.append(DSGSignal(
-                    bar_idx=i,
-                    price=bar.close,
-                    high=bar.high,
-                    low=bar.low,
-                    ricci_scalar=result['Ricci_Scalar'],
-                    tidal_force=result['Tidal_Force_Magnitude'],
-                    event_horizon_distance=result['Event_Horizon_Distance'],
-                    ricci_collapsing=result['ricci_collapsing'],
-                    crossing_horizon=result['crossing_horizon'],
-                    geodesic_direction=result['geodesic_direction'],
-                    signal=result['signal']
-                ))
-
-            except:
-                continue
-
-            if (i + 1) % 200 == 0:
-                print(f"    {i+1}/{len(self.bars)} barras...")
-
-        # Separar sinais
-        self.train_signals = [s for s in self.signals if s.bar_idx < split_idx]
-        self.test_signals = [s for s in self.signals if s.bar_idx >= split_idx]
-
-        print(f"\n  Sinais pre-calculados:")
+        print(f"\n  Sinais pre-calculados (SEM LOOK-AHEAD):")
         print(f"    Treino: {len(self.train_signals)} sinais")
         print(f"    Teste:  {len(self.test_signals)} sinais")
 
         # Debug: mostrar distribuicao de valores
-        if self.signals:
-            ricci_vals = [s.ricci_scalar for s in self.signals]
-            tidal_vals = [s.tidal_force for s in self.signals]
+        all_signals = self.train_signals + self.test_signals
+        if all_signals:
+            ricci_vals = [s.ricci_scalar for s in all_signals]
+            tidal_vals = [s.tidal_force for s in all_signals]
             print(f"\n  Distribuicao de valores:")
             print(f"    Ricci: min={min(ricci_vals):.4f}, max={max(ricci_vals):.4f}, mean={np.mean(ricci_vals):.4f}")
             print(f"    Tidal: min={min(tidal_vals):.6f}, max={max(tidal_vals):.6f}, mean={np.mean(tidal_vals):.6f}")

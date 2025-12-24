@@ -78,8 +78,68 @@ class PRMRobustOptimizer:
         self.robust_results: List[RobustResult] = []
         self.best: Optional[RobustResult] = None
 
+    def _compute_signals_for_bars(self, bars: List[Bar], start_idx: int = 0) -> List[PRMSignal]:
+        """
+        Calcula sinais PRM para um conjunto de barras SEM look-ahead bias.
+
+        IMPORTANTE: Usa apenas dados disponíveis até cada momento (sem dados futuros).
+        O buffer é construído incrementalmente apenas com dados passados.
+        """
+        prm = ProtocoloRiemannMandelbrot(
+            n_states=3,
+            hmm_threshold=0.1,
+            lyapunov_threshold_k=0.001,
+            curvature_threshold=0.0001,
+            lookback_window=100
+        )
+
+        prices_buf = deque(maxlen=500)
+        volumes_buf = deque(maxlen=500)
+        signals = []
+        min_prices = 50
+
+        for i, bar in enumerate(bars):
+            prices_buf.append(bar.close)
+            volumes_buf.append(bar.volume)
+
+            if len(prices_buf) < min_prices:
+                continue
+
+            try:
+                # CORRIGIDO: Usa apenas dados até o momento atual (sem look-ahead)
+                result = prm.analyze(np.array(prices_buf), np.array(volumes_buf))
+
+                # Direção baseada em tendência PASSADA (10 barras atrás)
+                if i >= 10:
+                    trend = bar.close - bars[i - 10].close
+                    direction = 1 if trend > 0 else -1
+                else:
+                    direction = 0
+
+                signals.append(PRMSignal(
+                    bar_idx=start_idx + i,
+                    price=bar.close,
+                    high=bar.high,
+                    low=bar.low,
+                    hmm_prob=result['Prob_HMM'],
+                    lyapunov=result['Lyapunov_Score'],
+                    hmm_state=result['hmm_analysis']['current_state'],
+                    direction=direction
+                ))
+
+            except Exception:
+                continue
+
+        return signals
+
     async def load_and_precompute(self, start_date: datetime, end_date: datetime):
-        """Carrega dados e pre-calcula sinais PRM"""
+        """
+        Carrega dados e pre-calcula sinais PRM SEM LOOK-AHEAD BIAS.
+
+        CORRIGIDO: Calcula sinais separadamente para treino e teste.
+        Os sinais do teste são calculados usando buffer inicializado com
+        as últimas barras do treino (para warmup), mas sem usar dados futuros.
+        """
         print("\n" + "=" * 70)
         print("  CARREGANDO DADOS REAIS")
         print("=" * 70)
@@ -105,62 +165,26 @@ class PRMRobustOptimizer:
         print(f"    Treino: {len(self.train_bars)} barras ({self.train_bars[0].timestamp.date()} a {self.train_bars[-1].timestamp.date()})")
         print(f"    Teste:  {len(self.test_bars)} barras ({self.test_bars[0].timestamp.date()} a {self.test_bars[-1].timestamp.date()})")
 
-        # Pre-calcular sinais para TODOS os dados
-        print("\n  Pre-calculando sinais PRM...")
+        # CORRIGIDO: Calcula sinais SEPARADAMENTE para evitar look-ahead bias
+        print("\n  Pre-calculando sinais PRM (SEM look-ahead)...")
 
-        prm = ProtocoloRiemannMandelbrot(
-            n_states=3,
-            hmm_threshold=0.1,
-            lyapunov_threshold_k=0.001,
-            curvature_threshold=0.0001,
-            lookback_window=100
-        )
+        # 1. Calcular sinais do TREINO (apenas dados de treino)
+        print("    Calculando sinais do treino...")
+        self.train_signals = self._compute_signals_for_bars(self.train_bars, start_idx=0)
 
-        prices_buf = deque(maxlen=500)
-        volumes_buf = deque(maxlen=500)
-        self.signals = []
+        # 2. Para o TESTE: usar warmup com últimas barras do treino
+        # Isso simula o que aconteceria em trading real (temos histórico passado)
+        warmup_size = min(500, len(self.train_bars))
+        warmup_bars = self.train_bars[-warmup_size:]
+        test_with_warmup = warmup_bars + self.test_bars
 
-        min_prices = 50
+        print("    Calculando sinais do teste (com warmup do treino)...")
+        all_test_signals = self._compute_signals_for_bars(test_with_warmup, start_idx=split_idx - warmup_size)
 
-        for i, bar in enumerate(self.bars):
-            prices_buf.append(bar.close)
-            volumes_buf.append(bar.volume)
+        # Filtrar apenas sinais que estão no período de teste
+        self.test_signals = [s for s in all_test_signals if s.bar_idx >= split_idx]
 
-            if len(prices_buf) < min_prices:
-                continue
-
-            try:
-                result = prm.analyze(np.array(prices_buf), np.array(volumes_buf))
-
-                # Direcao baseada em tendencia PASSADA (10 barras atras)
-                if i >= 10:
-                    trend = bar.close - self.bars[i - 10].close
-                    direction = 1 if trend > 0 else -1
-                else:
-                    direction = 0
-
-                self.signals.append(PRMSignal(
-                    bar_idx=i,
-                    price=bar.close,
-                    high=bar.high,
-                    low=bar.low,
-                    hmm_prob=result['Prob_HMM'],
-                    lyapunov=result['Lyapunov_Score'],
-                    hmm_state=result['hmm_analysis']['current_state'],
-                    direction=direction
-                ))
-
-            except Exception:
-                continue
-
-            if (i + 1) % 500 == 0:
-                print(f"    {i+1}/{len(self.bars)} barras...")
-
-        # Separar sinais em treino e teste
-        self.train_signals = [s for s in self.signals if s.bar_idx < split_idx]
-        self.test_signals = [s for s in self.signals if s.bar_idx >= split_idx]
-
-        print(f"\n  Sinais pre-calculados:")
+        print(f"\n  Sinais pre-calculados (SEM LOOK-AHEAD):")
         print(f"    Treino: {len(self.train_signals)} sinais")
         print(f"    Teste:  {len(self.test_signals)} sinais")
 

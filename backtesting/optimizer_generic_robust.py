@@ -108,8 +108,52 @@ class GenericRobustOptimizer:
         self.indicator_class = getattr(module, ind_info['class'])
         self.strategy_name = ind_info['name']
 
+    def _compute_signals_for_bars(self, bars: List[Bar], start_idx: int = 0) -> List[GenericSignal]:
+        """
+        Calcula sinais para um conjunto de barras SEM look-ahead bias.
+
+        IMPORTANTE: Usa apenas dados disponíveis até cada momento (sem dados futuros).
+        """
+        indicator = self.indicator_class()
+        prices_buf = deque(maxlen=200)
+        signals = []
+        min_prices = 100
+
+        for i, bar in enumerate(bars):
+            prices_buf.append(bar.close)
+
+            if len(prices_buf) < min_prices:
+                continue
+
+            try:
+                # CORRIGIDO: Usa apenas dados até o momento atual (sem look-ahead)
+                prices_arr = np.array(prices_buf)
+                result = indicator.analyze(prices_arr)
+
+                signal = result.get('signal', 0)
+                confidence = result.get('confidence', 0.5)
+
+                signals.append(GenericSignal(
+                    bar_idx=start_idx + i,
+                    price=bar.close,
+                    high=bar.high,
+                    low=bar.low,
+                    signal=signal,
+                    confidence=confidence,
+                    extra={}
+                ))
+
+            except:
+                continue
+
+        return signals
+
     async def load_and_precompute(self, start_date: datetime, end_date: datetime):
-        """Carrega dados e pre-calcula sinais"""
+        """
+        Carrega dados e pre-calcula sinais SEM LOOK-AHEAD BIAS.
+
+        CORRIGIDO: Calcula sinais separadamente para treino e teste.
+        """
         print("\n" + "=" * 70)
         print(f"  CARREGANDO DADOS REAIS - {self.indicator_name}")
         print("=" * 70)
@@ -135,56 +179,34 @@ class GenericRobustOptimizer:
         print(f"    Treino: {len(self.train_bars)} barras")
         print(f"    Teste:  {len(self.test_bars)} barras")
 
-        # Pre-calcular sinais
-        print(f"\n  Pre-calculando sinais {self.indicator_name}...")
+        # CORRIGIDO: Calcula sinais SEPARADAMENTE para evitar look-ahead bias
+        print(f"\n  Pre-calculando sinais {self.indicator_name} (SEM look-ahead)...")
 
-        indicator = self.indicator_class()
-        prices_buf = deque(maxlen=200)
-        self.signals = []
-        min_prices = 100
+        # 1. Calcular sinais do TREINO (apenas dados de treino)
+        print("    Calculando sinais do treino...")
+        self.train_signals = self._compute_signals_for_bars(self.train_bars, start_idx=0)
 
-        for i, bar in enumerate(self.bars):
-            prices_buf.append(bar.close)
+        # 2. Para o TESTE: usar warmup com últimas barras do treino
+        warmup_size = min(200, len(self.train_bars))
+        warmup_bars = self.train_bars[-warmup_size:]
+        test_with_warmup = warmup_bars + self.test_bars
 
-            if len(prices_buf) < min_prices:
-                continue
+        print("    Calculando sinais do teste (com warmup do treino)...")
+        all_test_signals = self._compute_signals_for_bars(test_with_warmup, start_idx=split_idx - warmup_size)
 
-            try:
-                prices_arr = np.array(prices_buf)
-                result = indicator.analyze(prices_arr)
+        # Filtrar apenas sinais que estão no período de teste
+        self.test_signals = [s for s in all_test_signals if s.bar_idx >= split_idx]
 
-                signal = result.get('signal', 0)
-                confidence = result.get('confidence', 0.5)
-
-                self.signals.append(GenericSignal(
-                    bar_idx=i,
-                    price=bar.close,
-                    high=bar.high,
-                    low=bar.low,
-                    signal=signal,
-                    confidence=confidence,
-                    extra={}
-                ))
-
-            except:
-                continue
-
-            if (i + 1) % 500 == 0:
-                print(f"    {i+1}/{len(self.bars)} barras...")
-
-        # Separar sinais
-        self.train_signals = [s for s in self.signals if s.bar_idx < split_idx]
-        self.test_signals = [s for s in self.signals if s.bar_idx >= split_idx]
-
-        print(f"\n  Sinais pre-calculados:")
+        print(f"\n  Sinais pre-calculados (SEM LOOK-AHEAD):")
         print(f"    Treino: {len(self.train_signals)} sinais")
         print(f"    Teste:  {len(self.test_signals)} sinais")
 
         # Estatisticas de sinais
-        if self.signals:
-            signals_buy = sum(1 for s in self.signals if s.signal == 1)
-            signals_sell = sum(1 for s in self.signals if s.signal == -1)
-            signals_hold = sum(1 for s in self.signals if s.signal == 0)
+        all_signals = self.train_signals + self.test_signals
+        if all_signals:
+            signals_buy = sum(1 for s in all_signals if s.signal == 1)
+            signals_sell = sum(1 for s in all_signals if s.signal == -1)
+            signals_hold = sum(1 for s in all_signals if s.signal == 0)
             print(f"\n  Distribuicao de sinais:")
             print(f"    BUY: {signals_buy}, SELL: {signals_sell}, HOLD: {signals_hold}")
 
