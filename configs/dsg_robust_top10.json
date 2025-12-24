@@ -1,0 +1,25 @@
+[
+  {
+    "params": {
+      "ricci_collapse_threshold": -0.1,
+      "tidal_force_threshold": 0.001,
+      "stop_loss_pips": 55.0,
+      "take_profit_pips": 80.0
+    },
+    "train": {
+      "trades": 807,
+      "win_rate": 0.4882,
+      "profit_factor": 1.2445,
+      "total_pnl": 5568.8,
+      "max_drawdown": 0.1348
+    },
+    "test": {
+      "trades": 374,
+      "win_rate": 0.5,
+      "profit_factor": 1.2271,
+      "total_pnl": 2261.1,
+      "max_drawdown": 0.1165
+    },
+    "robustness_score": 1,
+    "degradation_pct": -0.51,
+    "is_robust": 

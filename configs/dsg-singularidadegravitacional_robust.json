@@ -1,0 +1,52 @@
+{
+  "strategy": "DSG-SingularidadeGravitacional",
+  "symbol": "EURUSD",
+  "periodicity": "H1",
+  "optimized_at": "2025-12-24T01:26:52.312272+00:00",
+  "validation": {
+    "method": "train_test_split",
+    "train_ratio": 0.7,
+    "test_ratio": 0.3,
+    "combinations_tested": 100000,
+    "robust_found": 930,
+    "anti_overfitting": true
+  },
+  "parameters": {
+    "ricci_collapse_threshold": -0.1,
+    "tidal_force_threshold": 0.001,
+    "stop_loss_pips": 55.0,
+    "take_profit_pips": 80.0
+  },
+  "performance": {
+    "train": {
+      "trades": 807,
+      "win_rate": 0.4882,
+      "profit_factor": 1.2445,
+      "total_pnl_pips": 5568.8,
+      "max_drawdown": 0.1348
+    },
+    "test": {
+      "trades": 374,
+      "win_rate": 0.5,
+      "profit_factor": 1.2271,
+      "total_pnl_pips": 2261.1,
+      "max_drawdown": 0.1165
+    },
+    "robustness_score": 1,
+    "degradation_pct": -0.51
+  },
+  "filters_applied": {
+    "min_trades_train": 30,
+    "min_trades_test": 15,
+    "win_rate_range": [
+      0.3,
+      0.65
+    ],
+    "profit_factor_range": [
+      1.1,
+      4.0
+    ],
+    "max_drawdown": 0.4,
+    "min_robustness": 0.6
+  }
+}

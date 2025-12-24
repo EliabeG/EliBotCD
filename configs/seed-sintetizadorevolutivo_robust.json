@@ -1,0 +1,51 @@
+{
+  "strategy": "SEED-SintetizadorEvolutivo",
+  "symbol": "EURUSD",
+  "periodicity": "H1",
+  "optimized_at": "2025-12-24T02:50:56.333433+00:00",
+  "validation": {
+    "method": "train_test_split",
+    "train_ratio": 0.7,
+    "test_ratio": 0.3,
+    "combinations_tested": 50000,
+    "robust_found": 2215,
+    "anti_overfitting": true
+  },
+  "parameters": {
+    "confidence_threshold": 0.508,
+    "stop_loss_pips": 35.3,
+    "take_profit_pips": 49.0
+  },
+  "performance": {
+    "train": {
+      "trades": 27,
+      "win_rate": 0.4444,
+      "profit_factor": 1.058,
+      "total_pnl_pips": 31.59,
+      "max_drawdown": 0.0361
+    },
+    "test": {
+      "trades": 29,
+      "win_rate": 0.4483,
+      "profit_factor": 1.0746,
+      "total_pnl_pips": 43.29,
+      "max_drawdown": 0.0436
+    },
+    "robustness_score": 1,
+    "degradation_pct": -1.21
+  },
+  "filters_applied": {
+    "min_trades_train": 30,
+    "min_trades_test": 15,
+    "win_rate_range": [
+      0.3,
+      0.65
+    ],
+    "profit_factor_range": [
+      1.1,
+      4.0
+    ],
+    "max_drawdown": 0.4,
+    "min_robustness": 0.6
+  }
+}
