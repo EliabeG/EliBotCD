@@ -21,7 +21,7 @@ Correções aplicadas:
 """
 
 import numpy as np
-from scipy.ndimage import gaussian_filter1d
+# REMOVIDO: from scipy.ndimage import gaussian_filter1d (era não-causal, substituído por EMA)
 from scipy.spatial.distance import cdist
 import warnings
 warnings.filterwarnings('ignore')
