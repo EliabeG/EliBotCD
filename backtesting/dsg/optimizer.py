@@ -49,6 +49,13 @@ from backtesting.common.robust_optimizer import (
     save_robust_config
 )
 
+# CORREÇÃO C4: Importar custos centralizados
+from config.execution_costs import (
+    SPREAD_PIPS,
+    SLIPPAGE_PIPS,
+    get_pip_value,
+)
+
 
 @dataclass
 class DSGSignal:
@@ -78,7 +85,12 @@ class DSGRobustOptimizer:
     def __init__(self, symbol: str = "EURUSD", periodicity: str = "H1"):
         self.symbol = symbol
         self.periodicity = periodicity
-        self.backtester = RobustBacktester(pip=0.0001, spread=1.0)
+
+        # CORREÇÃO C4: Usar custos centralizados
+        # ANTES: RobustBacktester(pip=0.0001, spread=1.0) - spread fixo incorreto
+        # DEPOIS: Usa valores do config/execution_costs.py
+        pip_value = get_pip_value(symbol)
+        self.backtester = RobustBacktester(pip=pip_value, spread=SPREAD_PIPS)
 
         self.bars: List[Bar] = []
         self.signals: List[DSGSignal] = []

@@ -713,11 +713,15 @@ class DetectorSingularidadeGravitacional:
         if n < 10:
             return self._empty_result()
 
-        # Gerar volumes sintéticos se não fornecidos
+        # CORREÇÃO C1: Gerar volumes DETERMINÍSTICOS se não fornecidos
+        # ANTES: Usava np.random.rand() que tornava backtests não-reproduzíveis
+        # DEPOIS: Volumes baseados apenas na variação de preço (determinístico)
         if bid_volumes is None:
-            bid_volumes = np.abs(np.diff(prices, prepend=prices[0])) * 1000 + np.random.rand(n) * 100
+            price_changes = np.abs(np.diff(prices, prepend=prices[0]))
+            bid_volumes = price_changes * 1000 + 50  # Valor base fixo, sem random
         if ask_volumes is None:
-            ask_volumes = np.abs(np.diff(prices, prepend=prices[0])) * 1000 + np.random.rand(n) * 100
+            price_changes = np.abs(np.diff(prices, prepend=prices[0]))
+            ask_volumes = price_changes * 1000 + 50  # Valor base fixo, sem random
 
         # Resetar histórico
         self._ricci_history = []
@@ -729,19 +733,41 @@ class DetectorSingularidadeGravitacional:
         tidal_series = np.zeros(n)
         distance_series = np.zeros(n)
 
-        # Analisar cada ponto (subsamplear para eficiência)
+        # CORREÇÃO M1: Subsampling com INTERPOLAÇÃO ao invés de replicação
+        # ANTES: Valores eram replicados (ex: barra 0,1,2 tinham o mesmo valor)
+        # DEPOIS: Valores são interpolados linearmente entre pontos calculados
         step = max(1, n // 100)  # Máximo 100 pontos para cálculo completo
+
+        # Armazenar pontos calculados para interpolação
+        calculated_indices = []
+        calculated_ricci = []
+        calculated_tidal = []
+        calculated_distance = []
 
         for i in range(0, n, step):
             result = self.analyze_point(
                 i, prices[i], bid_volumes[i], ask_volumes[i]
             )
 
-            # Preencher série
-            end_idx = min(i + step, n)
-            ricci_series[i:end_idx] = result['ricci_scalar']
-            tidal_series[i:end_idx] = result['tidal_force']
-            distance_series[i:end_idx] = result['event_horizon_distance']
+            calculated_indices.append(i)
+            calculated_ricci.append(result['ricci_scalar'])
+            calculated_tidal.append(result['tidal_force'])
+            calculated_distance.append(result['event_horizon_distance'])
+
+        # Adicionar último ponto se não foi calculado
+        if calculated_indices[-1] != n - 1:
+            result = self.analyze_point(
+                n - 1, prices[n - 1], bid_volumes[n - 1], ask_volumes[n - 1]
+            )
+            calculated_indices.append(n - 1)
+            calculated_ricci.append(result['ricci_scalar'])
+            calculated_tidal.append(result['tidal_force'])
+            calculated_distance.append(result['event_horizon_distance'])
+
+        # CORREÇÃO M1: Interpolar linearmente entre pontos calculados
+        ricci_series = np.interp(np.arange(n), calculated_indices, calculated_ricci)
+        tidal_series = np.interp(np.arange(n), calculated_indices, calculated_tidal)
+        distance_series = np.interp(np.arange(n), calculated_indices, calculated_distance)
 
         # CORREÇÃO #1: Suavizar séries com EMA CAUSAL (não gaussian_filter1d que é não-causal)
         # gaussian_filter1d usa convolução simétrica que olha para o futuro!
