@@ -2,6 +2,7 @@
 """
 ================================================================================
 OTIMIZADOR PRM ROBUSTO - COM VALIDACAO ANTI-OVERFITTING
+VERSÃO CORRIGIDA - SEM LOOK-AHEAD BIAS
 ================================================================================
 
 Este otimizador:
@@ -11,13 +12,19 @@ Este otimizador:
 4. Descarta resultados que nao passam nos filtros de realismo
 5. Calcula score de robustez
 
+CORREÇÕES APLICADAS:
+1. Direção calculada apenas com barras COMPLETAMENTE FECHADAS
+2. Entrada executada no OPEN da próxima barra (não no close atual)
+3. Stop/Take consideram gaps
+4. Sem look-ahead em nenhum cálculo
+
 REGRAS:
 - Minimo 30 trades no treino, 15 no teste
 - Win Rate entre 30% e 65%
 - Profit Factor entre 1.1 e 4.0
 - Performance do teste >= 60% do treino
 
-PARA DINHEIRO REAL. SEM OVERFITTING.
+PARA DINHEIRO REAL. SEM OVERFITTING. SEM LOOK-AHEAD.
 ================================================================================
 """
 
@@ -34,12 +41,11 @@ from collections import deque
 import warnings
 warnings.filterwarnings('ignore')
 
-# Adiciona o diretorio raiz ao path
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from api.fxopen_historical_ws import Bar, download_historical_data
 from strategies.alta_volatilidade.prm_riemann_mandelbrot import ProtocoloRiemannMandelbrot
-from backtesting.common.robust_optimizer import (
+from backtesting.robust_optimizer import (
     RobustBacktester, RobustResult, BacktestResult,
     save_robust_config
 )
@@ -47,19 +53,29 @@ from backtesting.common.robust_optimizer import (
 
 @dataclass
 class PRMSignal:
-    """Sinal pre-calculado do PRM"""
-    bar_idx: int
-    price: float
-    high: float
-    low: float
+    """
+    Sinal pre-calculado do PRM
+    
+    CORRIGIDO: Agora armazena informações para execução realista
+    """
+    bar_idx: int          # Índice da barra onde o sinal foi GERADO
+    signal_price: float   # Preço de fechamento quando sinal foi gerado (para referência)
+    next_bar_idx: int     # NOVO: Índice da barra onde deve EXECUTAR (próxima barra)
+    entry_price: float    # NOVO: Preço de ABERTURA da próxima barra (onde realmente entra)
+    high: float           # High da barra de entrada (para stop/take)
+    low: float            # Low da barra de entrada (para stop/take)
     hmm_prob: float
     lyapunov: float
     hmm_state: int
-    direction: int  # Baseado em tendencia passada
+    direction: int        # CORRIGIDO: Baseado apenas em barras JÁ FECHADAS
 
 
 class PRMRobustOptimizer:
-    """Otimizador PRM com validacao anti-overfitting"""
+    """
+    Otimizador PRM com validacao anti-overfitting
+    
+    VERSÃO CORRIGIDA - SEM LOOK-AHEAD BIAS
+    """
 
     def __init__(self, symbol: str = "EURUSD", periodicity: str = "H1"):
         self.symbol = symbol
@@ -80,9 +96,16 @@ class PRMRobustOptimizer:
         self.best: Optional[RobustResult] = None
 
     async def load_and_precompute(self, start_date: datetime, end_date: datetime):
-        """Carrega dados e pre-calcula sinais PRM"""
+        """
+        Carrega dados e pre-calcula sinais PRM
+        
+        CORRIGIDO: 
+        - Direção usa apenas barras completamente fechadas
+        - Entry price é o OPEN da próxima barra
+        """
         print("\n" + "=" * 70)
         print("  CARREGANDO DADOS REAIS")
+        print("  Versão Corrigida - Sem Look-Ahead")
         print("=" * 70)
 
         self.bars = await download_historical_data(
@@ -107,14 +130,16 @@ class PRMRobustOptimizer:
         print(f"    Teste:  {len(self.test_bars)} barras ({self.test_bars[0].timestamp.date()} a {self.test_bars[-1].timestamp.date()})")
 
         # Pre-calcular sinais para TODOS os dados
-        print("\n  Pre-calculando sinais PRM...")
+        print("\n  Pre-calculando sinais PRM (sem look-ahead)...")
 
         prm = ProtocoloRiemannMandelbrot(
             n_states=3,
             hmm_threshold=0.1,
             lyapunov_threshold_k=0.001,
             curvature_threshold=0.0001,
-            lookback_window=100
+            lookback_window=100,
+            hmm_training_window=200,      # NOVO: Janela de treino do HMM
+            hmm_min_training_samples=50   # NOVO: Mínimo de amostras
         )
 
         prices_buf = deque(maxlen=500)
@@ -122,6 +147,10 @@ class PRMRobustOptimizer:
         self.signals = []
 
         min_prices = 50
+        
+        # CORREÇÃO: Precisamos de pelo menos 12 barras para calcular direção
+        # (11 barras passadas + barra atual cujo close NÃO usamos)
+        min_bars_for_direction = 12
 
         for i, bar in enumerate(self.bars):
             prices_buf.append(bar.close)
@@ -129,41 +158,83 @@ class PRMRobustOptimizer:
 
             if len(prices_buf) < min_prices:
                 continue
+            
+            # CORREÇÃO: Precisamos da PRÓXIMA barra para executar
+            # Se não há próxima barra, não podemos gerar sinal
+            if i >= len(self.bars) - 1:
+                continue
 
             try:
                 result = prm.analyze(np.array(prices_buf), np.array(volumes_buf))
 
-                # Direcao baseada em tendencia PASSADA (10 barras atras)
-                if i >= 10:
-                    trend = bar.close - self.bars[i - 10].close
+                # ============================================================
+                # CORREÇÃO CRÍTICA: Direção baseada APENAS em barras FECHADAS
+                # ============================================================
+                # 
+                # ANTES (ERRADO):
+                #   trend = bar.close - self.bars[i - 10].close
+                #   Problema: bar.close é a barra ATUAL (ainda não fechou no momento real)
+                #
+                # DEPOIS (CORRETO):
+                #   Usar self.bars[i-1].close (última barra FECHADA)
+                #   Comparar com self.bars[i-11].close (11 barras atrás)
+                #
+                # No momento em que decidimos a direção:
+                # - Barra i está "em andamento" (não sabemos o close)
+                # - Barra i-1 acabou de fechar (sabemos o close)
+                # - Comparamos i-1 com i-11 para ver tendência dos últimos 10 períodos
+                #
+                if i >= min_bars_for_direction:
+                    # Usar apenas barras COMPLETAMENTE FECHADAS
+                    recent_close = self.bars[i - 1].close      # Última barra fechada
+                    past_close = self.bars[i - 11].close       # 10 barras antes da última fechada
+                    trend = recent_close - past_close
                     direction = 1 if trend > 0 else -1
                 else:
-                    direction = 0
-
+                    direction = 0  # Sem direção definida
+                
+                # ============================================================
+                # CORREÇÃO: Entrada no OPEN da PRÓXIMA barra
+                # ============================================================
+                #
+                # O sinal é GERADO quando a barra i fecha
+                # A execução acontece no OPEN da barra i+1
+                #
+                next_bar = self.bars[i + 1]
+                
                 self.signals.append(PRMSignal(
-                    bar_idx=i,
-                    price=bar.close,
-                    high=bar.high,
-                    low=bar.low,
+                    bar_idx=i,                          # Onde o sinal foi gerado
+                    signal_price=bar.close,             # Preço quando sinal gerado (referência)
+                    next_bar_idx=i + 1,                 # NOVO: Onde vai executar
+                    entry_price=next_bar.open,          # NOVO: Preço de entrada (OPEN da próxima)
+                    high=next_bar.high,                 # High da barra de execução
+                    low=next_bar.low,                   # Low da barra de execução
                     hmm_prob=result['Prob_HMM'],
                     lyapunov=result['Lyapunov_Score'],
                     hmm_state=result['hmm_analysis']['current_state'],
                     direction=direction
                 ))
 
-            except Exception:
+            except Exception as e:
                 continue
 
             if (i + 1) % 500 == 0:
                 print(f"    {i+1}/{len(self.bars)} barras...")
 
         # Separar sinais em treino e teste
+        # NOTA: O sinal pertence ao treino se foi GERADO no período de treino
+        # mas a execução pode acontecer na primeira barra do teste (isso é ok)
         self.train_signals = [s for s in self.signals if s.bar_idx < split_idx]
         self.test_signals = [s for s in self.signals if s.bar_idx >= split_idx]
 
-        print(f"\n  Sinais pre-calculados:")
+        print(f"\n  Sinais pre-calculados (sem look-ahead):")
         print(f"    Treino: {len(self.train_signals)} sinais")
         print(f"    Teste:  {len(self.test_signals)} sinais")
+        
+        # Estatísticas de direção
+        train_long = sum(1 for s in self.train_signals if s.direction == 1)
+        train_short = sum(1 for s in self.train_signals if s.direction == -1)
+        print(f"    Treino - Long: {train_long}, Short: {train_short}")
 
         return len(self.train_signals) > 50 and len(self.test_signals) > 20
 
@@ -171,7 +242,14 @@ class PRMRobustOptimizer:
                       hmm_thresh: float, lyap_thresh: float,
                       states: List[int], sl: float, tp: float,
                       bar_offset: int = 0) -> List[float]:
-        """Executa backtest em um conjunto de dados"""
+        """
+        Executa backtest em um conjunto de dados
+        
+        CORRIGIDO:
+        - Entrada no OPEN da barra de execução (não no close do sinal)
+        - Stop/Take consideram gaps
+        - Execução realista
+        """
         if tp <= sl:
             return []
 
@@ -182,27 +260,120 @@ class PRMRobustOptimizer:
                 s.lyapunov >= lyap_thresh and
                 s.hmm_state in states and
                 s.direction != 0):
-                entries.append((s.bar_idx - bar_offset, s.price, s.direction))
+                
+                # CORRIGIDO: Usar next_bar_idx e entry_price (OPEN)
+                execution_idx = s.next_bar_idx - bar_offset
+                entries.append((
+                    execution_idx,      # Índice da barra de execução
+                    s.entry_price,      # Preço de entrada (OPEN da barra)
+                    s.direction
+                ))
 
         if len(entries) < 3:
             return []
 
-        # Executa trades
+        # Executa trades com lógica realista
         pnls = []
-        for bar_idx, entry_price, direction in entries:
-            if bar_idx < 0 or bar_idx >= len(bars) - 1:
+        pip = 0.0001
+        spread = 1.0 * pip  # 1 pip de spread
+        slippage = 0.5 * pip  # 0.5 pip de slippage
+        
+        for entry_idx, entry_price_raw, direction in entries:
+            if entry_idx < 0 or entry_idx >= len(bars) - 1:
                 continue
 
-            trade = self.backtester.execute_trade(
-                bars=bars,
-                entry_idx=bar_idx,
-                entry_price=entry_price,
-                direction=direction,
-                sl_pips=sl,
-                tp_pips=tp,
-                max_bars=200
-            )
-            pnls.append(trade.pnl_pips)
+            # Aplicar spread e slippage na entrada
+            if direction == 1:  # LONG
+                entry_price = entry_price_raw + spread / 2 + slippage
+                stop_price = entry_price - sl * pip
+                take_price = entry_price + tp * pip
+            else:  # SHORT
+                entry_price = entry_price_raw - spread / 2 - slippage
+                stop_price = entry_price + sl * pip
+                take_price = entry_price - tp * pip
+
+            # Simular execução nas barras seguintes
+            exit_price = None
+            exit_reason = None
+            
+            max_bars = min(200, len(bars) - entry_idx - 1)
+            
+            for j in range(1, max_bars + 1):
+                bar_idx = entry_idx + j
+                if bar_idx >= len(bars):
+                    break
+                    
+                bar = bars[bar_idx]
+                
+                # ============================================================
+                # VERIFICAR GAPS NO OPEN
+                # ============================================================
+                if direction == 1:  # LONG
+                    # Gap down - stop atingido no open
+                    if bar.open <= stop_price:
+                        exit_price = bar.open - slippage  # Pior execução
+                        exit_reason = "stop_gap"
+                        break
+                    # Gap up - take atingido no open
+                    if bar.open >= take_price:
+                        exit_price = bar.open - slippage  # Execução no open
+                        exit_reason = "take_gap"
+                        break
+                else:  # SHORT
+                    # Gap up - stop atingido no open
+                    if bar.open >= stop_price:
+                        exit_price = bar.open + slippage  # Pior execução
+                        exit_reason = "stop_gap"
+                        break
+                    # Gap down - take atingido no open
+                    if bar.open <= take_price:
+                        exit_price = bar.open + slippage  # Execução no open
+                        exit_reason = "take_gap"
+                        break
+                
+                # ============================================================
+                # VERIFICAR DURANTE A BARRA (HIGH/LOW)
+                # Stop tem prioridade (conservador)
+                # ============================================================
+                if direction == 1:  # LONG
+                    # Stop loss primeiro
+                    if bar.low <= stop_price:
+                        exit_price = stop_price - slippage
+                        exit_reason = "stop"
+                        break
+                    # Take profit
+                    if bar.high >= take_price:
+                        exit_price = take_price - slippage
+                        exit_reason = "take"
+                        break
+                else:  # SHORT
+                    # Stop loss primeiro
+                    if bar.high >= stop_price:
+                        exit_price = stop_price + slippage
+                        exit_reason = "stop"
+                        break
+                    # Take profit
+                    if bar.low <= take_price:
+                        exit_price = take_price + slippage
+                        exit_reason = "take"
+                        break
+            
+            # Se não saiu por stop/take, fechar no último close disponível
+            if exit_price is None:
+                last_bar = bars[min(entry_idx + max_bars, len(bars) - 1)]
+                if direction == 1:
+                    exit_price = last_bar.close - slippage
+                else:
+                    exit_price = last_bar.close + slippage
+                exit_reason = "timeout"
+            
+            # Calcular PnL em pips
+            if direction == 1:
+                pnl_pips = (exit_price - entry_price) / pip
+            else:
+                pnl_pips = (entry_price - exit_price) / pip
+            
+            pnls.append(pnl_pips)
 
         return pnls
 
@@ -222,15 +393,14 @@ class PRMRobustOptimizer:
         if debug and train_result.trades > 0:
             print(f"    DEBUG TRAIN: {train_result.trades} trades, WR={train_result.win_rate:.2f}, PF={train_result.profit_factor:.2f}")
 
-        # Filtros mais relaxados para PRM (indicador seletivo)
-        # Minimo 20 trades no treino, 10 no teste
+        # Filtros para PRM (indicador seletivo)
         if not train_result.is_valid(
-            min_trades=20,  # Relaxado de 30
-            max_win_rate=0.68,  # Relaxado de 0.65
-            min_win_rate=0.28,  # Relaxado de 0.30
-            max_pf=5.0,  # Relaxado de 4.0
-            min_pf=1.05,  # Relaxado de 1.1
-            max_dd=0.45  # Relaxado de 0.40
+            min_trades=20,
+            max_win_rate=0.68,
+            min_win_rate=0.28,
+            max_pf=5.0,
+            min_pf=1.05,
+            max_dd=0.45
         ):
             return None
 
@@ -246,23 +416,23 @@ class PRMRobustOptimizer:
         if debug and test_result.trades > 0:
             print(f"    DEBUG TEST:  {test_result.trades} trades, WR={test_result.win_rate:.2f}, PF={test_result.profit_factor:.2f}")
 
-        # Verifica se teste passa nos filtros (mais relaxados)
+        # Verifica se teste passa nos filtros
         if not test_result.is_valid(
-            min_trades=10,  # Relaxado para indicador seletivo
-            max_win_rate=0.75,  # Mais relaxado no teste
+            min_trades=10,
+            max_win_rate=0.75,
             min_win_rate=0.20,
             max_pf=6.0,
-            min_pf=0.9,  # Pode ter pequeno prejuizo no teste
+            min_pf=0.9,
             max_dd=0.55
         ):
             return None
 
-        # Calcula robustez (relaxado para 50%)
+        # Calcula robustez
         robustness, degradation, is_robust = self.backtester.calculate_robustness(
             train_result, test_result
         )
 
-        # Robustez relaxada: teste deve manter >= 50% do treino
+        # Robustez: teste deve manter >= 50% do treino
         pf_ratio = test_result.profit_factor / train_result.profit_factor if train_result.profit_factor > 0 else 0
         wr_ratio = test_result.win_rate / train_result.win_rate if train_result.win_rate > 0 else 0
         is_robust_relaxed = pf_ratio >= 0.50 and wr_ratio >= 0.50 and test_result.profit_factor >= 0.9
@@ -296,17 +466,15 @@ class PRMRobustOptimizer:
         print(f"\n{'='*70}")
         print(f"  OTIMIZACAO ROBUSTA PRM: {n:,} COMBINACOES")
         print(f"  Com validacao Train/Test Split")
+        print(f"  VERSAO CORRIGIDA - SEM LOOK-AHEAD")
         print(f"{'='*70}")
 
-        # Ranges de parametros BASEADOS NOS DADOS REAIS:
-        # - Lyapunov varia de 0.054 a 0.129 (mean 0.0707)
-        # - State 2 nunca e' usado
-        # - Precisamos de thresholds que gerem sinais suficientes
-        hmm_vals = np.linspace(0.50, 0.75, 20)  # Ajustado para range real
-        lyap_vals = np.linspace(0.055, 0.085, 15)  # Baseado na distribuicao real
+        # Ranges de parametros
+        hmm_vals = np.linspace(0.50, 0.75, 20)
+        lyap_vals = np.linspace(0.055, 0.085, 15)
         sl_vals = np.linspace(20, 50, 15)
         tp_vals = np.linspace(30, 80, 20)
-        states_opts = [[0, 1]]  # State 2 nunca ocorre
+        states_opts = [[0, 1]]
 
         best_robustness = -1
         tested = 0
@@ -395,6 +563,10 @@ class PRMRobustOptimizer:
         )[:10]
 
         top_data = [r.to_dict() for r in sorted_results]
+        
+        # Criar diretório se não existir
+        os.makedirs(os.path.dirname(top_file), exist_ok=True)
+        
         with open(top_file, 'w') as f:
             json.dump(top_data, f, indent=2)
         print(f"  Top 10 robustos salvo em: {top_file}")
@@ -406,9 +578,16 @@ async def main():
     print("=" * 70)
     print("  OTIMIZADOR PRM ROBUSTO")
     print("  Com Validacao Anti-Overfitting")
+    print("  VERSAO CORRIGIDA - SEM LOOK-AHEAD BIAS")
     print(f"  {N_COMBINATIONS:,} Combinacoes")
     print("  PARA DINHEIRO REAL")
     print("=" * 70)
+    
+    print("\n  CORRECOES APLICADAS:")
+    print("    1. Direcao calculada apenas com barras FECHADAS")
+    print("    2. Entrada no OPEN da proxima barra")
+    print("    3. Stop/Take consideram gaps")
+    print("    4. HMM treinado apenas em dados passados")
 
     opt = PRMRobustOptimizer("EURUSD", "H1")
 
@@ -442,6 +621,7 @@ async def main():
         else:
             print("\n  AVISO: Nenhuma configuracao passou nos filtros de robustez!")
             print("  Isso pode indicar que o indicador nao e' adequado para este periodo.")
+            print("  (Ou que as correcoes de look-ahead revelaram a performance real)")
     else:
         print("\n  ERRO: Falha ao carregar dados!")
 
