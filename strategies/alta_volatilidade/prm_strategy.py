@@ -2,12 +2,15 @@
 Adaptador de Estratégia para o Protocolo Riemann-Mandelbrot
 Integra o indicador PRM com o sistema de trading
 
-VERSÃO CORRIGIDA - COMPATÍVEL COM PRM SEM LOOK-AHEAD
-=====================================================
+VERSÃO V2.0 - PRONTO PARA DINHEIRO REAL
+=======================================
 Correções aplicadas:
 1. Removido is_fitted (não existe mais no PRM corrigido)
 2. Adicionados novos parâmetros hmm_training_window e hmm_min_training_samples
 3. Direção baseada em tendência de barras FECHADAS
+4. NOVO V2.0: Normalização do HMM sem look-ahead (exclude_last=True)
+5. NOVO V2.0: Inicialização GARCH sem usar série completa
+6. NOVO V2.0: Compatível com Walk-Forward Validation
 """
 from datetime import datetime
 from typing import Optional
@@ -24,8 +27,13 @@ class PRMStrategy(BaseStrategy):
 
     Detecta "Singularidades de Preço" - momentos onde todos os subsistemas
     (HMM, Lyapunov, Curvatura) concordam que há uma oportunidade de entrada.
-    
-    VERSÃO CORRIGIDA - SEM LOOK-AHEAD BIAS
+
+    VERSÃO V2.0 - PRONTO PARA DINHEIRO REAL
+    =======================================
+    - Sem look-ahead bias em nenhum cálculo
+    - Normalização incremental do HMM
+    - Direção baseada apenas em barras fechadas
+    - Compatível com Walk-Forward Validation
     """
 
     def __init__(self,

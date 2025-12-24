@@ -1,6 +1,6 @@
 """
 ================================================================================
-BACKTEST ENGINE - VERSÃO CORRIGIDA
+BACKTEST ENGINE V2.0 - PRONTO PARA DINHEIRO REAL
 Motor de Backtesting para Estrategias de Trading
 ================================================================================
 
@@ -8,14 +8,16 @@ IMPORTANTE: Este motor usa APENAS dados REAIS do mercado.
 Nenhuma simulacao ou dados sinteticos sao permitidos.
 Isso envolve dinheiro real, entao a precisao e crucial.
 
-VERSÃO CORRIGIDA - EXECUÇÃO REALISTA
-=====================================
+VERSÃO V2.0 - EXECUÇÃO REALISTA COM CUSTOS REAIS
+================================================
 Correções aplicadas:
 1. Sinais são executados no OPEN da próxima barra (não no close atual)
 2. Stop Loss considera gaps (execução no open se houver gap)
 3. Take Profit considera gaps (execução no open se houver gap)
 4. Lógica conservadora: stop tem prioridade sobre take em caso de ambiguidade
 5. Slippage aplicado corretamente em todas as situações
+6. NOVO V2.0: Spread realista de 1.5 pips
+7. NOVO V2.0: Slippage realista de 0.8 pips
 
 Funcionalidades:
 - Execucao barra-por-barra com execução realista
@@ -23,6 +25,7 @@ Funcionalidades:
 - Simulacao realista de execucao com gaps
 - Gerenciamento de posicoes
 - Relatorios detalhados
+- Custos de execução realistas
 """
 
 import numpy as np
@@ -150,19 +153,21 @@ class BacktestEngine:
                  initial_capital: float = 10000.0,
                  position_size: float = 0.01,  # Lotes
                  pip_value: float = 0.0001,
-                 spread_pips: float = 1.0,
+                 spread_pips: float = 1.5,     # V2.0: Spread realista
                  commission_per_lot: float = 0.0,
-                 slippage_pips: float = 0.5):
+                 slippage_pips: float = 0.8):  # V2.0: Slippage realista
         """
         Inicializa o motor de backtest
+
+        V2.0: Custos realistas para dinheiro real
 
         Args:
             initial_capital: Capital inicial em USD
             position_size: Tamanho da posicao em lotes
             pip_value: Valor de 1 pip (0.0001 para EURUSD)
-            spread_pips: Spread em pips
+            spread_pips: Spread em pips (V2.0: 1.5 pips realista)
             commission_per_lot: Comissao por lote
-            slippage_pips: Slippage medio em pips
+            slippage_pips: Slippage medio em pips (V2.0: 0.8 pips realista)
         """
         self.initial_capital = initial_capital
         self.position_size = position_size
