@@ -95,13 +95,19 @@ class PRMRobustOptimizer:
         self.robust_results: List[RobustResult] = []
         self.best: Optional[RobustResult] = None
 
-    async def load_and_precompute(self, start_date: datetime, end_date: datetime):
+    async def load_and_precompute(self, start_date: datetime, end_date: datetime,
+                                   split_date: datetime = None):
         """
         Carrega dados e pre-calcula sinais PRM
-        
-        CORRIGIDO: 
+
+        CORRIGIDO:
         - Direção usa apenas barras completamente fechadas
         - Entry price é o OPEN da próxima barra
+
+        Args:
+            start_date: Data inicial dos dados
+            end_date: Data final dos dados
+            split_date: Data de divisão train/test (se None, usa 70/30)
         """
         print("\n" + "=" * 70)
         print("  CARREGANDO DADOS REAIS")
@@ -120,8 +126,19 @@ class PRMRobustOptimizer:
             print("  ERRO: Dados insuficientes!")
             return False
 
-        # SPLIT TRAIN/TEST (70/30)
-        split_idx = int(len(self.bars) * 0.70)
+        # SPLIT TRAIN/TEST por data específica ou 70/30
+        if split_date:
+            # Encontrar índice da data de split
+            split_idx = 0
+            for i, bar in enumerate(self.bars):
+                if bar.timestamp >= split_date:
+                    split_idx = i
+                    break
+            if split_idx == 0:
+                split_idx = int(len(self.bars) * 0.70)
+        else:
+            split_idx = int(len(self.bars) * 0.70)
+
         self.train_bars = self.bars[:split_idx]
         self.test_bars = self.bars[split_idx:]
 
@@ -612,13 +629,16 @@ async def main():
 
     opt = PRMRobustOptimizer("EURUSD", "H1")
 
-    # Usar periodo maior se disponivel
-    start = datetime(2025, 7, 1, tzinfo=timezone.utc)
-    end = datetime.now(timezone.utc)
+    # Períodos específicos de treino e teste
+    start = datetime(2024, 1, 1, tzinfo=timezone.utc)      # Início do treino
+    split = datetime(2025, 1, 1, tzinfo=timezone.utc)      # Fim do treino / Início do teste
+    end = datetime.now(timezone.utc)                        # Fim do teste
 
-    print(f"\n  Periodo: {start.date()} a {end.date()}")
+    print(f"\n  Periodo Total: {start.date()} a {end.date()}")
+    print(f"  Treino: {start.date()} a {split.date()}")
+    print(f"  Teste:  {split.date()} a {end.date()}")
 
-    if await opt.load_and_precompute(start, end):
+    if await opt.load_and_precompute(start, end, split_date=split):
         best = opt.optimize(N_COMBINATIONS)
         if best:
             print(f"\n{'='*70}")
