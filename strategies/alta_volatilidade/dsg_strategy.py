@@ -1,6 +1,13 @@
 """
 Adaptador de Estratégia para o Detector de Singularidade Gravitacional
 Integra o indicador DSG com o sistema de trading
+
+VERSÃO CORRIGIDA - SEM LOOK-AHEAD BIAS
+======================================
+Correções aplicadas:
+1. Stop/Take passados em PIPS (não níveis de preço)
+2. BacktestEngine recalcula níveis baseado no entry_price REAL
+3. Removida dependência do close atual para níveis
 """
 from datetime import datetime
 from typing import Optional, Dict
@@ -140,29 +147,30 @@ class DSGStrategy(BaseStrategy):
                 else:
                     direction = SignalType.SELL
 
-                # Calcula níveis de stop e take profit
-                pip_value = 0.0001
-
-                if direction == SignalType.BUY:
-                    stop_loss = price - (self.stop_loss_pips * pip_value)
-                    take_profit = price + (self.take_profit_pips * pip_value)
-                else:
-                    stop_loss = price + (self.stop_loss_pips * pip_value)
-                    take_profit = price - (self.take_profit_pips * pip_value)
+                # CORREÇÃO: NÃO calcular níveis de stop/take baseado no close atual!
+                # Passar apenas em PIPS - o BacktestEngine recalcula baseado no entry_price REAL
+                #
+                # ANTES (ERRADO):
+                # stop_loss = price - (self.stop_loss_pips * pip_value)  # Usa close!
+                #
+                # DEPOIS (CORRETO):
+                # Passa None para stop_loss/take_profit e usa stop_loss_pips/take_profit_pips
 
                 # Confiança
                 confidence = result['confidence']
 
-                # Cria sinal
+                # Cria sinal com PIPS ao invés de níveis
                 signal = Signal(
                     type=direction,
                     price=price,
                     timestamp=timestamp,
                     strategy_name=self.name,
                     confidence=confidence,
-                    stop_loss=stop_loss,
-                    take_profit=take_profit,
-                    reason=self._generate_reason(result)
+                    stop_loss=None,        # Será calculado pelo BacktestEngine
+                    take_profit=None,      # Será calculado pelo BacktestEngine
+                    reason=self._generate_reason(result),
+                    stop_loss_pips=self.stop_loss_pips,     # NOVO: Em PIPS
+                    take_profit_pips=self.take_profit_pips   # NOVO: Em PIPS
                 )
 
                 self.last_signal = signal

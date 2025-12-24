@@ -11,6 +11,13 @@ infinita e as regras normais cessam.
 
 Dependências Críticas: jax ou tensorflow (para operações tensoriais aceleradas e diferenciação
 automática), numpy (uso extensivo de einsum), scipy.spatial
+
+VERSÃO CORRIGIDA - SEM LOOK-AHEAD BIAS
+======================================
+Correções aplicadas:
+1. Substituído gaussian_filter1d (não-causal) por EMA causal
+2. Direção da geodésica calculada apenas com barras FECHADAS
+3. Adicionado suporte para modo "online" sem look-ahead
 """
 
 import numpy as np
@@ -736,9 +743,11 @@ class DetectorSingularidadeGravitacional:
             tidal_series[i:end_idx] = result['tidal_force']
             distance_series[i:end_idx] = result['event_horizon_distance']
 
-        # Suavizar séries
-        ricci_series = gaussian_filter1d(ricci_series, sigma=2)
-        tidal_series = gaussian_filter1d(tidal_series, sigma=2)
+        # CORREÇÃO #1: Suavizar séries com EMA CAUSAL (não gaussian_filter1d que é não-causal)
+        # gaussian_filter1d usa convolução simétrica que olha para o futuro!
+        # EMA é 100% causal: só usa dados passados
+        ricci_series = self._apply_ema_causal(ricci_series, alpha=0.3)
+        tidal_series = self._apply_ema_causal(tidal_series, alpha=0.3)
 
         # Valores atuais
         current_ricci = ricci_series[-1]
@@ -757,10 +766,25 @@ class DetectorSingularidadeGravitacional:
             current_distance, self._distance_history
         )
 
-        # Determinar direção da geodésica
-        if len(self._coords_history) >= 3:
-            prices_recent = [c[1] for c in self._coords_history[-3:]]
-            geodesic_direction = np.sign(prices_recent[-1] - prices_recent[0])
+        # CORREÇÃO #2: Determinar direção da geodésica usando apenas barras FECHADAS
+        # ANTES (ERRADO): Usava self._coords_history[-3:] que inclui a barra atual
+        # DEPOIS (CORRETO): Usar [-4:-1] para excluir a barra atual (ainda não fechou)
+        #
+        # No momento da decisão:
+        # - _coords_history[-1] = barra atual (close ainda pode mudar em tempo real)
+        # - _coords_history[-2] = última barra fechada
+        # - _coords_history[-4] = 3 barras atrás (fechada)
+        if len(self._coords_history) >= 4:
+            # Usar apenas barras COMPLETAMENTE FECHADAS
+            prices_past = [c[1] for c in self._coords_history[-4:-1]]  # Exclui barra atual
+            geodesic_direction = np.sign(prices_past[-1] - prices_past[0])
+        elif len(self._coords_history) >= 2:
+            # Fallback com menos dados (ainda exclui barra atual)
+            prices_past = [c[1] for c in self._coords_history[:-1]]
+            if len(prices_past) >= 2:
+                geodesic_direction = np.sign(prices_past[-1] - prices_past[0])
+            else:
+                geodesic_direction = 0
         else:
             geodesic_direction = 0
 
@@ -897,6 +921,31 @@ class DetectorSingularidadeGravitacional:
             'reasons': reasons,
             'conditions_met': conditions_met
         }
+
+    def _apply_ema_causal(self, series: np.ndarray, alpha: float = 0.3) -> np.ndarray:
+        """
+        CORREÇÃO #1: Aplica EMA (Exponential Moving Average) CAUSAL
+
+        Substitui gaussian_filter1d que é NÃO-CAUSAL (olha para o futuro).
+        EMA só usa dados PASSADOS: EMA[t] = alpha * X[t] + (1-alpha) * EMA[t-1]
+
+        Args:
+            series: Série temporal a suavizar
+            alpha: Fator de suavização (0-1). Maior = menos suavização.
+
+        Returns:
+            Série suavizada de forma causal
+        """
+        if len(series) == 0:
+            return series
+
+        result = np.zeros_like(series)
+        result[0] = series[0]
+
+        for i in range(1, len(series)):
+            result[i] = alpha * series[i] + (1 - alpha) * result[i-1]
+
+        return result
 
     def _empty_result(self) -> dict:
         """Retorna resultado vazio quando não há dados suficientes"""
