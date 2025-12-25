@@ -1,16 +1,21 @@
 #!/usr/bin/env python3
 """
 ================================================================================
-OTIMIZADOR DTT ROBUSTO V3.1 - CORREÇÕES COMPLETAS DA AUDITORIA
+OTIMIZADOR DTT ROBUSTO V3.2 - CORREÇÃO COMPLETA DO LOOK-AHEAD BIAS
 ================================================================================
 
-VERSÃO V3.1 - CORREÇÕES CRÍTICAS 24/12/2025:
+VERSÃO V3.2 - CORREÇÃO FINAL 25/12/2025:
 
+CORREÇÃO CRÍTICA - EMBEDDING SEM LOOK-AHEAD:
+- τ (time_delay) e m (embedding_dim) calculados APENAS com dados de TREINO
+- Parâmetros FIXADOS antes de qualquer análise de dados de teste
+- Elimina look-ahead sutil no Takens Embedding
+
+VERSÃO V3.1 (herdado):
 1. Walk-Forward REAL (janelas DESLIZANTES, não independentes)
-2. Teste de significância estatística (Monte Carlo)
-3. Separação de dados para cálculo de τ e m (embedding)
-4. Correção de bugs potenciais (divisão por zero, NaN, índices)
-5. Out-of-Sample verdadeiro (dados nunca vistos no embedding)
+2. Teste de significância estatística (Monte Carlo, 1000 permutações)
+3. Correção de bugs potenciais (divisão por zero, NaN, índices)
+4. KDE exclui preço atual (anti look-ahead)
 
 METODOLOGIA WALK-FORWARD REAL:
 - Janelas DESLIZANTES que crescem/deslizam com o tempo
@@ -171,14 +176,18 @@ class RobustResult:
 
 class DTTRobustOptimizer:
     """
-    Otimizador DTT V3.1 com Walk-Forward REAL (Janelas Deslizantes)
+    Otimizador DTT V3.2 com Walk-Forward REAL e Embedding Anti Look-Ahead
 
-    CORREÇÕES CRÍTICAS DA AUDITORIA V3.1:
+    CORREÇÃO CRÍTICA V3.2:
+    - τ (time_delay) e m (embedding_dim) calculados APENAS com dados de TREINO
+    - Parâmetros FIXADOS antes de qualquer análise (anti look-ahead completo)
+
+    CORREÇÕES V3.1 (herdado):
     - Walk-forward com janelas DESLIZANTES (não independentes)
     - Teste de significância estatística (Monte Carlo permutation)
     - Mínimo 200 trades treino, 100 teste
     - Direção via módulo compartilhado
-    - Separação de dados para embedding
+    - KDE exclui preço atual
     """
 
     # Custos REALISTAS
@@ -212,7 +221,11 @@ class DTTRobustOptimizer:
         self.robust_results: List[RobustResult] = []
         self.best: Optional[RobustResult] = None
 
-        logger.info(f"DTTRobustOptimizer V3.1 inicializado: {symbol} {periodicity}")
+        # V3.2: Parâmetros de embedding FIXOS (calculados apenas com treino)
+        self.fixed_tau: Optional[int] = None
+        self.fixed_m: Optional[int] = None
+
+        logger.info(f"DTTRobustOptimizer V3.2 inicializado: {symbol} {periodicity}")
         logger.info(f"  Módulo compartilhado de direção: {USE_SHARED_DIRECTION}")
         logger.info(f"  Min trades: {self.MIN_TRADES_TRAIN}/{self.MIN_TRADES_TEST}")
         logger.info(f"  Monte Carlo: {self.MONTE_CARLO_PERMUTATIONS} permutações")
@@ -239,20 +252,25 @@ class DTTRobustOptimizer:
             return 1 if trend > 0 else -1
 
     async def load_and_precompute(self, start_date: datetime, end_date: datetime,
-                                   split_date: datetime = None):
+                                   split_date: datetime = None, train_ratio: float = 0.70):
         """
-        V3.1: Carrega dados e pre-calcula sinais DTT
+        V3.2: Carrega dados e pre-calcula sinais DTT SEM LOOK-AHEAD
 
-        NOTA IMPORTANTE (Auditoria V3.1):
-        Os parâmetros de Embedding (τ, m) são calculados usando TODA a série.
-        Em produção ideal, τ e m deveriam ser recalculados apenas com dados
-        de treino para evitar look-ahead sutil. Esta é uma limitação conhecida.
+        CORREÇÃO CRÍTICA V3.2 (Auditoria Final):
+        - Parâmetros de Embedding (τ, m) calculados APENAS com dados de TREINO
+        - Evita look-ahead bias sutil no embedding
+        - τ e m são FIXOS para toda a análise
+
+        Args:
+            start_date: Data inicial dos dados
+            end_date: Data final dos dados
+            split_date: Data de divisão (opcional, usa train_ratio se não fornecido)
+            train_ratio: Proporção de dados para treino (default: 70%)
         """
         print("\n" + "=" * 70)
-        print("  CARREGANDO DADOS REAIS - V3.1 CORREÇÕES COMPLETAS")
+        print("  CARREGANDO DADOS REAIS - V3.2 SEM LOOK-AHEAD NO EMBEDDING")
         print("=" * 70)
-        print("\n  ⚠️  NOTA: Embedding (τ,m) usa toda a série (limitação conhecida)")
-        print("      Para produção crítica, considere recalcular por janela.")
+        print("\n  ✓ CORREÇÃO: Embedding (τ,m) calculado APENAS com dados de TREINO")
         print()
 
         self.bars = await download_historical_data(
@@ -267,10 +285,47 @@ class DTTRobustOptimizer:
             print("  ERRO: Dados insuficientes! Mínimo 1000 barras para validação estatística.")
             return False
 
-        # Pre-calcular sinais
-        print("\n  Pre-calculando sinais DTT V2.1 (módulo compartilhado)...")
+        # =====================================================================
+        # V3.2: CALCULAR τ e m APENAS COM DADOS DE TREINO (ANTI LOOK-AHEAD)
+        # =====================================================================
+        split_idx = int(len(self.bars) * train_ratio)
+        train_bars = self.bars[:split_idx]
+
+        print(f"\n  Calculando embedding com dados de TREINO apenas:")
+        print(f"    Barras de treino: {len(train_bars)} ({train_ratio*100:.0f}%)")
+        print(f"    Barras de teste:  {len(self.bars) - len(train_bars)} ({(1-train_ratio)*100:.0f}%)")
+
+        # Extrair preços de treino para calcular τ e m
+        train_prices = np.array([b.close for b in train_bars])
+
+        # Criar DTT temporário para calcular τ e m com dados de treino
+        dtt_calibration = DetectorTunelamentoTopologico(
+            max_points=150,
+            use_dimensionality_reduction=True,
+            reduction_method='pca',
+            persistence_entropy_threshold=0.1,
+            tunneling_probability_threshold=0.05
+        )
+
+        # Calcular embedding APENAS com dados de treino
+        embedding_result = dtt_calibration.get_takens_embedding(train_prices)
+
+        # FIXAR parâmetros calculados
+        self.fixed_tau = embedding_result['time_delay']
+        self.fixed_m = embedding_result['embedding_dim']
+
+        print(f"\n  Parâmetros de Embedding FIXADOS (anti look-ahead):")
+        print(f"    τ (time_delay):    {self.fixed_tau}")
+        print(f"    m (embedding_dim): {self.fixed_m}")
+
+        # =====================================================================
+        # CRIAR DTT COM PARÂMETROS FIXOS PARA TODA A ANÁLISE
+        # =====================================================================
+        print("\n  Pre-calculando sinais DTT V3.2 (embedding fixo)...")
 
         dtt = DetectorTunelamentoTopologico(
+            embedding_dim=self.fixed_m,    # FIXO - calculado apenas com treino
+            time_delay=self.fixed_tau,     # FIXO - calculado apenas com treino
             max_points=150,
             use_dimensionality_reduction=True,
             reduction_method='pca',
@@ -720,14 +775,15 @@ class DTTRobustOptimizer:
 
     def optimize(self, n: int = 500000) -> Optional[RobustResult]:
         """
-        V3.1: Executa otimização robusta com significância estatística
+        V3.2: Executa otimização robusta com embedding anti look-ahead
         """
         if not self.signals:
             logger.error("Dados não carregados!")
             return None
 
         print(f"\n{'='*70}")
-        print(f"  OTIMIZAÇÃO DTT V3.1: {n:,} COMBINAÇÕES")
+        print(f"  OTIMIZAÇÃO DTT V3.2: {n:,} COMBINAÇÕES")
+        print(f"  Embedding: τ={self.fixed_tau}, m={self.fixed_m} (FIXOS, anti look-ahead)")
         print(f"  Walk-Forward REAL (janelas deslizantes)")
         print(f"  Teste de Significância: Monte Carlo ({self.MONTE_CARLO_PERMUTATIONS} perm)")
         print(f"  Min trades: {self.MIN_TRADES_TRAIN}/{self.MIN_TRADES_TEST}")
@@ -799,8 +855,13 @@ class DTTRobustOptimizer:
 
         config = {
             "strategy": "DTT-TunelamentoTopologico",
-            "version": "3.1-audit-complete",
+            "version": "3.2-no-lookahead",
             "optimized_at": datetime.now(timezone.utc).isoformat(),
+            "embedding": {
+                "time_delay_tau": self.fixed_tau,
+                "embedding_dim_m": self.fixed_m,
+                "note": "Calculados apenas com dados de TREINO (anti look-ahead)"
+            },
             "validation": {
                 "method": "walk_forward_sliding_windows",
                 "n_windows": 6,
@@ -822,14 +883,18 @@ async def main():
     N_COMBINATIONS = 500000
 
     print("=" * 70)
-    print("  OTIMIZADOR DTT V3.1 - CORREÇÕES COMPLETAS DA AUDITORIA")
+    print("  OTIMIZADOR DTT V3.2 - ANTI LOOK-AHEAD COMPLETO")
     print("=" * 70)
-    print("\n  CORREÇÕES CRÍTICAS IMPLEMENTADAS:")
+    print("\n  CORREÇÃO CRÍTICA V3.2:")
+    print("    ✓ Embedding (τ,m) calculado APENAS com dados de TREINO")
+    print("    ✓ Parâmetros FIXADOS para toda a análise")
+    print("\n  CORREÇÕES V3.1 (herdado):")
     print("    ✓ Walk-Forward REAL (janelas DESLIZANTES)")
     print("    ✓ Teste de significância estatística (Monte Carlo)")
     print("    ✓ Mínimo 200/100 trades para significância")
     print("    ✓ Módulo compartilhado de direção")
     print("    ✓ p-value < 0.05 para validação")
+    print("    ✓ KDE exclui preço atual")
     print("=" * 70)
 
     opt = DTTRobustOptimizer("EURUSD", "H1")
