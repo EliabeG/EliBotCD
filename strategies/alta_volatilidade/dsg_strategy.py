@@ -2,7 +2,7 @@
 Adaptador de Estratégia para o Detector de Singularidade Gravitacional
 Integra o indicador DSG com o sistema de trading
 
-VERSÃO V3.4 - CORREÇÕES DA QUARTA AUDITORIA (25/12/2025)
+VERSÃO V3.5 - CORREÇÕES DA QUINTA AUDITORIA (25/12/2025)
 ===========================================================
 Correções aplicadas (V2.0):
 1. Stop/Take passados em PIPS (não níveis de preço)
@@ -30,12 +30,19 @@ Correções aplicadas (V3.4 - Quarta Auditoria 25/12/2025):
 13. LOCK PRÓPRIO: Estratégia tem lock próprio para proteger buffers
 14. RESET COMPLETO: Todas as operações protegidas por lock
 15. Indicador DSG V3.4 com Ricci threshold corrigido e percentil dinâmico
+
+Correções aplicadas (V3.5 - Quinta Auditoria 25/12/2025):
+16. THRESHOLD CORRIGIDO: ricci_collapse_threshold = -50500.0 (era -0.5)
+17. ANALYZE THREAD-SAFE: Método analyze() protegido por lock
+18. FROM_CONFIG: Método para carregar parâmetros otimizados
 """
 from datetime import datetime
 from typing import Optional, Dict
 from collections import deque
 import numpy as np
 import threading  # CORREÇÃO V3.4: Lock para thread-safety
+import json  # CORREÇÃO V3.5: Para carregar parâmetros de config
+import os  # CORREÇÃO V3.5: Para verificar existência de arquivos
 
 from ..base import BaseStrategy, Signal, SignalType
 from .dsg_detector_singularidade import DetectorSingularidadeGravitacional
@@ -82,7 +89,7 @@ class DSGStrategy(BaseStrategy):
                  min_prices: int = 100,
                  stop_loss_pips: float = 30.0,
                  take_profit_pips: float = 60.0,
-                 ricci_collapse_threshold: float = -0.5,
+                 ricci_collapse_threshold: float = -50500.0,  # CORREÇÃO V3.5: Escala real (era -0.5)
                  tidal_force_threshold: float = 0.1,
                  event_horizon_threshold: float = 0.001,
                  lookback_window: int = 50,
@@ -176,6 +183,8 @@ class DSGStrategy(BaseStrategy):
         """
         Analisa o mercado e retorna sinal se Singularidade detectada
 
+        CORREÇÃO V3.5: Método agora é thread-safe com lock
+
         Args:
             price: Preço atual
             timestamp: Timestamp do tick
@@ -186,79 +195,81 @@ class DSGStrategy(BaseStrategy):
         Returns:
             Signal se Singularidade Gravitacional detectada, None caso contrário
         """
-        # Adiciona preço e volumes ao buffer
-        self.add_price(price, bid_volume, ask_volume)
+        # CORREÇÃO V3.5: Proteger todo o método com lock para evitar race conditions
+        with self._strategy_lock:
+            # Adiciona preço e volumes ao buffer
+            self.add_price(price, bid_volume, ask_volume)
 
-        # Verifica se temos dados suficientes
-        if len(self.prices) < self.min_prices:
-            return None
-
-        # Cooldown para evitar sinais em sequência
-        if self.signal_cooldown > 0:
-            self.signal_cooldown -= 1
-            return None
-
-        # Converte para numpy arrays
-        prices_array = np.array(self.prices)
-        bid_vols_array = np.array(self.bid_volumes)
-        ask_vols_array = np.array(self.ask_volumes)
-
-        try:
-            # Executa análise DSG
-            result = self.dsg.analyze(prices_array, bid_vols_array, ask_vols_array)
-            self.last_analysis = result
-
-            # CORREÇÃO V3.2: Verificar se análise falhou com erro
-            if 'error' in result and result['error']:
-                # Análise falhou (dados inválidos, etc.)
-                # Não gerar sinal quando há erro
+            # Verifica se temos dados suficientes
+            if len(self.prices) < self.min_prices:
                 return None
 
-            # CORREÇÃO V3.0: Usar min_confidence configurável (era hardcoded 0.5)
-            if result['signal'] != 0 and result['confidence'] >= self.min_confidence:
-                # Determina direção
-                if result['signal'] == 1:
-                    direction = SignalType.BUY
-                else:
-                    direction = SignalType.SELL
+            # Cooldown para evitar sinais em sequência
+            if self.signal_cooldown > 0:
+                self.signal_cooldown -= 1
+                return None
 
-                # CORREÇÃO V2.0: NÃO calcular níveis de stop/take baseado no close atual!
-                # Passar apenas em PIPS - o BacktestEngine recalcula baseado no entry_price REAL
-                #
-                # ANTES (ERRADO):
-                # stop_loss = price - (self.stop_loss_pips * pip_value)  # Usa close!
-                #
-                # DEPOIS (CORRETO):
-                # Passa None para stop_loss/take_profit e usa stop_loss_pips/take_profit_pips
+            # Converte para numpy arrays
+            prices_array = np.array(self.prices)
+            bid_vols_array = np.array(self.bid_volumes)
+            ask_vols_array = np.array(self.ask_volumes)
 
-                # Confiança
-                confidence = result['confidence']
+            try:
+                # Executa análise DSG
+                result = self.dsg.analyze(prices_array, bid_vols_array, ask_vols_array)
+                self.last_analysis = result
 
-                # Cria sinal com PIPS ao invés de níveis
-                signal = Signal(
-                    type=direction,
-                    price=price,
-                    timestamp=timestamp,
-                    strategy_name=self.name,
-                    confidence=confidence,
-                    stop_loss=None,        # Será calculado pelo BacktestEngine
-                    take_profit=None,      # Será calculado pelo BacktestEngine
-                    reason=self._generate_reason(result),
-                    stop_loss_pips=self.stop_loss_pips,     # Em PIPS
-                    take_profit_pips=self.take_profit_pips   # Em PIPS
-                )
+                # CORREÇÃO V3.2: Verificar se análise falhou com erro
+                if 'error' in result and result['error']:
+                    # Análise falhou (dados inválidos, etc.)
+                    # Não gerar sinal quando há erro
+                    return None
 
-                self.last_signal = signal
-                # CORREÇÃO V3.0: Usar signal_cooldown_bars configurável (era hardcoded 30)
-                self.signal_cooldown = self.signal_cooldown_bars
+                # CORREÇÃO V3.0: Usar min_confidence configurável (era hardcoded 0.5)
+                if result['signal'] != 0 and result['confidence'] >= self.min_confidence:
+                    # Determina direção
+                    if result['signal'] == 1:
+                        direction = SignalType.BUY
+                    else:
+                        direction = SignalType.SELL
 
-                return signal
+                    # CORREÇÃO V2.0: NÃO calcular níveis de stop/take baseado no close atual!
+                    # Passar apenas em PIPS - o BacktestEngine recalcula baseado no entry_price REAL
+                    #
+                    # ANTES (ERRADO):
+                    # stop_loss = price - (self.stop_loss_pips * pip_value)  # Usa close!
+                    #
+                    # DEPOIS (CORRETO):
+                    # Passa None para stop_loss/take_profit e usa stop_loss_pips/take_profit_pips
 
-        except Exception as e:
-            # CORREÇÃO V3.4: Usar logging estruturado
-            logger.error(f"Erro na análise DSG: {e}", exc_info=True)
+                    # Confiança
+                    confidence = result['confidence']
 
-        return None
+                    # Cria sinal com PIPS ao invés de níveis
+                    signal = Signal(
+                        type=direction,
+                        price=price,
+                        timestamp=timestamp,
+                        strategy_name=self.name,
+                        confidence=confidence,
+                        stop_loss=None,        # Será calculado pelo BacktestEngine
+                        take_profit=None,      # Será calculado pelo BacktestEngine
+                        reason=self._generate_reason(result),
+                        stop_loss_pips=self.stop_loss_pips,     # Em PIPS
+                        take_profit_pips=self.take_profit_pips   # Em PIPS
+                    )
+
+                    self.last_signal = signal
+                    # CORREÇÃO V3.0: Usar signal_cooldown_bars configurável (era hardcoded 30)
+                    self.signal_cooldown = self.signal_cooldown_bars
+
+                    return signal
+
+            except Exception as e:
+                # CORREÇÃO V3.4: Usar logging estruturado
+                logger.error(f"Erro na análise DSG: {e}", exc_info=True)
+
+            return None
 
     def _generate_reason(self, result: dict) -> str:
         """Gera descrição do motivo do sinal"""
@@ -375,3 +386,80 @@ class DSGStrategy(BaseStrategy):
         if self.last_analysis is None:
             return False
         return self.last_analysis.get('crossing_horizon', False)
+
+    @classmethod
+    def from_config(cls, config_path: str) -> 'DSGStrategy':
+        """
+        CORREÇÃO V3.5: Carrega parâmetros otimizados de um arquivo JSON
+
+        Isso garante que a estratégia em produção use EXATAMENTE os mesmos
+        parâmetros que foram validados durante a otimização.
+
+        Args:
+            config_path: Caminho para arquivo JSON com parâmetros otimizados
+
+        Returns:
+            Instância de DSGStrategy com parâmetros do config
+
+        Raises:
+            FileNotFoundError: Se arquivo não existe
+            ValueError: Se arquivo não tem parâmetros necessários
+
+        Exemplo de uso:
+            >>> strategy = DSGStrategy.from_config('configs/dsg_optimized.json')
+
+        Exemplo de arquivo JSON:
+            {
+                "params": {
+                    "ricci_collapse_threshold": -50300.0,
+                    "tidal_force_threshold": 0.015,
+                    "stop_loss_pips": 25.0,
+                    "take_profit_pips": 50.0,
+                    "event_horizon_threshold": 0.0015,
+                    "lookback_window": 50,
+                    "signal_cooldown_bars": 30,
+                    "min_confidence": 0.5
+                }
+            }
+        """
+        if not os.path.exists(config_path):
+            raise FileNotFoundError(f"Arquivo de configuração não encontrado: {config_path}")
+
+        with open(config_path, 'r') as f:
+            config = json.load(f)
+
+        # Suporta tanto formato direto quanto aninhado em 'params'
+        if 'params' in config:
+            params = config['params']
+        else:
+            params = config
+
+        # Parâmetros obrigatórios para consistência
+        required_params = ['ricci_collapse_threshold', 'tidal_force_threshold']
+        for param in required_params:
+            if param not in params:
+                raise ValueError(f"Parâmetro obrigatório ausente: {param}")
+
+        # Verificar escala do Ricci threshold
+        if 'ricci_collapse_threshold' in params:
+            threshold = params['ricci_collapse_threshold']
+            if threshold > -1000:
+                logger.warning(
+                    f"ATENÇÃO: ricci_collapse_threshold={threshold} parece estar na escala errada. "
+                    f"Valores reais estão entre -51000 e -49500."
+                )
+
+        # Extrair parâmetros com valores padrão
+        return cls(
+            min_prices=params.get('min_prices', 100),
+            stop_loss_pips=params.get('stop_loss_pips', 30.0),
+            take_profit_pips=params.get('take_profit_pips', 60.0),
+            ricci_collapse_threshold=params.get('ricci_collapse_threshold', -50500.0),
+            tidal_force_threshold=params.get('tidal_force_threshold', 0.1),
+            event_horizon_threshold=params.get('event_horizon_threshold', 0.001),
+            lookback_window=params.get('lookback_window', 50),
+            c_base=params.get('c_base', 1.0),
+            gamma=params.get('gamma', 0.1),
+            signal_cooldown_bars=params.get('signal_cooldown_bars', 30),
+            min_confidence=params.get('min_confidence', 0.5),
+        )

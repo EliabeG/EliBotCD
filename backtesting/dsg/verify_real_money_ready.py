@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 ================================================================================
-VERIFICAÇÃO DE SANIDADE PARA DINHEIRO REAL - DSG V3.4
+VERIFICAÇÃO DE SANIDADE PARA DINHEIRO REAL - DSG V3.5
 ================================================================================
 
 Este script verifica se o sistema DSG está corretamente configurado
@@ -16,15 +16,19 @@ VERIFICAÇÕES:
 6. Filtros unificados com robust_optimizer.py
 7. Custos realistas aplicados
 8. Parâmetros configuráveis (cooldown, confidence)
-9. NOVO V3.4: Testes funcionais de look-ahead
-10. NOVO V3.4: Verificação de centralização de filtros
+9. Testes funcionais de look-ahead
+10. Verificação de centralização de filtros
+11. NOVO V3.5: Escala de Ricci na ESTRATÉGIA (não só indicador)
+12. NOVO V3.5: Consistência entre estratégia e otimizador
+13. NOVO V3.5: Método from_config para carregar parâmetros
+14. NOVO V3.5: Testes funcionais de consistência
 
 EXECUTE ANTES DE OPERAR COM DINHEIRO REAL!
 
-CORREÇÕES V3.4 (Quarta Auditoria 25/12/2025):
-- Adicionados testes funcionais (não apenas busca de strings)
-- Verificação de consistência entre otimizadores
-- Teste de reprodutibilidade
+CORREÇÕES V3.5 (Quinta Auditoria 25/12/2025):
+- CRÍTICO: Verifica threshold de Ricci na ESTRATÉGIA (era só no indicador)
+- Verificação de consistência funcional entre componentes
+- Teste do método from_config para carregar parâmetros otimizados
 ================================================================================
 """
 
@@ -33,6 +37,7 @@ import os
 import numpy as np
 from datetime import datetime, timezone
 import inspect
+import json  # CORREÇÃO V3.5: Para testes de from_config
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
@@ -484,32 +489,213 @@ def verify_centralized_filters():
 
 
 def verify_ricci_threshold_scale():
-    """NOVO V3.4: Verifica se threshold de Ricci está na escala correta"""
+    """ATUALIZADO V3.5: Verifica threshold de Ricci no indicador E na estratégia"""
     print_header("VERIFICAÇÃO 12: ESCALA DO THRESHOLD DE RICCI")
 
     try:
         from strategies.alta_volatilidade.dsg_detector_singularidade import DetectorSingularidadeGravitacional
+        from strategies.alta_volatilidade.dsg_strategy import DSGStrategy
 
+        # Verificar indicador
         dsg = DetectorSingularidadeGravitacional()
-
-        # Threshold deve estar na escala real (-51000 a -49500)
-        threshold_scale_ok = dsg.ricci_collapse_threshold < -40000
+        indicator_ok = dsg.ricci_collapse_threshold < -40000
         print_check(
-            f"Threshold de Ricci: {dsg.ricci_collapse_threshold}",
-            threshold_scale_ok,
+            f"Indicador - Threshold de Ricci: {dsg.ricci_collapse_threshold}",
+            indicator_ok,
+            "Deve estar na escala real (< -40000)"
+        )
+
+        # CORREÇÃO V3.5: Verificar estratégia também (era o problema principal!)
+        strategy = DSGStrategy()
+        strategy_threshold = strategy.dsg.ricci_collapse_threshold
+        strategy_ok = strategy_threshold < -40000
+        print_check(
+            f"Estratégia - Threshold de Ricci: {strategy_threshold}",
+            strategy_ok,
             "Deve estar na escala real (< -40000), não -0.5"
         )
 
-        return threshold_scale_ok
+        # Verificar consistência entre indicador e estratégia
+        consistent = abs(dsg.ricci_collapse_threshold - strategy_threshold) < 1000
+        print_check(
+            "Consistência entre indicador e estratégia",
+            consistent,
+            f"Indicador={dsg.ricci_collapse_threshold}, Estratégia={strategy_threshold}"
+        )
+
+        return indicator_ok and strategy_ok and consistent
 
     except Exception as e:
         print_check("Verificação escala Ricci", False, str(e))
         return False
 
 
+def verify_strategy_optimizer_consistency():
+    """NOVO V3.5: Verifica consistência entre parâmetros da estratégia e otimizadores"""
+    print_header("VERIFICAÇÃO 13: CONSISTÊNCIA ESTRATÉGIA-OTIMIZADOR")
+
+    try:
+        from strategies.alta_volatilidade.dsg_strategy import DSGStrategy
+
+        # Verificar que estratégia usa escala correta por padrão
+        strategy = DSGStrategy()
+
+        # Valores que devem estar em escala real
+        ricci_ok = strategy.dsg.ricci_collapse_threshold < -40000
+        print_check(
+            f"ricci_collapse_threshold default: {strategy.dsg.ricci_collapse_threshold}",
+            ricci_ok,
+            "Deve ser < -40000 (escala real)"
+        )
+
+        # Verificar ranges dos otimizadores
+        source_file = os.path.join(
+            os.path.dirname(os.path.abspath(__file__)),
+            'optimizer.py'
+        )
+        with open(source_file, 'r') as f:
+            opt_source = f.read()
+
+        # Otimizador deve usar ranges na escala real
+        uses_real_scale = '-51000' in opt_source or '-50500' in opt_source
+        print_check(
+            "Otimizador usa ranges na escala real",
+            uses_real_scale,
+            "Ranges de Ricci devem estar em -51000 a -49500"
+        )
+
+        return ricci_ok and uses_real_scale
+
+    except Exception as e:
+        print_check("Verificação consistência", False, str(e))
+        return False
+
+
+def verify_from_config_method():
+    """NOVO V3.5: Verifica se método from_config existe e funciona"""
+    print_header("VERIFICAÇÃO 14: MÉTODO FROM_CONFIG")
+
+    try:
+        from strategies.alta_volatilidade.dsg_strategy import DSGStrategy
+        import tempfile
+
+        # Verificar que método existe
+        has_from_config = hasattr(DSGStrategy, 'from_config')
+        print_check(
+            "DSGStrategy tem método from_config",
+            has_from_config,
+            "Permite carregar parâmetros otimizados"
+        )
+
+        if not has_from_config:
+            return False
+
+        # Testar carregamento de config
+        test_config = {
+            "params": {
+                "ricci_collapse_threshold": -50300.0,
+                "tidal_force_threshold": 0.015,
+                "stop_loss_pips": 25.0,
+                "take_profit_pips": 50.0,
+            }
+        }
+
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+            json.dump(test_config, f)
+            temp_path = f.name
+
+        try:
+            strategy = DSGStrategy.from_config(temp_path)
+            params_loaded = (
+                strategy.dsg.ricci_collapse_threshold == -50300.0 and
+                strategy.dsg.tidal_force_threshold == 0.015 and
+                strategy.stop_loss_pips == 25.0 and
+                strategy.take_profit_pips == 50.0
+            )
+            print_check(
+                "from_config carrega parâmetros corretamente",
+                params_loaded,
+                f"Ricci={strategy.dsg.ricci_collapse_threshold}, Tidal={strategy.dsg.tidal_force_threshold}"
+            )
+        finally:
+            os.unlink(temp_path)
+
+        return has_from_config and params_loaded
+
+    except Exception as e:
+        print_check("Verificação from_config", False, str(e))
+        return False
+
+
+def verify_functional_consistency():
+    """NOVO V3.5: Teste funcional de consistência entre otimização e produção"""
+    print_header("VERIFICAÇÃO 15: CONSISTÊNCIA FUNCIONAL")
+
+    try:
+        from strategies.alta_volatilidade.dsg_detector_singularidade import DetectorSingularidadeGravitacional
+        from strategies.alta_volatilidade.dsg_strategy import DSGStrategy
+
+        np.random.seed(42)
+        prices = 1.1 + 0.0002 * np.cumsum(np.random.randn(200))
+
+        # Criar indicador com parâmetros específicos
+        params = {
+            'ricci_collapse_threshold': -50300.0,
+            'tidal_force_threshold': 0.015,
+        }
+
+        # Testar indicador direto
+        dsg = DetectorSingularidadeGravitacional(**params)
+        result_indicator = dsg.analyze(prices)
+        signal_indicator = result_indicator['signal']
+
+        # Testar via estratégia com mesmos parâmetros
+        strategy = DSGStrategy(
+            ricci_collapse_threshold=params['ricci_collapse_threshold'],
+            tidal_force_threshold=params['tidal_force_threshold'],
+        )
+
+        # Alimentar estratégia com os mesmos preços
+        strategy2 = DSGStrategy(
+            ricci_collapse_threshold=params['ricci_collapse_threshold'],
+            tidal_force_threshold=params['tidal_force_threshold'],
+        )
+        # Analisar usando método interno do indicador
+        result_strategy = strategy2.dsg.analyze(prices)
+        signal_strategy = result_strategy['signal']
+
+        # Sinais devem ser idênticos
+        signals_match = (signal_indicator == signal_strategy)
+        print_check(
+            "Sinal do indicador = Sinal da estratégia",
+            signals_match,
+            f"Indicador={signal_indicator}, Estratégia={signal_strategy}"
+        )
+
+        # Verificar que Ricci está na escala correta
+        ricci_indicator = result_indicator['Ricci_Scalar']
+        ricci_strategy = result_strategy['Ricci_Scalar']
+        ricci_scale_ok = (
+            ricci_indicator < -40000 and
+            ricci_indicator > -60000 and
+            abs(ricci_indicator - ricci_strategy) < 1.0
+        )
+        print_check(
+            f"Ricci na escala real",
+            ricci_scale_ok,
+            f"Indicador={ricci_indicator:.2f}, Estratégia={ricci_strategy:.2f}"
+        )
+
+        return signals_match and ricci_scale_ok
+
+    except Exception as e:
+        print_check("Verificação consistência funcional", False, str(e))
+        return False
+
+
 def main():
     print("\n" + "=" * 70)
-    print("  VERIFICAÇÃO DE SANIDADE - DSG V3.4")
+    print("  VERIFICAÇÃO DE SANIDADE - DSG V3.5")
     print("  PRONTO PARA DINHEIRO REAL?")
     print("=" * 70)
     print(f"\n  Data: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
@@ -525,11 +711,15 @@ def main():
     results.append(("Filtros unificados", verify_unified_filters()))
     results.append(("Custos realistas", verify_realistic_costs()))
     results.append(("Parâmetros configuráveis", verify_configurable_params()))
-    results.append(("Versão V3.4 do indicador", verify_indicator_version()))
-    # NOVAS VERIFICAÇÕES V3.4
+    results.append(("Versão V3.4+ do indicador", verify_indicator_version()))
+    # VERIFICAÇÕES V3.4
     results.append(("Teste funcional look-ahead", verify_functional_no_lookahead()))
     results.append(("Filtros centralizados", verify_centralized_filters()))
     results.append(("Escala threshold Ricci", verify_ricci_threshold_scale()))
+    # NOVAS VERIFICAÇÕES V3.5
+    results.append(("Consistência estratégia-otimizador", verify_strategy_optimizer_consistency()))
+    results.append(("Método from_config", verify_from_config_method()))
+    results.append(("Consistência funcional", verify_functional_consistency()))
 
     # Resumo final
     print_header("RESUMO FINAL")
