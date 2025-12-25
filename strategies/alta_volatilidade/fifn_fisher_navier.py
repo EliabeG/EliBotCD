@@ -807,8 +807,28 @@ class FluxoInformacaoFisherNavier:
         - Se True (default): prices[-1] já é a última barra FECHADA
         - Se False: prices[-1] é barra em formação e será excluída internamente
 
+        AUDITORIA 28: Documentação de prevenção de look-ahead
+        ====================================================
+        Este indicador NÃO tem look-ahead DESDE QUE seja chamado corretamente:
+
+        1. OPTIMIZER: Chama com prices_for_analysis = np.array(prices_buf)[:-1]
+           - Exclui barra atual ANTES de chamar analyze()
+           - current_bar_excluded=True (default) é correto
+
+        2. STRATEGY: Chama com prices_array = np.array(self.prices)[:-1]
+           - Exclui barra atual ANTES de chamar analyze()
+           - current_bar_excluded=True (default) é correto
+
+        3. INTERNO: Todos os loops usam returns[i-window:i] onde:
+           - returns[-1] = diferença entre prices[-2] e prices[-1]
+           - prices[-1] = última barra FECHADA (não a atual)
+           - NENHUM dado futuro é usado
+
+        IMPORTANTE: Se chamar analyze() sem excluir a barra atual,
+        use current_bar_excluded=False para excluir internamente.
+
         Args:
-            prices: Array de preços de fechamento
+            prices: Array de preços de fechamento (última barra DEVE ser fechada)
             volume: Array de volumes (opcional)
             current_bar_excluded: Se True, prices já exclui a barra atual.
                                  Se False, exclui internamente para evitar look-ahead.
