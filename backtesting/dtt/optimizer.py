@@ -207,7 +207,7 @@ class DTTRobustOptimizer:
     MIN_PF_TRAIN = 1.30
     MIN_PF_TEST = 1.15
     MAX_PF = 3.5
-    MAX_DRAWDOWN = 0.30
+    MAX_DRAWDOWN = 0.20  # V3.3: Reduzido de 30% para 20% (mais conservador)
     MIN_ROBUSTNESS = 0.70
     MIN_EXPECTANCY = 3.0
 
@@ -1126,9 +1126,8 @@ async def main():
                 opt.save(n_tested=N_COMBINATIONS, oos_result=oos_result)
             else:
                 print("\n  ✗ REPROVADO: Parâmetros não passaram na validação OOS")
-                print("  POSSÍVEL OVERFITTING - não usar em produção!")
-                # Salvar mesmo assim para análise, mas marcar como não validado
-                opt.save(n_tested=N_COMBINATIONS)
+                print("  POSSÍVEL OVERFITTING - NÃO SALVAR configuração!")
+                print("  Configuração NÃO foi salva para evitar uso em produção.")
         else:
             print("\n  AVISO: Nenhuma configuração passou nos filtros!")
             print("  Possíveis causas:")
