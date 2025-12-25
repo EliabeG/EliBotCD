@@ -41,7 +41,7 @@ from strategies.alta_volatilidade import FIFNStrategy
 
 
 def create_fifn_strategy(
-    min_prices: int = 80,
+    min_prices: int = 100,  # AUDITORIA 29: Unificado com optimizer
     stop_loss_pips: float = 20.0,
     take_profit_pips: float = 40.0,
     reynolds_sweet_low: float = 2300.0,
@@ -52,8 +52,10 @@ def create_fifn_strategy(
     """
     Cria instancia da estrategia FIFN com parametros customizados
 
+    AUDITORIA 29: min_prices unificado em 100 para consistência
+
     Args:
-        min_prices: Minimo de precos para analise
+        min_prices: Minimo de precos para analise (AUDITORIA 29: 100)
         stop_loss_pips: Stop loss em pips
         take_profit_pips: Take profit em pips
         reynolds_sweet_low: Limite inferior do sweet spot (Reynolds)
@@ -80,7 +82,7 @@ def run_fifn_backtest(
     days: int = 30,
     periodicity: str = "H1",
     initial_capital: float = 10000.0,
-    min_prices: int = 80,
+    min_prices: int = 100,  # AUDITORIA 29: Unificado com optimizer
     stop_loss_pips: float = 20.0,
     take_profit_pips: float = 40.0,
     verbose: bool = True
@@ -89,14 +91,14 @@ def run_fifn_backtest(
     Executa backtest do FIFN com dados REAIS
 
     IMPORTANTE: Usa dados REAIS do mercado Forex.
-    VERSAO CORRIGIDA V2.0 - Sem look-ahead bias.
+    VERSAO CORRIGIDA V2.1 - Sem look-ahead bias, min_prices unificado.
 
     Args:
         symbol: Par de moedas
         days: Numero de dias de historico
         periodicity: Periodicidade (M1, H1, D1)
         initial_capital: Capital inicial
-        min_prices: Minimo de precos para analise
+        min_prices: Minimo de precos para analise (AUDITORIA 29: 100)
         stop_loss_pips: Stop loss em pips
         take_profit_pips: Take profit em pips
         verbose: Mostrar detalhes
