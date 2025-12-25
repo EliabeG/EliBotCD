@@ -41,6 +41,11 @@ CORREÇÕES V3.2 (Segunda Auditoria 24/12/2025):
 17. Centro de massa usa NaN quando histórico vazio
 18. Thread-safety completo em todos os acessos ao histórico
 
+CORREÇÕES V3.4 (Quarta Auditoria 25/12/2025):
+19. Filtros CENTRALIZADOS: Importa de config/optimizer_filters.py
+20. Ricci threshold corrigido para escala real (-50500)
+21. Consistência garantida entre optimizer.py e optimizer_wf.py
+
 PARA DINHEIRO REAL. SEM OVERFITTING. SEM LOOK-AHEAD.
 ================================================================================
 """
@@ -73,6 +78,18 @@ from config.execution_costs import (
     SPREAD_PIPS,
     SLIPPAGE_PIPS,
     get_pip_value,
+)
+
+# CORREÇÃO V3.4: Importar filtros centralizados
+from config.optimizer_filters import (
+    MIN_TRADES_TRAIN, MIN_TRADES_TEST,
+    MIN_WIN_RATE, MAX_WIN_RATE,
+    MIN_PROFIT_FACTOR, MAX_PROFIT_FACTOR,
+    MAX_DRAWDOWN,
+    MIN_WIN_RATE_TEST, MAX_WIN_RATE_TEST,
+    MIN_PROFIT_FACTOR_TEST, MAX_PROFIT_FACTOR_TEST,
+    MAX_DRAWDOWN_TEST,
+    MIN_PF_RATIO, MIN_WR_RATIO,
 )
 
 
@@ -322,15 +339,15 @@ class DSGRobustOptimizer:
         )
         train_result = self.backtester.calculate_backtest_result(train_pnls)
 
-        # CORREÇÃO V3.0: Filtros UNIFICADOS com robust_optimizer.py
-        # Valores alinhados com RobustBacktester class constants
+        # CORREÇÃO V3.4: Usa filtros CENTRALIZADOS de config/optimizer_filters.py
+        # Garante consistência entre todos os otimizadores
         if not train_result.is_valid(
-            min_trades=50,        # CORREÇÃO: era 30, agora = MIN_TRADES_TRAIN
-            max_win_rate=0.60,    # CORREÇÃO: era 0.65, agora = MAX_WIN_RATE
-            min_win_rate=0.35,    # CORREÇÃO: era 0.30, agora = MIN_WIN_RATE
-            max_pf=3.5,           # CORREÇÃO: era 4.0, agora = MAX_PROFIT_FACTOR
-            min_pf=1.30,          # CORREÇÃO: era 1.10, agora = MIN_PROFIT_FACTOR
-            max_dd=0.30           # CORREÇÃO: era 0.40, agora = MAX_DRAWDOWN
+            min_trades=MIN_TRADES_TRAIN,
+            max_win_rate=MAX_WIN_RATE,
+            min_win_rate=MIN_WIN_RATE,
+            max_pf=MAX_PROFIT_FACTOR,
+            min_pf=MIN_PROFIT_FACTOR,
+            max_dd=MAX_DRAWDOWN
         ):
             return None
 
@@ -343,14 +360,14 @@ class DSGRobustOptimizer:
         )
         test_result = self.backtester.calculate_backtest_result(test_pnls)
 
-        # CORREÇÃO V3.0: Filtros de teste também alinhados
+        # CORREÇÃO V3.4: Usa filtros CENTRALIZADOS para teste
         if not test_result.is_valid(
-            min_trades=25,        # CORREÇÃO: era 15, agora = MIN_TRADES_TEST
-            max_win_rate=0.65,    # Ligeiramente mais permissivo no teste
-            min_win_rate=0.30,    # Ligeiramente mais permissivo no teste
-            max_pf=4.0,           # Ligeiramente mais permissivo no teste
-            min_pf=1.15,          # CORREÇÃO: era 1.0, agora mais rigoroso
-            max_dd=0.35           # CORREÇÃO: era 0.45, agora mais rigoroso
+            min_trades=MIN_TRADES_TEST,
+            max_win_rate=MAX_WIN_RATE_TEST,
+            min_win_rate=MIN_WIN_RATE_TEST,
+            max_pf=MAX_PROFIT_FACTOR_TEST,
+            min_pf=MIN_PROFIT_FACTOR_TEST,
+            max_dd=MAX_DRAWDOWN_TEST
         ):
             return None
 
@@ -359,11 +376,10 @@ class DSGRobustOptimizer:
             train_result, test_result
         )
 
-        # CORREÇÃO V3.0: Robustez alinhada com MIN_ROBUSTNESS = 0.70
-        # Teste deve manter >= 70% do treino (era 50%)
+        # CORREÇÃO V3.4: Usa ratios CENTRALIZADOS
         pf_ratio = test_result.profit_factor / train_result.profit_factor if train_result.profit_factor > 0 else 0
         wr_ratio = test_result.win_rate / train_result.win_rate if train_result.win_rate > 0 else 0
-        is_robust = pf_ratio >= 0.70 and wr_ratio >= 0.70 and test_result.profit_factor >= 1.0
+        is_robust = pf_ratio >= MIN_PF_RATIO and wr_ratio >= MIN_WR_RATIO and test_result.profit_factor >= 1.0
 
         if not is_robust:
             return None

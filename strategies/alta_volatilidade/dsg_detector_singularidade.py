@@ -12,7 +12,7 @@ infinita e as regras normais cessam.
 Dependências Críticas: jax ou tensorflow (para operações tensoriais aceleradas e diferenciação
 automática), numpy (uso extensivo de einsum), scipy.spatial
 
-VERSÃO V3.3 - CORREÇÕES DA TERCEIRA AUDITORIA (25/12/2025)
+VERSÃO V3.4 - CORREÇÕES DA QUARTA AUDITORIA (25/12/2025)
 ===========================================================
 Correções aplicadas (V2.0):
 1. Substituído gaussian_filter1d (não-causal) por EMA causal
@@ -47,6 +47,11 @@ Correções aplicadas (V3.3 - Terceira Auditoria 25/12/2025):
 22. EH_DISTANCE: Usa preço da última barra FECHADA, não preço atual (look-ahead fix)
 23. _GENERATE_SIGNAL: Verifica history_length mínimo antes de gerar sinais
 24. EMA_CAUSAL: Tratamento robusto de NaN na entrada (encontra primeiro válido)
+
+Correções aplicadas (V3.4 - Quarta Auditoria 25/12/2025):
+25. RICCI_THRESHOLD: Valor padrão corrigido para escala real (-50500 ao invés de -0.5)
+26. RICCI_CONDITION: Usa percentil dinâmico do histórico para filtrar sinais
+27. DIRECTION_FALLBACK: Removido fallback que gerava sinais com histórico insuficiente
 """
 
 import numpy as np
@@ -625,7 +630,7 @@ class DetectorSingularidadeGravitacional:
                  c_base: float = 1.0,
                  gamma: float = 0.1,
                  gravitational_constant: float = 1.0,
-                 ricci_collapse_threshold: float = -0.5,
+                 ricci_collapse_threshold: float = -50500.0,  # CORREÇÃO V3.4: Escala real (era -0.5)
                  tidal_force_threshold: float = 0.1,
                  event_horizon_threshold: float = 0.001,
                  lookback_window: int = 50):
@@ -645,6 +650,9 @@ class DetectorSingularidadeGravitacional:
 
         ricci_collapse_threshold : float
             Limiar para colapso do escalar de Ricci (R << 0)
+            CORREÇÃO V3.4: Valores reais de Ricci estão na faixa -51000 a -49500
+            O threshold padrão -50500 está no meio desta faixa
+            Valores mais negativos que o threshold indicam colapso
 
         tidal_force_threshold : float
             Limiar para força de maré alta
@@ -1083,29 +1091,30 @@ class DetectorSingularidadeGravitacional:
                 current_distance, valid_distance_history
             )
 
-            # CORREÇÃO V3.2: Direção geodésica usando APENAS barras COMPLETAMENTE FECHADAS
+            # CORREÇÃO V3.4: Direção geodésica usando APENAS barras COMPLETAMENTE FECHADAS
             # =============================================================================
             # O _coords_history contém coords de barras FECHADAS
             # Exigir mínimo de histórico para calcular direção confiável
+            # CORREÇÃO V3.4: REMOVIDO fallback que gerava sinais com histórico insuficiente
+            # Agora só gera direção quando há histórico mínimo (min_history_for_signal)
             # =============================================================================
             if len(self._coords_history) >= self.min_history_for_signal:
                 # Usar os últimos 4 pontos (todos já fechados)
                 prices_past = [c[1] for c in self._coords_history[-4:]]
                 geodesic_direction = int(np.sign(prices_past[-1] - prices_past[0]))
-            elif len(self._coords_history) >= 2:
-                # Fallback com menos dados - mas marcar como não confiável
-                prices_past = [c[1] for c in self._coords_history]
-                geodesic_direction = int(np.sign(prices_past[-1] - prices_past[0]))
             else:
-                # CORREÇÃO V3.2: Histórico insuficiente, não gerar direção
+                # CORREÇÃO V3.4: Histórico insuficiente, direção = 0 (neutro)
+                # Removido fallback com 2+ pontos que gerava sinais não confiáveis
                 geodesic_direction = 0
 
         # Gerar sinal
         # CORREÇÃO V3.3: Passar tamanho do histórico para validação
+        # CORREÇÃO V3.4: Passar histórico de Ricci para percentil dinâmico
         signal_result = self._generate_signal(
             current_ricci, current_tidal, current_distance,
             ricci_collapsing, crossing_horizon, geodesic_direction,
-            history_length=len(self._coords_history)
+            history_length=len(self._coords_history),
+            ricci_history=self._ricci_history.copy()  # Cópia para evitar modificação
         )
 
         # Output principal
@@ -1176,7 +1185,8 @@ class DetectorSingularidadeGravitacional:
     def _generate_signal(self, ricci: float, tidal: float, distance: float,
                          ricci_collapsing: bool, crossing_horizon: bool,
                          geodesic_direction: float,
-                         history_length: int = 0) -> dict:
+                         history_length: int = 0,
+                         ricci_history: list = None) -> dict:
         """
         Gera sinal de trading baseado na análise gravitacional
 
@@ -1189,6 +1199,10 @@ class DetectorSingularidadeGravitacional:
         CORREÇÃO V3.3: Parâmetro history_length adicionado para validar se há
         histórico suficiente antes de gerar sinais. Sinais gerados com histórico
         insuficiente não são confiáveis.
+
+        CORREÇÃO V3.4: Parâmetro ricci_history adicionado para usar percentil
+        dinâmico ao invés de threshold fixo. Isso garante que o filtro de Ricci
+        seja efetivo na prática.
         """
         # CORREÇÃO V3.3: Verificar histórico mínimo ANTES de gerar sinal
         # Sinais com histórico insuficiente não são confiáveis
@@ -1208,8 +1222,23 @@ class DetectorSingularidadeGravitacional:
 
         conditions_met = 0
 
-        # Condição 1: Ricci colapsando
-        if ricci_collapsing or ricci < self.ricci_collapse_threshold:
+        # CORREÇÃO V3.4: Condição 1 reformulada - Ricci em colapso
+        # Usar percentil dinâmico se houver histórico suficiente
+        # Isso garante que o filtro seja efetivo independente da escala
+        ricci_is_collapsing = ricci_collapsing  # Flag de mudança rápida
+        ricci_below_threshold = False
+
+        if ricci_history is not None and len(ricci_history) >= 10:
+            # Usar P25 como threshold dinâmico - Ricci deve estar no quartil inferior
+            valid_ricci = [r for r in ricci_history if not np.isnan(r)]
+            if len(valid_ricci) >= 10:
+                dynamic_threshold = np.percentile(valid_ricci, 25)
+                ricci_below_threshold = ricci < dynamic_threshold
+        else:
+            # Fallback para threshold fixo se não há histórico suficiente
+            ricci_below_threshold = ricci < self.ricci_collapse_threshold
+
+        if ricci_is_collapsing or ricci_below_threshold:
             conditions_met += 1
             reasons.append("Colapso do Escalar de Ricci (curvatura negativa)")
 

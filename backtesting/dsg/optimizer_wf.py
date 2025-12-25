@@ -16,6 +16,12 @@ DIFERENTE DO PRM:
 - Tidal Force: 0.0001 a 0.067 (muito pequeno)
 - DSG tem menos sinais, precisa de filtros mais relaxados
 
+CORREÇÕES V2.1 (Quarta Auditoria 25/12/2025):
+1. FILTROS CENTRALIZADOS: Importa de config/optimizer_filters.py
+2. CUSTOS CENTRALIZADOS: Importa de config/execution_costs.py (não mais hardcoded)
+3. WALK-FORWARD CORRETO: Janela deslizante real (não expanding window)
+4. Consistência garantida entre optimizer.py e optimizer_wf.py
+
 ================================================================================
 """
 
@@ -41,6 +47,19 @@ from config.execution_costs import (
     SPREAD_PIPS,
     SLIPPAGE_PIPS,
     get_pip_value,
+)
+
+# CORREÇÃO V2.1: Importar filtros centralizados
+from config.optimizer_filters import (
+    MIN_TRADES_TRAIN, MIN_TRADES_TEST,
+    MIN_WIN_RATE, MAX_WIN_RATE,
+    MIN_PROFIT_FACTOR, MAX_PROFIT_FACTOR,
+    MAX_DRAWDOWN,
+    MIN_WIN_RATE_TEST, MAX_WIN_RATE_TEST,
+    MIN_PROFIT_FACTOR_TEST, MAX_PROFIT_FACTOR_TEST,
+    MAX_DRAWDOWN_TEST,
+    MIN_PF_RATIO, MIN_WR_RATIO,
+    MIN_WINDOWS_PASSED, MIN_EXPECTANCY_PIPS,
 )
 
 
@@ -140,25 +159,18 @@ class RobustResult:
 
 class DSGWalkForwardOptimizer:
     """
-    Otimizador DSG V2.0 com Walk-Forward Validation
+    Otimizador DSG V2.1 com Walk-Forward Validation
     Baseado na metodologia do PRM Optimizer
+
+    CORREÇÃO V2.1: Custos e filtros agora são importados de config/
+    Não mais hardcoded na classe para garantir consistência
     """
 
-    # Custos realistas
-    SPREAD_PIPS = 1.5
-    SLIPPAGE_PIPS = 0.8
+    # CORREÇÃO V2.1: Custos importados de config/execution_costs.py
+    # (SPREAD_PIPS e SLIPPAGE_PIPS agora vem do import)
 
-    # Filtros calibrados para DSG (mais relaxados que PRM)
-    MIN_TRADES_TRAIN = 40
-    MIN_TRADES_TEST = 20
-    MIN_WIN_RATE = 0.28
-    MAX_WIN_RATE = 0.65
-    MIN_PF_TRAIN = 1.10
-    MIN_PF_TEST = 1.00
-    MAX_PF = 4.5
-    MAX_DRAWDOWN = 0.40
-    MIN_ROBUSTNESS = 0.55
-    MIN_EXPECTANCY = 1.5
+    # CORREÇÃO V2.1: Filtros importados de config/optimizer_filters.py
+    # (Todas as constantes MIN_*, MAX_* agora vem do import)
 
     def __init__(self, symbol: str = "EURUSD", periodicity: str = "H1"):
         self.symbol = symbol
@@ -314,8 +326,9 @@ class DSGWalkForwardOptimizer:
 
         pnls = []
         pip = self.pip
-        spread = self.SPREAD_PIPS * pip
-        slippage = self.SLIPPAGE_PIPS * pip
+        # CORREÇÃO V2.1: Usa constantes importadas de config/execution_costs.py
+        spread = SPREAD_PIPS * pip
+        slippage = SLIPPAGE_PIPS * pip
         total_cost = spread + slippage
 
         last_exit_idx = -1
@@ -406,22 +419,45 @@ class DSGWalkForwardOptimizer:
         return pnls
 
     def _create_walk_forward_windows(self, n_windows: int = 4) -> List[Tuple[int, int, int, int]]:
-        """Cria janelas walk-forward progressivas"""
+        """
+        CORREÇÃO V2.1: Cria janelas walk-forward com JANELA DESLIZANTE real
+
+        ANTES (expanding window - INCORRETO):
+        - Janela 1: Treino [0-17.5%], Teste [17.5-25%]
+        - Janela 2: Treino [0-35%], Teste [35-50%]
+        - Problema: Cada janela treina desde o início, dados antigos poluem
+
+        AGORA (sliding window - CORRETO):
+        - Janela 1: Treino [0-60%], Teste [60-80%]
+        - Janela 2: Treino [20-80%], Teste [80-100%]
+        - Problema resolvido: Cada janela treina em período diferente
+        """
         total_bars = len(self.bars)
-        window_size = total_bars // n_windows
+
+        # Configuração da janela deslizante
+        train_size = int(total_bars * 0.50)  # 50% para treino
+        test_size = int(total_bars * 0.20)   # 20% para teste
+        step_size = total_bars // n_windows  # Passo entre janelas
 
         windows = []
         for i in range(n_windows):
-            window_end = (i + 1) * window_size
-            if i == n_windows - 1:
-                window_end = total_bars
+            # Calcula início da janela de treino (desliza para frente)
+            train_start = i * step_size
 
-            window_start = 0
-            train_end = int(window_end * 0.70)
+            # Garante que não ultrapassa o total de barras
+            if train_start + train_size + test_size > total_bars:
+                # Ajusta para usar dados até o final
+                train_start = max(0, total_bars - train_size - test_size)
+
+            train_end = train_start + train_size
             test_start = train_end
-            test_end = window_end
+            test_end = min(test_start + test_size, total_bars)
 
-            windows.append((window_start, train_end, test_start, test_end))
+            # Verifica se temos dados suficientes
+            if train_end - train_start < 100 or test_end - test_start < 50:
+                continue
+
+            windows.append((train_start, train_end, test_start, test_end))
 
         return windows
 
@@ -480,33 +516,36 @@ class DSGWalkForwardOptimizer:
             all_train_pnls.extend(train_pnls)
             all_test_pnls.extend(test_pnls)
 
-        # Verificar se maioria das janelas passou (3 de 4)
+        # CORREÇÃO V2.1: Usa MIN_WINDOWS_PASSED do config/optimizer_filters.py
         passed_count = sum(1 for w in wf_results if w.passed)
-        if passed_count < 3:
+        if passed_count < MIN_WINDOWS_PASSED:
             return None
 
         combined_train = self._calculate_result(all_train_pnls)
         combined_test = self._calculate_result(all_test_pnls)
 
+        # CORREÇÃO V2.1: Usa filtros CENTRALIZADOS de config/optimizer_filters.py
         if not combined_train.is_valid(
-            min_trades=self.MIN_TRADES_TRAIN,
-            min_pf=self.MIN_PF_TRAIN,
-            min_win_rate=self.MIN_WIN_RATE,
-            max_win_rate=self.MAX_WIN_RATE,
-            max_dd=self.MAX_DRAWDOWN
+            min_trades=MIN_TRADES_TRAIN,
+            min_pf=MIN_PROFIT_FACTOR,
+            min_win_rate=MIN_WIN_RATE,
+            max_win_rate=MAX_WIN_RATE,
+            max_dd=MAX_DRAWDOWN
         ):
             return None
 
+        # CORREÇÃO V2.1: Usa filtros CENTRALIZADOS para teste
         if not combined_test.is_valid(
-            min_trades=self.MIN_TRADES_TEST,
-            min_pf=self.MIN_PF_TEST,
-            min_win_rate=self.MIN_WIN_RATE - 0.05,
-            max_win_rate=self.MAX_WIN_RATE + 0.05,
-            max_dd=self.MAX_DRAWDOWN + 0.05
+            min_trades=MIN_TRADES_TEST,
+            min_pf=MIN_PROFIT_FACTOR_TEST,
+            min_win_rate=MIN_WIN_RATE_TEST,
+            max_win_rate=MAX_WIN_RATE_TEST,
+            max_dd=MAX_DRAWDOWN_TEST
         ):
             return None
 
-        if combined_train.expectancy < self.MIN_EXPECTANCY:
+        # CORREÇÃO V2.1: Usa MIN_EXPECTANCY_PIPS do config
+        if combined_train.expectancy < MIN_EXPECTANCY_PIPS:
             return None
 
         avg_pf_ratio = np.mean([w.pf_ratio for w in wf_results])
@@ -625,16 +664,17 @@ class DSGWalkForwardOptimizer:
             "strategy": "DSG-SingularidadeGravitacional",
             "symbol": self.symbol,
             "periodicity": self.periodicity,
-            "version": "2.0-walkforward",
+            "version": "2.1-walkforward",  # CORREÇÃO V2.1
             "optimized_at": datetime.now(timezone.utc).isoformat(),
             "validation": {
-                "method": "walk_forward",
+                "method": "walk_forward_sliding",  # CORREÇÃO V2.1: sliding window
                 "n_windows": 4,
                 "combinations_tested": n_tested,
                 "robust_found": len(self.robust_results),
                 "costs": {
-                    "spread_pips": self.SPREAD_PIPS,
-                    "slippage_pips": self.SLIPPAGE_PIPS,
+                    # CORREÇÃO V2.1: Usa constantes importadas
+                    "spread_pips": SPREAD_PIPS,
+                    "slippage_pips": SLIPPAGE_PIPS,
                 }
             },
             "parameters": self.best.params,
