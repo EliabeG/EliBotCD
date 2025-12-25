@@ -66,13 +66,19 @@ class HestonModel:
         # Verifica condição de Feller
         self.feller_condition = 2 * kappa * theta > sigma**2
 
-    def simulate(self, S0: float, T: float, n_steps: int, n_paths: int = 1000) -> dict:
+    def simulate(self, S0: float, T: float, n_steps: int, n_paths: int = 1000,
+                 seed: int = None) -> dict:
         """
         Simula trajetórias do modelo de Heston usando Euler-Maruyama
         com truncamento para garantir variância positiva
+
+        REPRODUTIBILIDADE: Usa np.random.Generator para thread-safety
         """
         dt = T / n_steps
         sqrt_dt = np.sqrt(dt)
+
+        # Gerador thread-safe para reprodutibilidade
+        rng = np.random.default_rng(seed)
 
         # Arrays para armazenar resultados
         S = np.zeros((n_paths, n_steps + 1))
@@ -83,9 +89,9 @@ class HestonModel:
 
         # Gera correlação
         for t in range(n_steps):
-            # Movimentos Brownianos correlacionados
-            Z1 = np.random.randn(n_paths)
-            Z2 = np.random.randn(n_paths)
+            # Movimentos Brownianos correlacionados (com seed)
+            Z1 = rng.standard_normal(n_paths)
+            Z2 = rng.standard_normal(n_paths)
             W_S = Z1
             W_v = self.rho * Z1 + np.sqrt(1 - self.rho**2) * Z2
 
@@ -206,7 +212,8 @@ class HestonCalibrator:
                 kappa, theta, sigma, rho = result.x
             else:
                 kappa, theta, sigma, rho = kappa_init, theta_init, sigma_init, rho_init
-        except:
+        except (ValueError, RuntimeError, np.linalg.LinAlgError) as e:
+            # Erros esperados durante otimização - usa valores iniciais
             kappa, theta, sigma, rho = kappa_init, theta_init, sigma_init, rho_init
 
         # Verifica condição de Feller e ajusta se necessário
@@ -285,25 +292,38 @@ class MalliavinDerivativeCalculator:
     1. D_t S_T (sensibilidade do preço)
     2. D_t v_T (sensibilidade da variância)
     3. Norma de Malliavin ||D F||_{L^2} (medida de risco)
+
+    REPRODUTIBILIDADE: Usa np.random.Generator para resultados determinísticos
     """
 
-    def __init__(self, n_paths: int = 5000, n_steps: int = 100):
+    def __init__(self, n_paths: int = 2000, n_steps: int = 30):
+        """
+        Parâmetros alinhados com config/odmn_config.py:
+        - n_paths: MALLIAVIN_PATHS (default: 2000)
+        - n_steps: MALLIAVIN_STEPS (default: 30)
+        """
         self.n_paths = n_paths
         self.n_steps = n_steps
 
     def compute_malliavin_weight(self,
                                    heston: HestonModel,
                                    S0: float,
-                                   T: float) -> dict:
+                                   T: float,
+                                   seed: int = None) -> dict:
         """
         Calcula os pesos de Malliavin para o modelo de Heston
         usando integração por partes estocástica
 
         O peso de Malliavin π permite calcular Gregas sem diferenciação:
         E[f'(S_T)] = E[f(S_T) * π]
+
+        REPRODUTIBILIDADE: Aceita seed para resultados determinísticos
         """
         dt = T / self.n_steps
         sqrt_dt = np.sqrt(dt)
+
+        # Gerador thread-safe para reprodutibilidade
+        rng = np.random.default_rng(seed)
 
         # Simula trajetórias
         S = np.zeros((self.n_paths, self.n_steps + 1))
@@ -323,9 +343,9 @@ class MalliavinDerivativeCalculator:
         W_v_total = np.zeros(self.n_paths)
 
         for t in range(self.n_steps):
-            # Incrementos Brownianos correlacionados
-            Z1 = np.random.randn(self.n_paths)
-            Z2 = np.random.randn(self.n_paths)
+            # Incrementos Brownianos correlacionados (com seed)
+            Z1 = rng.standard_normal(self.n_paths)
+            Z2 = rng.standard_normal(self.n_paths)
             dW_S = sqrt_dt * Z1
             dW_v = sqrt_dt * (heston.rho * Z1 + np.sqrt(1 - heston.rho**2) * Z2)
 
@@ -433,16 +453,23 @@ class DeepGalerkinMFGSolver:
                                price_level: float,
                                volatility: float,
                                n_iterations: int = 500,
-                               n_samples: int = 256) -> dict:
+                               n_samples: int = 256,
+                               seed: int = None) -> dict:
         """
         Encontra o equilíbrio de Nash no Mean Field Game
 
         Modela traders institucionais como agentes que:
         - Maximizam utilidade esperada
         - Antecipam o impacto de mercado da distribuição coletiva
+
+        REPRODUTIBILIDADE: Aceita seed para resultados determinísticos
         """
         if not TORCH_AVAILABLE:
             return self._analytical_approximation(price_level, volatility)
+
+        # Seed para reprodutibilidade
+        if seed is not None:
+            torch.manual_seed(seed)
 
         optimizer = torch.optim.Adam(
             list(self.value_net.parameters()) + list(self.density_net.parameters()),
@@ -457,6 +484,7 @@ class DeepGalerkinMFGSolver:
             optimizer.zero_grad()
 
             # Amostra pontos no domínio [0, T] x [log(S) - 2σ, log(S) + 2σ]
+            # (seed já aplicado via torch.manual_seed)
             t = torch.rand(n_samples, 1) * T
             x = torch.randn(n_samples, 1) * volatility * 2 + np.log(price_level)
 
@@ -585,6 +613,10 @@ class OracloDerivativosMalliavinNash:
     2. Cálculo de Malliavin (O Detector de Fragilidade)
     3. Mean Field Games (O Previsor de Comportamento Institucional)
     4. Síntese e Sinal de Trading (O Oráculo)
+
+    REPRODUTIBILIDADE:
+    - Suporta seed para resultados determinísticos
+    - Usa np.random.Generator thread-safe
     """
 
     def __init__(self,
@@ -592,23 +624,24 @@ class OracloDerivativosMalliavinNash:
                  fragility_threshold: float = 2.0,
                  mfg_direction_threshold: float = 0.1,
                  confidence_decay: float = 0.95,
-                 use_deep_galerkin: bool = True,
-                 malliavin_paths: int = 3000,
-                 malliavin_steps: int = 50):
+                 use_deep_galerkin: bool = False,
+                 malliavin_paths: int = 2000,
+                 malliavin_steps: int = 30,
+                 seed: int = None):
         """
         Inicialização do Oráculo de Derivativos de Malliavin-Nash
 
-        Parâmetros:
-        -----------
+        PARÂMETROS ALINHADOS COM config/odmn_config.py:
+        ------------------------------------------------
         lookback_window : int
-            Janela para calibração do Heston (default: 100)
+            Janela para calibração do Heston (config: HESTON_CALIBRATION_WINDOW = 100)
 
         fragility_threshold : float
             Limiar do índice de fragilidade de Malliavin (default: 2.0)
             Acima disso = mercado frágil, risco de crash
 
         mfg_direction_threshold : float
-            Limiar para direção do MFG (default: 0.1)
+            Limiar para direção do MFG (config: MFG_DIRECTION_THRESHOLD = 0.1)
             |direção| > threshold indica pressão institucional
 
         confidence_decay : float
@@ -616,18 +649,25 @@ class OracloDerivativosMalliavinNash:
 
         use_deep_galerkin : bool
             Se True, usa redes neurais para MFG; se False, solução analítica
+            (config: USE_DEEP_GALERKIN = False)
 
         malliavin_paths : int
             Número de trajetórias para Monte Carlo de Malliavin
+            (config: MALLIAVIN_PATHS = 2000)
 
         malliavin_steps : int
             Número de passos temporais na simulação
+            (config: MALLIAVIN_STEPS = 30)
+
+        seed : int
+            Seed para reprodutibilidade (None = não determinístico)
         """
         self.lookback_window = lookback_window
         self.fragility_threshold = fragility_threshold
         self.mfg_direction_threshold = mfg_direction_threshold
         self.confidence_decay = confidence_decay
         self.use_deep_galerkin = use_deep_galerkin
+        self.seed = seed
 
         # Componentes
         self.heston_calibrator = HestonCalibrator(returns_window=lookback_window)
@@ -637,7 +677,7 @@ class OracloDerivativosMalliavinNash:
         )
         self.mfg_solver = DeepGalerkinMFGSolver() if use_deep_galerkin else DeepGalerkinMFGSolver()
 
-        # Cache de análises
+        # Cache de análises (thread-safe usando deque)
         self._cache = {
             'heston_params': None,
             'malliavin_result': None,
@@ -645,6 +685,16 @@ class OracloDerivativosMalliavinNash:
             'fragility_history': deque(maxlen=100),
             'direction_history': deque(maxlen=100)
         }
+
+        # Contador para gerar seeds únicos quando seed base é fornecido
+        self._seed_counter = 0
+
+    def _get_next_seed(self) -> int:
+        """Gera próximo seed único quando seed base é fornecido"""
+        if self.seed is None:
+            return None
+        self._seed_counter += 1
+        return self.seed + self._seed_counter
 
     def analyze(self, prices: np.ndarray) -> dict:
         """
@@ -664,6 +714,8 @@ class OracloDerivativosMalliavinNash:
             - mfg_direction: direção do equilíbrio de Nash
             - heston_params: parâmetros calibrados
             - analysis_details: detalhes completos
+
+        REPRODUTIBILIDADE: Resultados determinísticos quando seed é fornecido
         """
         if len(prices) < self.lookback_window:
             return self._empty_result()
@@ -691,10 +743,12 @@ class OracloDerivativosMalliavinNash:
         # =============================
         # MÓDULO 2: Derivadas de Malliavin
         # =============================
+        # REPRODUTIBILIDADE: Passa seed para Monte Carlo
         malliavin_result = self.malliavin_calc.compute_malliavin_weight(
             heston=heston,
             S0=current_price,
-            T=1/252  # 1 dia
+            T=1/252,  # 1 dia
+            seed=self._get_next_seed()
         )
         self._cache['malliavin_result'] = malliavin_result
 
@@ -714,10 +768,12 @@ class OracloDerivativosMalliavinNash:
         # MÓDULO 3: Mean Field Games
         # =============================
         volatility = np.sqrt(heston_params['v0'])
+        # REPRODUTIBILIDADE: Passa seed para MFG solver
         mfg_result = self.mfg_solver.solve_mfg_equilibrium(
             price_level=current_price,
             volatility=volatility,
-            n_iterations=200 if self.use_deep_galerkin and TORCH_AVAILABLE else 100
+            n_iterations=200 if self.use_deep_galerkin and TORCH_AVAILABLE else 100,
+            seed=self._get_next_seed()
         )
         self._cache['mfg_result'] = mfg_result
 

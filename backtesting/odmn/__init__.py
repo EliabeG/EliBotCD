@@ -1,6 +1,6 @@
 """
 ================================================================================
-ODMN-MalliavinNash - Backtesting e Otimizacao V2.0
+ODMN-MalliavinNash - Backtesting e Otimizacao V2.1
 ================================================================================
 
 Oraculo de Derivativos de Malliavin-Nash (ODMN)
@@ -16,7 +16,7 @@ COMPONENTES:
 - backtest.py: Backtest simples com dados reais
 - debug.py: Analise de distribuicao de sinais
 - optimizer.py: Otimizador V2.0 com Walk-Forward Validation
-- verify_real_money_ready.py: Verificacao de prontidao para producao
+- verify_real_money_ready.py: Verificacao de prontidao para producao (11 checks)
 
 SEM LOOK-AHEAD BIAS:
 ===================
@@ -25,6 +25,13 @@ SEM LOOK-AHEAD BIAS:
 - MFG resolve PDEs sem usar dados futuros
 - Direcao baseada APENAS em barras fechadas
 - Entrada no OPEN da proxima barra
+
+REPRODUTIBILIDADE (V2.1):
+========================
+- Suporte a seed em todos os componentes Monte Carlo
+- np.random.Generator thread-safe
+- Parametros alinhados com config/odmn_config.py
+- torch.manual_seed para MFG Deep Galerkin
 
 VERSAO PRONTA PARA DINHEIRO REAL
 """
