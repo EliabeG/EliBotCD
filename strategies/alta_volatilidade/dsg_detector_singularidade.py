@@ -12,7 +12,7 @@ infinita e as regras normais cessam.
 Dependências Críticas: jax ou tensorflow (para operações tensoriais aceleradas e diferenciação
 automática), numpy (uso extensivo de einsum), scipy.spatial
 
-VERSÃO V3.2 - CORREÇÕES DA AUDITORIA COMPLETA (24/12/2025)
+VERSÃO V3.3 - CORREÇÕES DA TERCEIRA AUDITORIA (25/12/2025)
 ===========================================================
 Correções aplicadas (V2.0):
 1. Substituído gaussian_filter1d (não-causal) por EMA causal
@@ -42,6 +42,11 @@ Correções aplicadas (V3.2 - Segunda Auditoria 24/12/2025):
 19. RICCI_COLLAPSING: Acesso ao histórico dentro do lock
 20. SIGNAL_NAME: Unificado para 'NEUTRO' (era inconsistente 'HOLD')
 21. MIN_HISTORY: Exige mínimo de pontos antes de gerar sinais
+
+Correções aplicadas (V3.3 - Terceira Auditoria 25/12/2025):
+22. EH_DISTANCE: Usa preço da última barra FECHADA, não preço atual (look-ahead fix)
+23. _GENERATE_SIGNAL: Verifica history_length mínimo antes de gerar sinais
+24. EMA_CAUSAL: Tratamento robusto de NaN na entrada (encontra primeiro válido)
 """
 
 import numpy as np
@@ -879,8 +884,17 @@ class DetectorSingularidadeGravitacional:
                 com = np.nan
 
             # Calcular distância ao horizonte
-            # CORREÇÃO V3.2: Se com é NaN, eh_distance também será NaN
-            eh_distance = self.horizon_calc.compute_event_horizon_distance(price, com, r_s)
+            # CORREÇÃO V3.3: Usar preço da última barra FECHADA, não preço atual!
+            # O 'price' parâmetro é da barra atual (look-ahead!)
+            # Devemos usar o preço da última barra já no histórico
+            if len(self._coords_history) > 0:
+                last_closed_price = self._coords_history[-1][1]
+                eh_distance = self.horizon_calc.compute_event_horizon_distance(
+                    last_closed_price, com, r_s
+                )
+            else:
+                # Sem histórico, sem distância calculável
+                eh_distance = np.nan
 
             # AGORA adicionar a barra atual ao histórico (DEPOIS dos cálculos)
             self._coords_history.append(coords)
@@ -1087,9 +1101,11 @@ class DetectorSingularidadeGravitacional:
                 geodesic_direction = 0
 
         # Gerar sinal
+        # CORREÇÃO V3.3: Passar tamanho do histórico para validação
         signal_result = self._generate_signal(
             current_ricci, current_tidal, current_distance,
-            ricci_collapsing, crossing_horizon, geodesic_direction
+            ricci_collapsing, crossing_horizon, geodesic_direction,
+            history_length=len(self._coords_history)
         )
 
         # Output principal
@@ -1159,7 +1175,8 @@ class DetectorSingularidadeGravitacional:
 
     def _generate_signal(self, ricci: float, tidal: float, distance: float,
                          ricci_collapsing: bool, crossing_horizon: bool,
-                         geodesic_direction: float) -> dict:
+                         geodesic_direction: float,
+                         history_length: int = 0) -> dict:
         """
         Gera sinal de trading baseado na análise gravitacional
 
@@ -1168,7 +1185,22 @@ class DetectorSingularidadeGravitacional:
         2. A distância do preço atual para o centro de massa se aproxima de r_s.
         3. Estamos cruzando o "Horizonte de Eventos".
         4. Direção: Seguir o sinal da componente temporal da Geodésica (d²P/dτ²).
+
+        CORREÇÃO V3.3: Parâmetro history_length adicionado para validar se há
+        histórico suficiente antes de gerar sinais. Sinais gerados com histórico
+        insuficiente não são confiáveis.
         """
+        # CORREÇÃO V3.3: Verificar histórico mínimo ANTES de gerar sinal
+        # Sinais com histórico insuficiente não são confiáveis
+        if history_length < self.min_history_for_signal:
+            return {
+                'signal': 0,
+                'signal_name': 'NEUTRO',
+                'confidence': 0.0,
+                'reasons': [f'Histórico insuficiente ({history_length} < {self.min_history_for_signal})'],
+                'conditions_met': 0
+            }
+
         signal = 0
         signal_name = "NEUTRO"
         confidence = 0.0
@@ -1290,6 +1322,11 @@ class DetectorSingularidadeGravitacional:
         Substitui gaussian_filter1d que é NÃO-CAUSAL (olha para o futuro).
         EMA só usa dados PASSADOS: EMA[t] = alpha * X[t] + (1-alpha) * EMA[t-1]
 
+        CORREÇÃO V3.3: Tratamento robusto de NaN na entrada
+        - Se valor atual é NaN, mantém EMA anterior
+        - Se EMA anterior é NaN, usa valor atual
+        - Se ambos NaN, propaga NaN
+
         Args:
             series: Série temporal a suavizar
             alpha: Fator de suavização (0-1). Maior = menos suavização.
@@ -1300,11 +1337,33 @@ class DetectorSingularidadeGravitacional:
         if len(series) == 0:
             return series
 
-        result = np.zeros_like(series)
-        result[0] = series[0]
+        result = np.zeros_like(series, dtype=np.float64)
 
-        for i in range(1, len(series)):
-            result[i] = alpha * series[i] + (1 - alpha) * result[i-1]
+        # CORREÇÃO V3.3: Encontrar primeiro valor não-NaN para inicializar
+        first_valid_idx = 0
+        for i in range(len(series)):
+            if not np.isnan(series[i]):
+                first_valid_idx = i
+                break
+        else:
+            # Todos NaN - retornar série de NaN
+            return np.full_like(series, np.nan, dtype=np.float64)
+
+        # Preencher com NaN até primeiro valor válido
+        result[:first_valid_idx] = np.nan
+        result[first_valid_idx] = series[first_valid_idx]
+
+        # CORREÇÃO V3.3: EMA com tratamento de NaN
+        for i in range(first_valid_idx + 1, len(series)):
+            if np.isnan(series[i]):
+                # Se valor atual é NaN, manter EMA anterior
+                result[i] = result[i-1]
+            elif np.isnan(result[i-1]):
+                # Se EMA anterior é NaN mas valor atual não, usar valor atual
+                result[i] = series[i]
+            else:
+                # Caso normal: calcular EMA
+                result[i] = alpha * series[i] + (1 - alpha) * result[i-1]
 
         return result
 
