@@ -2,19 +2,24 @@
 Adaptador de Estratégia para o Fluxo de Informação Fisher-Navier
 Integra o indicador FIFN com o sistema de trading
 
-VERSAO V3.0 - CORRIGIDO AUDITORIA 11:
+VERSAO V3.4 - CORRIGIDO AUDITORIA 25:
+- Usa módulo centralizado direction_calculator.py
+- Implementa stops dinâmicos baseados em Reynolds
 - Exclui barra atual para evitar look-ahead
 - Calcula direção baseada em barras FECHADAS (igual ao optimizer)
 - Usa direção para filtrar sinais
 - Suporta volumes opcionais
 """
 from datetime import datetime
-from typing import Optional
+from typing import Optional, Tuple
 from collections import deque
 import numpy as np
 
 from ..base import BaseStrategy, Signal, SignalType
 from .fifn_fisher_navier import FluxoInformacaoFisherNavier
+
+# AUDITORIA 25: Usar módulo centralizado para cálculo de direção
+from backtesting.common.direction_calculator import calculate_direction_from_closes
 
 
 class FIFNStrategy(BaseStrategy):
@@ -24,14 +29,16 @@ class FIFNStrategy(BaseStrategy):
     Usa o Número de Reynolds para identificar a "Kill Zone" (Sweet Spot)
     onde breakouts institucionais limpos ocorrem.
 
-    VERSAO V3.0 - CORRIGIDO:
+    VERSAO V3.4 - CORRIGIDO AUDITORIA 25:
+    - Usa módulo centralizado direction_calculator.py
+    - Implementa stops dinâmicos baseados em Reynolds
     - Sem look-ahead bias (exclui barra atual)
     - Direção baseada em barras FECHADAS
     - Consistente com optimizer.py
     """
 
-    # Parâmetros para cálculo de direção (consistente com optimizer)
-    MIN_BARS_FOR_DIRECTION = 12
+    # AUDITORIA 25: Mínimo de barras = lookback(10) + 2 + buffer
+    MIN_BARS_FOR_DIRECTION = 14
 
     def __init__(self,
                  min_prices: int = 120,
@@ -83,32 +90,45 @@ class FIFNStrategy(BaseStrategy):
 
     def _calculate_direction(self) -> int:
         """
-        Calcula direção baseada em barras FECHADAS (igual ao optimizer)
+        Calcula direção baseada em barras FECHADAS usando módulo centralizado.
 
-        AUDITORIA 11: Consistente com optimizer.py linhas 301-309
-        AUDITORIA 23: Verificado que índices são equivalentes:
-        - Strategy: prices[-2] e prices[-12] -> diferença de 10 barras
-        - Optimizer: bars[i-1] e bars[i-11] -> diferença de 10 barras
-
-        Mapeamento:
-        - prices[-1] = barra atual (em formação)
-        - prices[-2] = última barra FECHADA = bars[i-1]
-        - prices[-12] = 10 barras antes da última fechada = bars[i-11]
+        AUDITORIA 25: Usa calculate_direction_from_closes() do módulo centralizado
+        - Garante consistência com optimizer.py e outros componentes
+        - Compara closes[-2] vs closes[-12] = 10 barras de diferença
         """
         if len(self.prices) < self.MIN_BARS_FOR_DIRECTION:
             return 0
 
-        prices_list = list(self.prices)
+        # AUDITORIA 25: Usar função centralizada para garantir consistência
+        return calculate_direction_from_closes(list(self.prices))
 
-        # AUDITORIA 23: Índices verificados para consistência com optimizer
-        # recent_close = última barra FECHADA (prices[-2] = bars[i-1])
-        # past_close = 10 barras antes (prices[-12] = bars[i-11])
-        # Diferença: (-2) - (-12) = 10 barras = (i-1) - (i-11) = 10 barras ✓
-        recent_close = prices_list[-2]   # Última barra FECHADA
-        past_close = prices_list[-12]    # 10 barras antes da última fechada
+    def _calculate_dynamic_stops(self, reynolds: float) -> Tuple[float, float]:
+        """
+        AUDITORIA 25: Calcula stops dinâmicos baseados no regime de volatilidade.
 
-        trend = recent_close - past_close
-        return 1 if trend > 0 else -1
+        O Número de Reynolds indica o regime de mercado:
+        - Turbulento (Re > 4000): Alta volatilidade → stops mais largos
+        - Sweet Spot (2300-4000): Volatilidade moderada → stops padrão
+        - Laminar (Re < 2000): Baixa volatilidade → stops mais apertados
+
+        Returns:
+            Tuple[stop_loss_pips, take_profit_pips]
+        """
+        base_sl = self.stop_loss_pips
+        base_tp = self.take_profit_pips
+
+        if reynolds > 4000:  # Turbulento - stops mais largos para evitar ruído
+            multiplier = 1.5
+        elif reynolds > 3000:  # Transição alta
+            multiplier = 1.2
+        elif reynolds < 2000:  # Laminar - stops mais apertados
+            multiplier = 0.8
+        elif reynolds < 2300:  # Transição baixa
+            multiplier = 0.9
+        else:  # Sweet Spot (2300-3000)
+            multiplier = 1.0
+
+        return base_sl * multiplier, base_tp * multiplier
 
     def analyze(self, price: float, timestamp: datetime, volume: float = None, **indicators) -> Optional[Signal]:
         """
@@ -180,15 +200,18 @@ class FIFNStrategy(BaseStrategy):
                     signal_type = SignalType.SELL
 
             if signal_type is not None:
-                # Calcula níveis de stop e take profit
+                # AUDITORIA 25: Calcula stops dinâmicos baseados em Reynolds
+                reynolds = result['Reynolds_Number']
+                dynamic_sl, dynamic_tp = self._calculate_dynamic_stops(reynolds)
+
                 pip_value = 0.0001
 
                 if signal_type == SignalType.BUY:
-                    stop_loss = price - (self.stop_loss_pips * pip_value)
-                    take_profit = price + (self.take_profit_pips * pip_value)
+                    stop_loss = price - (dynamic_sl * pip_value)
+                    take_profit = price + (dynamic_tp * pip_value)
                 else:
-                    stop_loss = price + (self.stop_loss_pips * pip_value)
-                    take_profit = price - (self.take_profit_pips * pip_value)
+                    stop_loss = price + (dynamic_sl * pip_value)
+                    take_profit = price - (dynamic_tp * pip_value)
 
                 # Calcula confiança
                 confidence = directional['confidence']

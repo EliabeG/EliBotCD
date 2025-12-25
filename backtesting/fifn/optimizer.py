@@ -47,6 +47,9 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspa
 from api.fxopen_historical_ws import Bar, download_historical_data
 from strategies.alta_volatilidade.fifn_fisher_navier import FluxoInformacaoFisherNavier
 
+# AUDITORIA 25: Usar módulo centralizado para cálculo de direção
+from backtesting.common.direction_calculator import calculate_direction_from_bars
+
 
 @dataclass
 class FIFNSignal:
@@ -300,15 +303,10 @@ class FIFNRobustOptimizer:
                 pressure_grad = result['Pressure_Gradient']
                 in_sweet_spot = result['directional_signal']['in_sweet_spot']
 
-                # CORRIGIDO V2.0: Direcao baseada APENAS em barras FECHADAS
-                # Usa tendencia das ultimas 10 barras FECHADAS (nao inclui barra atual)
-                if i >= min_bars_for_direction:
-                    recent_close = self.bars[i - 1].close  # Ultima barra FECHADA
-                    past_close = self.bars[i - 11].close   # 10 barras antes
-                    trend = recent_close - past_close
-                    direction = 1 if trend > 0 else -1
-                else:
-                    direction = 0
+                # AUDITORIA 25: Usar módulo centralizado para cálculo de direção
+                # Garante consistência entre optimizer, strategy e outros componentes
+                # calculate_direction_from_bars compara bars[i-1] vs bars[i-11] = 10 barras
+                direction = calculate_direction_from_bars(self.bars, i)
 
                 next_bar = self.bars[i + 1]
 

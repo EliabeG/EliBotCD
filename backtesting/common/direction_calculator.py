@@ -25,7 +25,9 @@ import numpy as np
 
 
 # Configuração padrão
-DEFAULT_DIRECTION_LOOKBACK = 12
+# AUDITORIA 25: Alterado de 12 para 10 para consistência com FIFN optimizer/strategy
+# Ambos usam 10 barras de lookback (prices[-2] vs prices[-12] = 10 barras)
+DEFAULT_DIRECTION_LOOKBACK = 10
 
 
 def calculate_direction_from_closes(
@@ -37,17 +39,18 @@ def calculate_direction_from_closes(
 
     ESTA É A FUNÇÃO OFICIAL - use em TODOS os componentes.
 
+    AUDITORIA 25: Corrigido para consistência com FIFN optimizer/strategy
+    - Compara closes[-2] com closes[-(lookback+2)] para obter 'lookback' barras de diferença
+    - Com lookback=10: closes[-2] vs closes[-12] = 10 barras de diferença
+
     Lógica:
     - closes[-1] = barra atual (momento do sinal) - NÃO USAR
     - closes[-2] = última barra completamente fechada - USAR
-    - closes[-(lookback+1)] = barra de comparação - USAR
-
-    A direção é baseada na tendência das últimas 'lookback' barras ANTES
-    do momento atual.
+    - closes[-(lookback+2)] = barra de comparação - USAR
 
     Args:
         closes: Lista ou array de preços de fechamento
-        lookback: Número de barras para calcular tendência (default: 12)
+        lookback: Número de barras para calcular tendência (default: 10)
 
     Returns:
         1 para LONG (tendência de alta)
@@ -56,9 +59,9 @@ def calculate_direction_from_closes(
 
     Exemplo:
         closes = [1.1000, 1.1010, 1.1020, ..., 1.1150]  # 20 barras
-        direction = calculate_direction_from_closes(closes, lookback=12)
-        # Compara closes[-2] (1.1140) com closes[-13] (1.1010)
-        # Retorna 1 (LONG) pois 1.1140 > 1.1010
+        direction = calculate_direction_from_closes(closes, lookback=10)
+        # Compara closes[-2] com closes[-12] (10 barras de diferença)
+        # Retorna 1 (LONG) pois closes[-2] > closes[-12]
     """
     # Validação de entrada
     if closes is None or len(closes) < lookback + 2:
@@ -68,12 +71,12 @@ def calculate_direction_from_closes(
     if isinstance(closes, np.ndarray):
         closes = closes.tolist()
 
-    # Índices:
+    # AUDITORIA 25: Índices corrigidos para 10 barras de diferença
     # -1 = barra atual (NÃO USAR - pode ter look-ahead)
     # -2 = última barra completamente fechada
-    # -(lookback + 1) = barra de comparação
+    # -(lookback + 2) = barra de comparação (10 barras antes de -2)
     recent_close = closes[-2]
-    past_close = closes[-(lookback + 1)]
+    past_close = closes[-(lookback + 2)]
 
     # Calcular tendência
     trend = recent_close - past_close
@@ -92,32 +95,36 @@ def calculate_direction_from_bars(
     Esta função é equivalente a calculate_direction_from_closes,
     mas recebe barras e índice em vez de lista de closes.
 
+    AUDITORIA 25: Corrigido para consistência com FIFN optimizer/strategy
+    - Compara bars[i-1] com bars[i-lookback-1] para 'lookback' barras de diferença
+    - Com lookback=10: bars[i-1] vs bars[i-11] = 10 barras de diferença
+
     Lógica:
     - bars[current_idx] = barra atual (momento do sinal) - NÃO USAR
     - bars[current_idx - 1] = última barra fechada - USAR
-    - bars[current_idx - lookback] = barra de comparação - USAR
+    - bars[current_idx - lookback - 1] = barra de comparação - USAR
 
     Args:
         bars: Lista de objetos Bar com atributo .close
         current_idx: Índice da barra atual
-        lookback: Número de barras para calcular tendência (default: 12)
+        lookback: Número de barras para calcular tendência (default: 10)
 
     Returns:
         1 para LONG, -1 para SHORT, 0 para NEUTRAL
     """
     # Validação
-    if bars is None or current_idx < lookback + 1:
+    if bars is None or current_idx < lookback + 2:
         return 0
 
     if current_idx >= len(bars):
         return 0
 
-    # Índices:
+    # AUDITORIA 25: Índices corrigidos para 10 barras de diferença
     # current_idx = barra atual (NÃO USAR)
     # current_idx - 1 = última barra fechada
-    # current_idx - lookback = barra de comparação
+    # current_idx - lookback - 1 = barra de comparação (10 barras antes)
     recent_close = bars[current_idx - 1].close
-    past_close = bars[current_idx - lookback].close
+    past_close = bars[current_idx - lookback - 1].close
 
     trend = recent_close - past_close
 
