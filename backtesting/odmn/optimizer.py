@@ -77,6 +77,9 @@ from config.odmn_config import (
     MFG_DIRECTION_THRESHOLD,
 )
 
+# Importar direction_calculator centralizado
+from backtesting.common.direction_calculator import calculate_direction_from_bars
+
 # Seed global para reprodutibilidade
 OPTIMIZER_SEED = 42
 
@@ -306,7 +309,6 @@ class ODMNRobustOptimizer:
         self.signals = []
 
         min_prices = MIN_PRICES
-        min_bars_for_direction = TREND_LOOKBACK + 2
 
         for i, bar in enumerate(self.bars):
             prices_buf.append(bar.close)
@@ -322,13 +324,8 @@ class ODMNRobustOptimizer:
                 result = odmn.analyze(np.array(prices_buf))
 
                 # Direcao baseada APENAS em barras FECHADAS
-                if i >= min_bars_for_direction:
-                    recent_close = self.bars[i - 1].close
-                    past_close = self.bars[i - min_bars_for_direction + 1].close
-                    trend = recent_close - past_close
-                    direction = 1 if trend > 0 else -1
-                else:
-                    direction = 0
+                # Usa direction_calculator centralizado para consistencia
+                direction = calculate_direction_from_bars(self.bars, i, lookback=TREND_LOOKBACK)
 
                 next_bar = self.bars[i + 1]
 

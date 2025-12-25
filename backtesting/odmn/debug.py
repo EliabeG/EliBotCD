@@ -49,6 +49,7 @@ try:
         USE_DEEP_GALERKIN,
         MALLIAVIN_PATHS,
         MALLIAVIN_STEPS,
+        TREND_LOOKBACK,
     )
 except ImportError:
     MIN_PRICES = 150
@@ -59,6 +60,13 @@ except ImportError:
     USE_DEEP_GALERKIN = False
     MALLIAVIN_PATHS = 1000
     MALLIAVIN_STEPS = 30
+    TREND_LOOKBACK = 10
+
+# Importar direction_calculator centralizado
+try:
+    from backtesting.common.direction_calculator import calculate_direction_from_bars
+except ImportError:
+    calculate_direction_from_bars = None
 
 
 async def main():
@@ -115,7 +123,8 @@ async def main():
 
     # Estatisticas de direcao (baseada em barras FECHADAS)
     directions = []
-    min_bars_for_direction = 12
+    # Usa TREND_LOOKBACK do config para consistencia
+    min_bars_for_direction = TREND_LOOKBACK + 2
 
     print("\nCalculando valores ODMN...")
     print("NOTA: Computacionalmente intensivo (Monte Carlo + Heston)")
@@ -146,10 +155,13 @@ async def main():
                 heston_sigmas.append(result['heston_params']['sigma'])
                 heston_rhos.append(result['heston_params']['rho'])
 
-            # Direcao baseada em barras FECHADAS
-            if i >= min_bars_for_direction:
+            # Direcao baseada em barras FECHADAS - usando direction_calculator centralizado
+            if calculate_direction_from_bars is not None:
+                direction = calculate_direction_from_bars(bars, i, lookback=TREND_LOOKBACK)
+            elif i >= min_bars_for_direction:
+                # Fallback: calculo manual consistente com direction_calculator
                 recent_close = bars[i - 1].close   # Ultima barra FECHADA
-                past_close = bars[i - 11].close    # 10 barras antes
+                past_close = bars[i - TREND_LOOKBACK - 1].close  # TREND_LOOKBACK barras antes
                 trend = recent_close - past_close
                 direction = 1 if trend > 0 else -1
             else:
