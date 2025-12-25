@@ -173,9 +173,10 @@ class FluxoInformacaoFisherNavier:
         # Derivada numérica (central differences para estabilidade)
         d_log_pdf = np.gradient(log_pdf, dx)
 
-        # AUDITORIA 23 FIX: Clip gradient ANTES de elevar ao quadrado
+        # AUDITORIA 23/24 FIX: Clip gradient ANTES de elevar ao quadrado
         # Previne overflow quando pdf é próximo de zero nas caudas
-        d_log_pdf = np.clip(d_log_pdf, -100, 100)
+        # AUDITORIA 24: Reduzido de ±100 para ±50 para maior estabilidade numérica
+        d_log_pdf = np.clip(d_log_pdf, -50, 50)
 
         # Fisher Information: E[(d ln p / d theta)^2] = integral p(x) * (d ln p / d theta)^2 dx
         fisher_info = simps(pdf * d_log_pdf**2, x_grid)
@@ -439,9 +440,15 @@ class FluxoInformacaoFisherNavier:
     # MÓDULO 3: O Discriminador - Número de Reynolds Financeiro (Re)
     # =========================================================================
 
-    # AUDITORIA 22/23: Escala FIXA para Reynolds (calibrada com dados históricos)
-    # AUDITORIA 23: Normalização de velocity/viscosity para consistência
-    REYNOLDS_SCALE_FACTOR = 1500.0  # Calibrado offline com 1 ano de dados EURUSD H1
+    # AUDITORIA 22/23/24: Escala e referências FIXAS para Reynolds
+    # Calibrado offline com 1 ano de dados EURUSD H1 (2024)
+    REYNOLDS_SCALE_FACTOR = 1500.0
+
+    # AUDITORIA 24 FIX: Valores de referência FIXOS calculados offline
+    # Estes valores são percentis P50 de 1 ano de dados EURUSD H1
+    # Isso garante que Reynolds seja VERDADEIRAMENTE consistente entre períodos
+    VELOCITY_REF_P50 = 0.0023    # Mediana da velocidade (calculada offline)
+    VISCOSITY_REF_P50 = 1.45     # Mediana da viscosidade (calculada offline)
 
     def calculate_reynolds_number(self, velocity: np.ndarray, viscosity: np.ndarray) -> np.ndarray:
         """
@@ -460,22 +467,20 @@ class FluxoInformacaoFisherNavier:
 
         AUDITORIA 22: Corrigido para usar escala FIXA
         AUDITORIA 23: Normalização de velocity/viscosity ANTES do cálculo
-        - Garante que valores de entrada são comparáveis entre diferentes períodos
+        AUDITORIA 24: Usar valores de referência FIXOS (não data-dependent)
+        - Garante que valores de entrada são VERDADEIRAMENTE comparáveis entre períodos
         """
         L = self.characteristic_length
 
-        # AUDITORIA 23 FIX: Normalizar velocity e viscosity ANTES de calcular Reynolds
-        # Isso garante consistência mesmo quando os dados de entrada variam
-        velocity_std = np.std(velocity) + self.eps
-        viscosity_mean = np.mean(viscosity) + self.eps
+        # AUDITORIA 24 FIX: Normalizar usando valores de referência FIXOS
+        # NÃO usar np.std() ou np.mean() dos dados atuais - isso causa inconsistência
+        # Usar percentis P50 calculados OFFLINE com 1 ano de dados
+        velocity_normalized = velocity / self.VELOCITY_REF_P50
 
-        # Z-score normalização para velocity (centraliza em 0, std=1)
-        velocity_normalized = velocity / velocity_std
+        # Normalização por referência fixa para viscosity
+        viscosity_normalized = viscosity / self.VISCOSITY_REF_P50
 
-        # Normalização por média para viscosity (escala relativa)
-        viscosity_normalized = viscosity / viscosity_mean
-
-        # Re = |u| * L / nu (com valores normalizados)
+        # Re = |u| * L / nu (com valores normalizados por referências fixas)
         reynolds = np.abs(velocity_normalized) * L / (viscosity_normalized + self.eps)
 
         # AUDITORIA 22: Usar escala FIXA (não depende dos dados atuais)
