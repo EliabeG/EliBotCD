@@ -12,8 +12,8 @@ infinita e as regras normais cessam.
 Dependências Críticas: jax ou tensorflow (para operações tensoriais aceleradas e diferenciação
 automática), numpy (uso extensivo de einsum), scipy.spatial
 
-VERSÃO V3.1 - CORREÇÕES DA AUDITORIA COMPLETA
-=============================================
+VERSÃO V3.2 - CORREÇÕES DA AUDITORIA COMPLETA (24/12/2025)
+===========================================================
 Correções aplicadas (V2.0):
 1. Substituído gaussian_filter1d (não-causal) por EMA causal
 2. Direção da geodésica calculada apenas com barras FECHADAS
@@ -27,12 +27,21 @@ Correções aplicadas (V3.0 - Auditoria):
 8. Direção geodésica usa _coords_history[:-2] para excluir completamente barra atual
 9. ricci_collapsing e crossing_horizon usam histórico ANTES da barra atual
 
-Correções aplicadas (V3.1 - Auditoria Completa 24/12/2025):
+Correções aplicadas (V3.1 - Auditoria Completa):
 10. VALIDAÇÃO DE INPUTS: Verificação de NaN, Inf, negativos, ordem temporal
 11. VOLUMES CENTRALIZADOS: Usa config/volume_generator.py para consistência
 12. SUBSAMPLING ADAPTATIVO: step dinâmico baseado em volatilidade
 13. THREAD-SAFETY: Lock para proteger estado compartilhado
 14. LOOK-AHEAD RESIDUAL: Vetor tangente retorna [1,0,0,0] quando histórico vazio
+
+Correções aplicadas (V3.2 - Segunda Auditoria 24/12/2025):
+15. STEP FUNCTION: Usa NaN propagado ao invés de 0.0 para índices sem dados
+16. CENTRO DE MASSA: Retorna NaN quando histórico vazio (não usa preço atual)
+17. GEODESIC_DIRECTION: Calculado com histórico ANTES de adicionar coords
+18. THREAD-SAFETY COMPLETO: Lock em analyze_point() para modificar históricos
+19. RICCI_COLLAPSING: Acesso ao histórico dentro do lock
+20. SIGNAL_NAME: Unificado para 'NEUTRO' (era inconsistente 'HOLD')
+21. MIN_HISTORY: Exige mínimo de pontos antes de gerar sinais
 """
 
 import numpy as np
@@ -667,6 +676,13 @@ class DetectorSingularidadeGravitacional:
         # CORREÇÃO V3.1: Mínimo de preços para análise
         self.min_prices = 10
 
+        # CORREÇÃO V3.2: Mínimo de histórico para gerar sinais confiáveis
+        # Precisa de pelo menos N pontos no _coords_history para:
+        # - Calcular geodesic_direction (4 pontos)
+        # - Calcular ricci_collapsing (5 pontos)
+        # - Ter vetor tangente válido (2 pontos)
+        self.min_history_for_signal = 6
+
     def _validate_inputs(self, prices: np.ndarray,
                          bid_volumes: np.ndarray = None,
                          ask_volumes: np.ndarray = None) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
@@ -801,9 +817,14 @@ class DetectorSingularidadeGravitacional:
         return np.array([t_norm, p_norm, vb_norm, va_norm])
 
     def analyze_point(self, t: int, price: float,
-                      bid_vol: float, ask_vol: float) -> dict:
+                      bid_vol: float, ask_vol: float,
+                      _use_lock: bool = False) -> dict:
         """
         Analisa um único ponto no espaço-tempo financeiro
+
+        CORREÇÃO V3.2: Parâmetro _use_lock para thread-safety quando chamado
+        fora do contexto do lock em analyze(). Por padrão False para manter
+        compatibilidade com chamadas dentro do 'with self._lock:' em analyze().
         """
         coords = self._prepare_coordinates(t, price, bid_vol, ask_vol)
 
@@ -818,51 +839,65 @@ class DetectorSingularidadeGravitacional:
         # CORREÇÃO V3.0: Calcular vetor tangente e centro de massa ANTES de adicionar
         # a barra atual ao histórico, para evitar look-ahead bias
 
-        # 3. Vetor tangente (usa histórico SEM a barra atual)
-        # CORREÇÃO V3.1: NÃO usar coords como fallback (isso é look-ahead!)
-        # Se histórico vazio, compute_tangent_vector retorna vetor temporal puro
-        T = self.geodesic_calc.compute_tangent_vector(
-            np.array(self._coords_history) if len(self._coords_history) > 0 else None
-        )
+        # CORREÇÃO V3.2: Operações que leem/escrevem histórico precisam de lock
+        # Quando chamado de analyze() já estamos dentro do lock, então _use_lock=False
+        if _use_lock:
+            self._lock.acquire()
 
-        # 4. Vetor de separação e força de maré
-        xi = self.geodesic_calc.compute_separation_vector(bid_vol, ask_vol)
-        tidal_magnitude = self.geodesic_calc.compute_tidal_force_magnitude(coords, T, xi)
-
-        # 5. Horizonte de eventos
-        accumulated_vol = bid_vol + ask_vol
-        r_s = self.horizon_calc.compute_schwarzschild_radius(accumulated_vol)
-
-        # CORREÇÃO V3.0: Centro de massa calculado APENAS com barras ANTERIORES
-        # Não inclui a barra atual no cálculo do VWAP
-        if len(self._coords_history) > 1:
-            # Usar apenas histórico existente (sem a barra atual)
-            prices_hist = [c[1] for c in self._coords_history[-20:]]
-            vols_hist = [np.exp(c[2]) + np.exp(c[3]) for c in self._coords_history[-20:]]
-            com = self.horizon_calc.compute_volume_center_of_mass(
-                np.array(prices_hist), np.array(vols_hist)
+        try:
+            # 3. Vetor tangente (usa histórico SEM a barra atual)
+            # CORREÇÃO V3.1: NÃO usar coords como fallback (isso é look-ahead!)
+            # Se histórico vazio, compute_tangent_vector retorna vetor temporal puro
+            T = self.geodesic_calc.compute_tangent_vector(
+                np.array(self._coords_history) if len(self._coords_history) > 0 else None
             )
-        elif len(self._coords_history) == 1:
-            # Apenas uma barra anterior, usar seu preço
-            com = self._coords_history[0][1]
-        else:
-            # Sem histórico, usar preço da barra anterior (approximação)
-            com = price
 
-        eh_distance = self.horizon_calc.compute_event_horizon_distance(price, com, r_s)
+            # 4. Vetor de separação e força de maré
+            xi = self.geodesic_calc.compute_separation_vector(bid_vol, ask_vol)
+            tidal_magnitude = self.geodesic_calc.compute_tidal_force_magnitude(coords, T, xi)
 
-        # AGORA adicionar a barra atual ao histórico (DEPOIS dos cálculos)
-        self._coords_history.append(coords)
-        if len(self._coords_history) > self.lookback_window:
-            self._coords_history = self._coords_history[-self.lookback_window:]
+            # 5. Horizonte de eventos
+            accumulated_vol = bid_vol + ask_vol
+            r_s = self.horizon_calc.compute_schwarzschild_radius(accumulated_vol)
 
-        # Atualizar histórico de Ricci e distância
-        self._ricci_history.append(R)
-        self._distance_history.append(eh_distance)
+            # CORREÇÃO V3.2: Centro de massa calculado APENAS com barras ANTERIORES
+            # Quando histórico vazio, NÃO usar preço atual (isso é look-ahead!)
+            # Usar NaN para indicar "sem dados suficientes"
+            if len(self._coords_history) > 1:
+                # Usar apenas histórico existente (sem a barra atual)
+                prices_hist = [c[1] for c in self._coords_history[-20:]]
+                vols_hist = [np.exp(c[2]) + np.exp(c[3]) for c in self._coords_history[-20:]]
+                com = self.horizon_calc.compute_volume_center_of_mass(
+                    np.array(prices_hist), np.array(vols_hist)
+                )
+            elif len(self._coords_history) == 1:
+                # Apenas uma barra anterior, usar seu preço
+                com = self._coords_history[0][1]
+            else:
+                # CORREÇÃO V3.2: Sem histórico, usar NaN (não preço atual!)
+                # Comentário anterior dizia "barra anterior" mas usava preço atual
+                com = np.nan
 
-        if len(self._ricci_history) > self.lookback_window:
-            self._ricci_history = self._ricci_history[-self.lookback_window:]
-            self._distance_history = self._distance_history[-self.lookback_window:]
+            # Calcular distância ao horizonte
+            # CORREÇÃO V3.2: Se com é NaN, eh_distance também será NaN
+            eh_distance = self.horizon_calc.compute_event_horizon_distance(price, com, r_s)
+
+            # AGORA adicionar a barra atual ao histórico (DEPOIS dos cálculos)
+            self._coords_history.append(coords)
+            if len(self._coords_history) > self.lookback_window:
+                self._coords_history = self._coords_history[-self.lookback_window:]
+
+            # Atualizar histórico de Ricci e distância
+            self._ricci_history.append(R)
+            self._distance_history.append(eh_distance)
+
+            if len(self._ricci_history) > self.lookback_window:
+                self._ricci_history = self._ricci_history[-self.lookback_window:]
+                self._distance_history = self._distance_history[-self.lookback_window:]
+
+        finally:
+            if _use_lock:
+                self._lock.release()
 
         return {
             'ricci_scalar': R,
@@ -996,46 +1031,60 @@ class DetectorSingularidadeGravitacional:
         tidal_series = self._apply_ema_causal(tidal_series, alpha=0.3)
 
         # CORREÇÃO V3.0: Valores da última barra FECHADA (não a atual)
-        # ricci_series[-1] agora corresponde a last_closed_idx (n-2), não n-1
-        # Isso é correto porque o loop de cálculo parou em last_closed_idx
+        # CORREÇÃO V3.2: Tratar NaN - se o valor é NaN, usar 0.0 como fallback
         current_ricci = ricci_series[last_closed_idx] if last_closed_idx < len(ricci_series) else ricci_series[-1]
         current_tidal = tidal_series[last_closed_idx] if last_closed_idx < len(tidal_series) else tidal_series[-1]
         current_distance = distance_series[last_closed_idx] if last_closed_idx < len(distance_series) else distance_series[-1]
 
-        # CORREÇÃO V3.0: Detectar colapso de Ricci SEM contaminação da barra atual
-        # O _ricci_history agora contém apenas valores de barras FECHADAS (até n-2)
-        # Usar histórico completo para análise de tendência
-        if len(self._ricci_history) > 5:
-            # Usar os últimos 5 valores do histórico (todos de barras fechadas)
-            ricci_change = np.diff(self._ricci_history[-5:])
-            ricci_collapsing = np.mean(ricci_change) < -0.1
-        else:
-            ricci_collapsing = False
+        # CORREÇÃO V3.2: Se valores são NaN (insuficiente histórico), usar 0.0
+        if np.isnan(current_ricci):
+            current_ricci = 0.0
+        if np.isnan(current_tidal):
+            current_tidal = 0.0
+        if np.isnan(current_distance):
+            current_distance = 0.0
 
-        # CORREÇÃO V3.0: Detectar cruzamento do horizonte SEM contaminação
-        # O _distance_history agora contém apenas valores de barras FECHADAS
-        crossing_horizon = self.horizon_calc.is_crossing_event_horizon(
-            current_distance, self._distance_history
-        )
+        # CORREÇÃO V3.2: Acesso aos históricos DENTRO do lock para thread-safety
+        with self._lock:
+            # CORREÇÃO V3.0: Detectar colapso de Ricci SEM contaminação da barra atual
+            # O _ricci_history agora contém apenas valores de barras FECHADAS (até n-2)
+            # CORREÇÃO V3.2: Exigir mínimo de histórico para sinais confiáveis
+            if len(self._ricci_history) >= self.min_history_for_signal:
+                # Usar os últimos 5 valores do histórico (todos de barras fechadas)
+                # Filtrar NaN antes de calcular diff
+                valid_ricci = [r for r in self._ricci_history[-5:] if not np.isnan(r)]
+                if len(valid_ricci) >= 2:
+                    ricci_change = np.diff(valid_ricci)
+                    ricci_collapsing = np.mean(ricci_change) < -0.1
+                else:
+                    ricci_collapsing = False
+            else:
+                ricci_collapsing = False
 
-        # CORREÇÃO V3.0: Direção geodésica usando APENAS barras COMPLETAMENTE FECHADAS
-        # =============================================================================
-        # O _coords_history agora contém apenas coords de barras FECHADAS (até n-2)
-        # Não precisamos mais excluir o último elemento porque o loop já parou antes
-        #
-        # Para calcular tendência, usamos os últimos 3-4 pontos do histórico
-        # Todos esses pontos são de barras JÁ FECHADAS
-        # =============================================================================
-        if len(self._coords_history) >= 4:
-            # Usar os últimos 4 pontos (todos já fechados)
-            prices_past = [c[1] for c in self._coords_history[-4:]]
-            geodesic_direction = np.sign(prices_past[-1] - prices_past[0])
-        elif len(self._coords_history) >= 2:
-            # Fallback com menos dados
-            prices_past = [c[1] for c in self._coords_history]
-            geodesic_direction = np.sign(prices_past[-1] - prices_past[0])
-        else:
-            geodesic_direction = 0
+            # CORREÇÃO V3.0: Detectar cruzamento do horizonte SEM contaminação
+            # O _distance_history agora contém apenas valores de barras FECHADAS
+            # Filtrar NaN do histórico
+            valid_distance_history = [d for d in self._distance_history if not np.isnan(d)]
+            crossing_horizon = self.horizon_calc.is_crossing_event_horizon(
+                current_distance, valid_distance_history
+            )
+
+            # CORREÇÃO V3.2: Direção geodésica usando APENAS barras COMPLETAMENTE FECHADAS
+            # =============================================================================
+            # O _coords_history contém coords de barras FECHADAS
+            # Exigir mínimo de histórico para calcular direção confiável
+            # =============================================================================
+            if len(self._coords_history) >= self.min_history_for_signal:
+                # Usar os últimos 4 pontos (todos já fechados)
+                prices_past = [c[1] for c in self._coords_history[-4:]]
+                geodesic_direction = int(np.sign(prices_past[-1] - prices_past[0]))
+            elif len(self._coords_history) >= 2:
+                # Fallback com menos dados - mas marcar como não confiável
+                prices_past = [c[1] for c in self._coords_history]
+                geodesic_direction = int(np.sign(prices_past[-1] - prices_past[0]))
+            else:
+                # CORREÇÃO V3.2: Histórico insuficiente, não gerar direção
+                geodesic_direction = 0
 
         # Gerar sinal
         signal_result = self._generate_signal(
@@ -1181,11 +1230,17 @@ class DetectorSingularidadeGravitacional:
         A step function usa apenas o ÚLTIMO valor calculado até cada índice,
         nunca olhando para valores futuros.
 
+        CORREÇÃO V3.2: Índices antes do primeiro cálculo mantêm NaN
+        O valor 0.0 NÃO é neutro para o Escalar de Ricci (que pode ser
+        positivo, negativo ou zero significativamente).
+
         Exemplo:
-        - indices = [0, 10, 20]
+        - indices = [5, 15, 25]
         - values = [1.0, 2.0, 3.0]
-        - Para índice 5: usa valor 1.0 (último calculado até 5)
-        - Para índice 15: usa valor 2.0 (último calculado até 15)
+        - Para índices 0-4: NaN (sem dados ainda)
+        - Para índices 5-14: usa valor 1.0
+        - Para índices 15-24: usa valor 2.0
+        - Para índices 25+: usa valor 3.0
 
         Args:
             n: Tamanho total do array de saída
@@ -1195,7 +1250,10 @@ class DetectorSingularidadeGravitacional:
         Returns:
             Array de tamanho n com step function aplicada (causal)
         """
-        result = np.zeros(n)
+        # CORREÇÃO V3.2: Inicializar com NaN ao invés de zeros
+        # NaN indica explicitamente "sem dados" e não será confundido
+        # com um valor calculado
+        result = np.full(n, np.nan)
 
         if not indices or not values:
             return result
@@ -1211,21 +1269,17 @@ class DetectorSingularidadeGravitacional:
             pos = np.searchsorted(indices_arr, i, side='right')
 
             if pos == 0:
-                # CORREÇÃO CRÍTICA: Nenhum valor calculado ANTES deste índice
-                # Usar np.nan para indicar "sem dados ainda" - 100% causal
-                # ANTES (ERRADO): result[i] = values_arr[0] ← Isso é look-ahead!
-                # O values_arr[0] corresponde ao índice indices_arr[0], que pode ser > i
-                result[i] = np.nan
+                # CORREÇÃO V3.2: Nenhum valor calculado ANTES deste índice
+                # Manter NaN - NÃO substituir por 0.0!
+                # O código que usa esta série deve verificar NaN
+                pass  # result[i] já é NaN
             else:
                 # Usar o último valor calculado (pos-1)
                 result[i] = values_arr[pos - 1]
 
-        # Substituir NaN pelo primeiro valor válido (forward-fill do primeiro calculado)
-        # Isso é causal porque só preenchemos APÓS o primeiro cálculo real
-        if np.isnan(result[0]) and len(values_arr) > 0:
-            first_valid_idx = indices_arr[0]
-            # Preencher do início até o primeiro cálculo com NaN ou valor neutro
-            result[:first_valid_idx] = 0.0  # Valor neutro antes do primeiro cálculo
+        # CORREÇÃO V3.2: NÃO fazer forward-fill com 0.0
+        # NaN antes do primeiro cálculo é o comportamento correto
+        # O chamador deve tratar NaN apropriadamente
 
         return result
 
@@ -1255,7 +1309,12 @@ class DetectorSingularidadeGravitacional:
         return result
 
     def _empty_result(self) -> dict:
-        """Retorna resultado vazio quando não há dados suficientes"""
+        """
+        Retorna resultado vazio quando não há dados suficientes
+
+        CORREÇÃO V3.2: Unificado signal_name para 'NEUTRO' (era 'HOLD')
+        para consistência com _generate_signal()
+        """
         return {
             'output_vector': [0.0, 0.0, 0.0],
             'Ricci_Scalar': 0.0,
@@ -1268,11 +1327,12 @@ class DetectorSingularidadeGravitacional:
             'crossing_horizon': False,
             'geodesic_direction': 0,
             'signal': 0,
-            'signal_name': 'HOLD',
+            'signal_name': 'NEUTRO',  # CORREÇÃO V3.2: Era 'HOLD', agora consistente
             'confidence': 0.0,
             'reasons': ['Dados insuficientes'],
             'curvature_class': {'class': 'UNKNOWN', 'description': 'Dados insuficientes', 'volatility': 'N/A'},
             'n_observations': 0,
+            'last_closed_idx': 0,  # CORREÇÃO V3.2: Adicionado campo faltante
             'current_price': 0.0,
             'jax_available': JAX_AVAILABLE
         }

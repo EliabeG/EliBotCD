@@ -1,15 +1,16 @@
 #!/usr/bin/env python3
 """
 ================================================================================
-BACKTEST DSG V3.1 - Detector de Singularidade Gravitacional
+BACKTEST DSG V3.2 - Detector de Singularidade Gravitacional
 Backtest com Dados Historicos REAIS
 ================================================================================
 
 Este script executa backtest do indicador DSG (Detector de Singularidade
 Gravitacional) usando dados historicos REAIS do mercado Forex.
 
-VERSÃO V3.1 - CORREÇÕES DA AUDITORIA COMPLETA
-=============================================
+VERSÃO V3.2 - CORREÇÕES DA SEGUNDA AUDITORIA COMPLETA (24/12/2025)
+=================================================================
+Correções de versões anteriores:
 - EMA causal (substituiu gaussian_filter1d)
 - Entrada no OPEN da próxima barra
 - Stop/Take consideram gaps
@@ -18,6 +19,13 @@ VERSÃO V3.1 - CORREÇÕES DA AUDITORIA COMPLETA
 - Thread-safety para multi-ativos
 - Subsampling adaptativo baseado em volatilidade
 - Volumes sintéticos centralizados (config/volume_generator.py)
+
+Correções V3.2:
+- Step function usa NaN ao invés de 0.0 para índices sem dados
+- Centro de massa retorna NaN quando histórico vazio
+- Thread-safety completo em todos os acessos ao histórico
+- Mínimo de histórico exigido para gerar sinais confiáveis
+- Verificação de erro em resultado de análise
 
 IMPORTANTE: Nenhuma simulacao - apenas dados reais do mercado.
 Isso envolve dinheiro real, entao a precisao e crucial.

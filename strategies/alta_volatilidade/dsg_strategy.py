@@ -2,8 +2,8 @@
 Adaptador de Estratégia para o Detector de Singularidade Gravitacional
 Integra o indicador DSG com o sistema de trading
 
-VERSÃO V3.1 - CORREÇÕES DA AUDITORIA COMPLETA
-=============================================
+VERSÃO V3.2 - CORREÇÕES DA SEGUNDA AUDITORIA COMPLETA (24/12/2025)
+==================================================================
 Correções aplicadas (V2.0):
 1. Stop/Take passados em PIPS (não níveis de preço)
 2. BacktestEngine recalcula níveis baseado no entry_price REAL
@@ -14,11 +14,13 @@ Correções aplicadas (V3.0 - Auditoria):
 5. Confidence threshold tornado CONFIGURÁVEL (era hardcoded 0.5)
 6. Indicador DSG V3.0 sem look-ahead bias
 
-Correções aplicadas (V3.1 - Auditoria Completa 24/12/2025):
+Correções aplicadas (V3.1 - Auditoria Completa):
 7. VOLUMES CENTRALIZADOS: Usa config/volume_generator.py para consistência
-   - Antes: usava multiplicador 50000 (diferente do indicador que usava 1000)
-   - Agora: usa função centralizada com multiplicador 10000
 8. Indicador DSG V3.1 com validação de inputs, thread-safety, subsampling adaptativo
+
+Correções aplicadas (V3.2 - Segunda Auditoria 24/12/2025):
+9. VERIFICAÇÃO DE ERRO: Checa campo 'error' antes de usar resultado
+10. Indicador DSG V3.2 com correções de look-ahead residual
 """
 from datetime import datetime
 from typing import Optional, Dict
@@ -182,6 +184,12 @@ class DSGStrategy(BaseStrategy):
             # Executa análise DSG
             result = self.dsg.analyze(prices_array, bid_vols_array, ask_vols_array)
             self.last_analysis = result
+
+            # CORREÇÃO V3.2: Verificar se análise falhou com erro
+            if 'error' in result and result['error']:
+                # Análise falhou (dados inválidos, etc.)
+                # Não gerar sinal quando há erro
+                return None
 
             # CORREÇÃO V3.0: Usar min_confidence configurável (era hardcoded 0.5)
             if result['signal'] != 0 and result['confidence'] >= self.min_confidence:
