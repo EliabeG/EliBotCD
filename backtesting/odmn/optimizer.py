@@ -74,7 +74,11 @@ from config.odmn_config import (
     MALLIAVIN_STEPS,
     USE_DEEP_GALERKIN,
     TREND_LOOKBACK,
+    MFG_DIRECTION_THRESHOLD,
 )
+
+# Seed global para reprodutibilidade
+OPTIMIZER_SEED = 42
 
 
 @dataclass
@@ -287,13 +291,15 @@ class ODMNRobustOptimizer:
         print("\n  Pre-calculando sinais ODMN V2.0 (sem look-ahead)...")
         print(f"  NOTA: Computacionalmente intensivo (Heston + Malliavin + MFG)")
 
+        # REPRODUTIBILIDADE: Usa seed fixo para resultados deterministicos
         odmn = OracloDerivativosMalliavinNash(
             lookback_window=HESTON_CALIBRATION_WINDOW,
             fragility_threshold=2.0,
-            mfg_direction_threshold=0.05,  # Baixo para capturar mais sinais
+            mfg_direction_threshold=MFG_DIRECTION_THRESHOLD,  # Do config centralizado
             use_deep_galerkin=USE_DEEP_GALERKIN,  # Analitico e mais rapido
             malliavin_paths=MALLIAVIN_PATHS,
-            malliavin_steps=MALLIAVIN_STEPS
+            malliavin_steps=MALLIAVIN_STEPS,
+            seed=OPTIMIZER_SEED  # Para reprodutibilidade
         )
 
         prices_buf = deque(maxlen=500)
@@ -732,6 +738,10 @@ class ODMNRobustOptimizer:
         tested = 0
         robust_count = 0
         start = datetime.now()
+
+        # REPRODUTIBILIDADE: Seed fixo para random sampling
+        random.seed(OPTIMIZER_SEED)
+        np.random.seed(OPTIMIZER_SEED)
 
         for _ in range(n):
             tested += 1
