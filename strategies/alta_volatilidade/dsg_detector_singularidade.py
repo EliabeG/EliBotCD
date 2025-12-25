@@ -12,8 +12,8 @@ infinita e as regras normais cessam.
 Dependências Críticas: jax ou tensorflow (para operações tensoriais aceleradas e diferenciação
 automática), numpy (uso extensivo de einsum), scipy.spatial
 
-VERSÃO V3.0 - PRONTO PARA DINHEIRO REAL
-=======================================
+VERSÃO V3.1 - CORREÇÕES DA AUDITORIA COMPLETA
+=============================================
 Correções aplicadas (V2.0):
 1. Substituído gaussian_filter1d (não-causal) por EMA causal
 2. Direção da geodésica calculada apenas com barras FECHADAS
@@ -26,13 +26,32 @@ Correções aplicadas (V3.0 - Auditoria):
 7. Centro de massa EXCLUI barra atual
 8. Direção geodésica usa _coords_history[:-2] para excluir completamente barra atual
 9. ricci_collapsing e crossing_horizon usam histórico ANTES da barra atual
+
+Correções aplicadas (V3.1 - Auditoria Completa 24/12/2025):
+10. VALIDAÇÃO DE INPUTS: Verificação de NaN, Inf, negativos, ordem temporal
+11. VOLUMES CENTRALIZADOS: Usa config/volume_generator.py para consistência
+12. SUBSAMPLING ADAPTATIVO: step dinâmico baseado em volatilidade
+13. THREAD-SAFETY: Lock para proteger estado compartilhado
+14. LOOK-AHEAD RESIDUAL: Vetor tangente retorna [1,0,0,0] quando histórico vazio
 """
 
 import numpy as np
 # REMOVIDO: from scipy.ndimage import gaussian_filter1d (era não-causal, substituído por EMA)
 from scipy.spatial.distance import cdist
 import warnings
+import threading
+from typing import Tuple, Optional
 warnings.filterwarnings('ignore')
+
+# CORREÇÃO V3.1: Importar gerador de volumes centralizado
+try:
+    from config.volume_generator import generate_synthetic_volumes, VOLUME_MULTIPLIER, VOLUME_BASE
+    VOLUME_GENERATOR_AVAILABLE = True
+except ImportError:
+    # Fallback se módulo não disponível (para testes isolados)
+    VOLUME_GENERATOR_AVAILABLE = False
+    VOLUME_MULTIPLIER = 10000.0
+    VOLUME_BASE = 50.0
 
 # Tentar importar JAX para compilação JIT
 JAX_AVAILABLE = False
@@ -407,11 +426,21 @@ class DesvioGeodesico:
     def compute_tangent_vector(self, coords_history: np.ndarray) -> np.ndarray:
         """
         Calcula o vetor tangente T^μ = dx^μ/dτ (velocidade no espaço-tempo)
-        """
-        if len(coords_history) < 2:
-            return np.array([1.0, 0.0, 0.0, 0.0])  # Apenas passagem do tempo
 
-        # Derivada numérica das coordenadas
+        CORREÇÃO V3.1: Quando histórico insuficiente, retorna vetor temporal puro
+        sem usar coordenadas atuais (evita look-ahead bias).
+        """
+        # CORREÇÃO V3.1: Verificar se coords_history é válido
+        if coords_history is None or len(coords_history) == 0:
+            # Sem histórico: retornar vetor temporal puro (sem look-ahead)
+            return np.array([1.0, 0.0, 0.0, 0.0])
+
+        if len(coords_history) < 2:
+            # Apenas 1 ponto: retornar vetor temporal puro (sem look-ahead)
+            # ANTES: usava coords atual como fallback (look-ahead!)
+            return np.array([1.0, 0.0, 0.0, 0.0])
+
+        # Derivada numérica das coordenadas (usa apenas histórico)
         T = coords_history[-1] - coords_history[-2]
 
         # Normalizar
@@ -632,6 +661,132 @@ class DetectorSingularidadeGravitacional:
         self._distance_history = []
         self._coords_history = []
 
+        # CORREÇÃO V3.1: Lock para thread-safety
+        self._lock = threading.Lock()
+
+        # CORREÇÃO V3.1: Mínimo de preços para análise
+        self.min_prices = 10
+
+    def _validate_inputs(self, prices: np.ndarray,
+                         bid_volumes: np.ndarray = None,
+                         ask_volumes: np.ndarray = None) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """
+        CORREÇÃO V3.1: Valida e sanitiza inputs antes do processamento.
+
+        Verifica:
+        - Array de preços não vazio
+        - Sem NaN ou Inf
+        - Sem valores negativos (preços devem ser positivos)
+        - Mínimo de dados para análise
+
+        Args:
+            prices: Array de preços de fechamento
+            bid_volumes: Array de volumes de bid (opcional)
+            ask_volumes: Array de volumes de ask (opcional)
+
+        Returns:
+            Tuple (prices, bid_volumes, ask_volumes) sanitizados
+
+        Raises:
+            ValueError: Se dados inválidos não puderem ser corrigidos
+        """
+        # Verificar array de preços
+        if prices is None or len(prices) == 0:
+            raise ValueError("Array de preços vazio ou None")
+
+        # Converter para numpy se necessário
+        prices = np.asarray(prices, dtype=np.float64)
+
+        # Verificar NaN e Inf em preços
+        nan_mask = np.isnan(prices)
+        inf_mask = np.isinf(prices)
+
+        if np.any(nan_mask) or np.any(inf_mask):
+            bad_count = nan_mask.sum() + inf_mask.sum()
+
+            # Se primeiro preço é inválido, não podemos corrigir
+            if nan_mask[0] or inf_mask[0]:
+                raise ValueError(f"Primeiro preço é NaN ou Inf, impossível corrigir")
+
+            # Se menos de 10% dos dados são ruins, forward-fill
+            if bad_count < len(prices) * 0.1:
+                bad_mask = nan_mask | inf_mask
+                for i in range(1, len(prices)):
+                    if bad_mask[i]:
+                        prices[i] = prices[i-1]
+            else:
+                raise ValueError(f"Dados contêm {bad_count} valores NaN/Inf ({bad_count/len(prices)*100:.1f}%)")
+
+        # Verificar preços negativos
+        if np.any(prices <= 0):
+            neg_count = np.sum(prices <= 0)
+            raise ValueError(f"Preços contêm {neg_count} valores negativos ou zero")
+
+        # Verificar mínimo de dados
+        if len(prices) < self.min_prices:
+            raise ValueError(f"Mínimo de {self.min_prices} preços necessário, recebido {len(prices)}")
+
+        # Validar volumes se fornecidos
+        if bid_volumes is not None:
+            bid_volumes = np.asarray(bid_volumes, dtype=np.float64)
+            if len(bid_volumes) != len(prices):
+                raise ValueError(f"Tamanho de bid_volumes ({len(bid_volumes)}) diferente de prices ({len(prices)})")
+            # Substituir NaN/Inf/negativos por valor base
+            bad_mask = np.isnan(bid_volumes) | np.isinf(bid_volumes) | (bid_volumes < 0)
+            if np.any(bad_mask):
+                bid_volumes[bad_mask] = VOLUME_BASE
+
+        if ask_volumes is not None:
+            ask_volumes = np.asarray(ask_volumes, dtype=np.float64)
+            if len(ask_volumes) != len(prices):
+                raise ValueError(f"Tamanho de ask_volumes ({len(ask_volumes)}) diferente de prices ({len(prices)})")
+            # Substituir NaN/Inf/negativos por valor base
+            bad_mask = np.isnan(ask_volumes) | np.isinf(ask_volumes) | (ask_volumes < 0)
+            if np.any(bad_mask):
+                ask_volumes[bad_mask] = VOLUME_BASE
+
+        return prices, bid_volumes, ask_volumes
+
+    def _calculate_adaptive_step(self, prices: np.ndarray, last_closed_idx: int) -> int:
+        """
+        CORREÇÃO V3.1: Calcula step adaptativo baseado em volatilidade.
+
+        Em períodos de alta volatilidade, usa step menor para não perder eventos.
+        Em períodos calmos, usa step maior para performance.
+
+        Args:
+            prices: Array de preços
+            last_closed_idx: Índice da última barra fechada
+
+        Returns:
+            Step adaptativo (mínimo 1, máximo baseado em volatilidade)
+        """
+        # Calcular volatilidade recente (últimas 20 barras ou disponíveis)
+        window = min(20, last_closed_idx)
+        if window < 2:
+            return 1
+
+        recent_prices = prices[last_closed_idx - window:last_closed_idx + 1]
+        returns = np.diff(recent_prices) / recent_prices[:-1]
+
+        # Volatilidade como desvio padrão dos retornos
+        volatility = np.std(returns)
+
+        # Definir step baseado em volatilidade
+        # Alta vol (>0.5%) -> step=1 (calcular todos os pontos)
+        # Média vol (0.1-0.5%) -> step=2-5
+        # Baixa vol (<0.1%) -> step até max_step
+        max_step = max(1, last_closed_idx // 50)  # Mínimo 50 pontos
+
+        if volatility > 0.005:  # >0.5%
+            step = 1
+        elif volatility > 0.001:  # 0.1-0.5%
+            step = max(1, min(3, max_step))
+        else:  # <0.1%
+            step = max(1, min(max_step, last_closed_idx // 100))
+
+        return step
+
     def _prepare_coordinates(self, t: int, price: float,
                               bid_vol: float, ask_vol: float) -> np.ndarray:
         """
@@ -664,8 +819,10 @@ class DetectorSingularidadeGravitacional:
         # a barra atual ao histórico, para evitar look-ahead bias
 
         # 3. Vetor tangente (usa histórico SEM a barra atual)
+        # CORREÇÃO V3.1: NÃO usar coords como fallback (isso é look-ahead!)
+        # Se histórico vazio, compute_tangent_vector retorna vetor temporal puro
         T = self.geodesic_calc.compute_tangent_vector(
-            np.array(self._coords_history) if len(self._coords_history) > 0 else np.array([coords])
+            np.array(self._coords_history) if len(self._coords_history) > 0 else None
         )
 
         # 4. Vetor de separação e força de maré
@@ -725,35 +882,50 @@ class DetectorSingularidadeGravitacional:
         Execução completa do Detector de Singularidade Gravitacional
 
         Output: [Ricci_Scalar, Tidal_Force_Magnitude, Event_Horizon_Distance]
+
+        CORREÇÃO V3.1: Agora com validação de inputs, volumes centralizados,
+        subsampling adaptativo e thread-safety.
         """
+        # CORREÇÃO V3.1: Validação de inputs
+        try:
+            prices, bid_volumes, ask_volumes = self._validate_inputs(
+                prices, bid_volumes, ask_volumes
+            )
+        except ValueError as e:
+            # Se validação falhar, retornar resultado vazio com erro
+            result = self._empty_result()
+            result['error'] = str(e)
+            return result
+
         n = len(prices)
 
-        if n < 10:
+        if n < self.min_prices:
             return self._empty_result()
 
-        # CORREÇÃO V3.0: Gerar volumes DETERMINÍSTICOS SEM look-ahead
-        # O volume de cada barra deve usar apenas dados ANTERIORES, não o close atual
-        # ANTES: price_changes = np.abs(np.diff(prices, prepend=prices[0]))
-        #        Isso usa prices[i] - prices[i-1], que requer prices[i] (barra atual) para a última
-        # DEPOIS: Usar backward diff com shift, assim volume[i] = |prices[i-1] - prices[i-2]|
-        if bid_volumes is None:
-            bid_volumes = np.zeros(n)
-            bid_volumes[0] = 50  # Valor base para primeira barra
-            bid_volumes[1] = 50  # Valor base para segunda barra
-            # Para i >= 2: volume baseado em variação de barras JÁ FECHADAS
-            for i in range(2, n):
-                bid_volumes[i] = np.abs(prices[i-1] - prices[i-2]) * 1000 + 50
-        if ask_volumes is None:
-            ask_volumes = np.zeros(n)
-            ask_volumes[0] = 50
-            ask_volumes[1] = 50
-            for i in range(2, n):
-                ask_volumes[i] = np.abs(prices[i-1] - prices[i-2]) * 1000 + 50
+        # CORREÇÃO V3.1: Gerar volumes usando função CENTRALIZADA
+        # Isso garante consistência entre indicador, estratégia, backtest e otimizador
+        if bid_volumes is None or ask_volumes is None:
+            if VOLUME_GENERATOR_AVAILABLE:
+                bid_volumes, ask_volumes = generate_synthetic_volumes(prices)
+            else:
+                # Fallback se módulo não disponível
+                bid_volumes = np.zeros(n)
+                ask_volumes = np.zeros(n)
+                bid_volumes[0] = VOLUME_BASE
+                ask_volumes[0] = VOLUME_BASE
+                bid_volumes[1] = VOLUME_BASE
+                ask_volumes[1] = VOLUME_BASE
+                for i in range(2, n):
+                    change = np.abs(prices[i-1] - prices[i-2])
+                    bid_volumes[i] = change * VOLUME_MULTIPLIER + VOLUME_BASE
+                    ask_volumes[i] = change * VOLUME_MULTIPLIER + VOLUME_BASE
 
-        # Resetar histórico
-        self._ricci_history = []
-        self._distance_history = []
-        self._coords_history = []
+        # CORREÇÃO V3.1: Thread-safety - adquirir lock antes de modificar estado
+        with self._lock:
+            # Resetar histórico
+            self._ricci_history = []
+            self._distance_history = []
+            self._coords_history = []
 
         # Arrays para resultados
         ricci_series = np.zeros(n)
@@ -775,10 +947,12 @@ class DetectorSingularidadeGravitacional:
 
         # n-1 é a barra ATUAL (não fechada), n-2 é a última FECHADA
         last_closed_idx = n - 2
-        if last_closed_idx < 10:
+        if last_closed_idx < self.min_prices:
             return self._empty_result()
 
-        step = max(1, last_closed_idx // 100)  # Máximo 100 pontos para cálculo
+        # CORREÇÃO V3.1: Subsampling ADAPTATIVO baseado em volatilidade
+        # Em períodos de alta volatilidade, calcula mais pontos para não perder eventos
+        step = self._calculate_adaptive_step(prices, last_closed_idx)
 
         # Armazenar pontos calculados (apenas barras FECHADAS)
         calculated_indices = []
@@ -786,26 +960,28 @@ class DetectorSingularidadeGravitacional:
         calculated_tidal = []
         calculated_distance = []
 
-        for i in range(0, last_closed_idx + 1, step):  # Até last_closed_idx inclusive
-            result = self.analyze_point(
-                i, prices[i], bid_volumes[i], ask_volumes[i]
-            )
+        # CORREÇÃO V3.1: Thread-safety - adquirir lock durante cálculos que modificam estado
+        with self._lock:
+            for i in range(0, last_closed_idx + 1, step):  # Até last_closed_idx inclusive
+                result = self.analyze_point(
+                    i, prices[i], bid_volumes[i], ask_volumes[i]
+                )
 
-            calculated_indices.append(i)
-            calculated_ricci.append(result['ricci_scalar'])
-            calculated_tidal.append(result['tidal_force'])
-            calculated_distance.append(result['event_horizon_distance'])
+                calculated_indices.append(i)
+                calculated_ricci.append(result['ricci_scalar'])
+                calculated_tidal.append(result['tidal_force'])
+                calculated_distance.append(result['event_horizon_distance'])
 
-        # Garantir que o último ponto FECHADO (n-2) foi calculado
-        if calculated_indices[-1] != last_closed_idx:
-            result = self.analyze_point(
-                last_closed_idx, prices[last_closed_idx],
-                bid_volumes[last_closed_idx], ask_volumes[last_closed_idx]
-            )
-            calculated_indices.append(last_closed_idx)
-            calculated_ricci.append(result['ricci_scalar'])
-            calculated_tidal.append(result['tidal_force'])
-            calculated_distance.append(result['event_horizon_distance'])
+            # Garantir que o último ponto FECHADO (n-2) foi calculado
+            if calculated_indices[-1] != last_closed_idx:
+                result = self.analyze_point(
+                    last_closed_idx, prices[last_closed_idx],
+                    bid_volumes[last_closed_idx], ask_volumes[last_closed_idx]
+                )
+                calculated_indices.append(last_closed_idx)
+                calculated_ricci.append(result['ricci_scalar'])
+                calculated_tidal.append(result['tidal_force'])
+                calculated_distance.append(result['event_horizon_distance'])
 
         # CORREÇÃO: Step Function CAUSAL (Zero-Order Hold)
         # Usa apenas o ÚLTIMO valor calculado até cada índice - SEM look-ahead

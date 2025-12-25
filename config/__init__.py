@@ -12,6 +12,17 @@ from .execution_costs import (
     calculate_pnl_usd,
 )
 
+# Importar gerador de volumes sintéticos (V3.1)
+from .volume_generator import (
+    generate_synthetic_volumes,
+    generate_single_volume,
+    get_volume_base,
+    get_volume_multiplier,
+    validate_volumes,
+    VOLUME_MULTIPLIER,
+    VOLUME_BASE,
+)
+
 # Tentar importar settings (pode falhar se dotenv não estiver instalado)
 try:
     from .settings import *

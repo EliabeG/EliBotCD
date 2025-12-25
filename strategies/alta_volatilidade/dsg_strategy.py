@@ -2,8 +2,8 @@
 Adaptador de Estratégia para o Detector de Singularidade Gravitacional
 Integra o indicador DSG com o sistema de trading
 
-VERSÃO V3.0 - PRONTO PARA DINHEIRO REAL
-=======================================
+VERSÃO V3.1 - CORREÇÕES DA AUDITORIA COMPLETA
+=============================================
 Correções aplicadas (V2.0):
 1. Stop/Take passados em PIPS (não níveis de preço)
 2. BacktestEngine recalcula níveis baseado no entry_price REAL
@@ -13,6 +13,12 @@ Correções aplicadas (V3.0 - Auditoria):
 4. Cooldown tornado CONFIGURÁVEL (era hardcoded 30)
 5. Confidence threshold tornado CONFIGURÁVEL (era hardcoded 0.5)
 6. Indicador DSG V3.0 sem look-ahead bias
+
+Correções aplicadas (V3.1 - Auditoria Completa 24/12/2025):
+7. VOLUMES CENTRALIZADOS: Usa config/volume_generator.py para consistência
+   - Antes: usava multiplicador 50000 (diferente do indicador que usava 1000)
+   - Agora: usa função centralizada com multiplicador 10000
+8. Indicador DSG V3.1 com validação de inputs, thread-safety, subsampling adaptativo
 """
 from datetime import datetime
 from typing import Optional, Dict
@@ -21,6 +27,24 @@ import numpy as np
 
 from ..base import BaseStrategy, Signal, SignalType
 from .dsg_detector_singularidade import DetectorSingularidadeGravitacional
+
+# CORREÇÃO V3.1: Importar gerador de volumes centralizado
+try:
+    from config.volume_generator import generate_single_volume, get_volume_base
+    VOLUME_GENERATOR_AVAILABLE = True
+except ImportError:
+    # Fallback se módulo não disponível
+    VOLUME_GENERATOR_AVAILABLE = False
+    VOLUME_MULTIPLIER = 10000.0
+    VOLUME_BASE = 50.0
+
+    def generate_single_volume(price_current: float, price_prev: float) -> float:
+        """Fallback para geração de volume."""
+        return np.abs(price_current - price_prev) * VOLUME_MULTIPLIER + VOLUME_BASE
+
+    def get_volume_base() -> float:
+        """Fallback para volume base."""
+        return VOLUME_BASE
 
 
 class DSGStrategy(BaseStrategy):
@@ -94,27 +118,32 @@ class DSGStrategy(BaseStrategy):
         """Adiciona um preço e volumes ao buffer"""
         self.prices.append(price)
 
-        # CORREÇÃO C1: Gera volumes DETERMINÍSTICOS se não fornecidos
-        # ANTES: Usava np.random.rand() que tornava backtests não-reproduzíveis
-        # DEPOIS: Volumes baseados apenas na variação de preço (determinístico)
+        # CORREÇÃO V3.1: Gera volumes usando função CENTRALIZADA
+        # Isso garante consistência entre estratégia, indicador, backtest e otimizador
+        # ANTES: usava multiplicador 50000 (diferente do indicador que usava 1000)
+        # AGORA: usa função centralizada com multiplicador 10000
         if bid_vol is not None:
             self.bid_volumes.append(bid_vol)
         else:
-            # Volume determinístico baseado na variação de preço
-            if len(self.prices) > 1:
-                change = abs(self.prices[-1] - self.prices[-2])
-                self.bid_volumes.append(change * 50000 + 50)  # Valor fixo, sem random
+            # Volume determinístico usando função centralizada
+            # REGRA ANTI LOOK-AHEAD: Volume[i] usa prices[i-1] e prices[i-2]
+            if len(self.prices) >= 3:
+                # Temos pelo menos 3 preços: usar i-1 e i-2
+                vol = generate_single_volume(self.prices[-2], self.prices[-3])
+                self.bid_volumes.append(vol)
             else:
-                self.bid_volumes.append(100)
+                # Sem histórico suficiente: usar volume base
+                self.bid_volumes.append(get_volume_base())
 
         if ask_vol is not None:
             self.ask_volumes.append(ask_vol)
         else:
-            if len(self.prices) > 1:
-                change = abs(self.prices[-1] - self.prices[-2])
-                self.ask_volumes.append(change * 50000 + 50)  # Valor fixo, sem random
+            # Volume determinístico usando função centralizada
+            if len(self.prices) >= 3:
+                vol = generate_single_volume(self.prices[-2], self.prices[-3])
+                self.ask_volumes.append(vol)
             else:
-                self.ask_volumes.append(100)
+                self.ask_volumes.append(get_volume_base())
 
     def analyze(self, price: float, timestamp: datetime,
                 bid_volume: float = None, ask_volume: float = None,
