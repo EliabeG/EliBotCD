@@ -173,10 +173,11 @@ class FluxoInformacaoFisherNavier:
         # Derivada numérica (central differences para estabilidade)
         d_log_pdf = np.gradient(log_pdf, dx)
 
-        # AUDITORIA 23/24 FIX: Clip gradient ANTES de elevar ao quadrado
+        # AUDITORIA 23/24/25 FIX: Clip gradient ANTES de elevar ao quadrado
         # Previne overflow quando pdf é próximo de zero nas caudas
-        # AUDITORIA 24: Reduzido de ±100 para ±50 para maior estabilidade numérica
-        d_log_pdf = np.clip(d_log_pdf, -50, 50)
+        # AUDITORIA 25: Reduzido de ±50 para ±30 para máxima estabilidade numérica
+        # 30² = 900 (vs 50² = 2500 vs 100² = 10000)
+        d_log_pdf = np.clip(d_log_pdf, -30, 30)
 
         # Fisher Information: E[(d ln p / d theta)^2] = integral p(x) * (d ln p / d theta)^2 dx
         fisher_info = simps(pdf * d_log_pdf**2, x_grid)
@@ -639,13 +640,33 @@ class FluxoInformacaoFisherNavier:
     # MÓDULO 5: Output e Visualização
     # =========================================================================
 
-    def analyze(self, prices: np.ndarray, volume: np.ndarray = None) -> dict:
+    def analyze(self, prices: np.ndarray, volume: np.ndarray = None,
+                current_bar_excluded: bool = True) -> dict:
         """
         Execução completa do Fluxo de Informação Fisher-Navier.
 
         Retorno Numérico: [Reynolds_Number, KL_Divergence, Pressure_Gradient]
+
+        AUDITORIA 25: Adicionado parâmetro current_bar_excluded para clareza
+        - Se True (default): prices[-1] já é a última barra FECHADA
+        - Se False: prices[-1] é barra em formação e será excluída internamente
+
+        Args:
+            prices: Array de preços de fechamento
+            volume: Array de volumes (opcional)
+            current_bar_excluded: Se True, prices já exclui a barra atual.
+                                 Se False, exclui internamente para evitar look-ahead.
+
+        Returns:
+            dict com análise completa do indicador FIFN
         """
         prices = np.array(prices, dtype=float)
+
+        # AUDITORIA 25: Excluir barra atual se não foi excluída pelo caller
+        if not current_bar_excluded:
+            prices = prices[:-1]
+            if volume is not None:
+                volume = volume[:-1]
 
         if len(prices) < self.window_size + self.kl_lookback + 10:
             raise ValueError(f"Dados insuficientes. Necessário mínimo de {self.window_size + self.kl_lookback + 10} pontos.")
