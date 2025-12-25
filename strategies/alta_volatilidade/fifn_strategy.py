@@ -2,18 +2,22 @@
 Adaptador de Estratégia para o Fluxo de Informação Fisher-Navier
 Integra o indicador FIFN com o sistema de trading
 
-VERSAO V3.4 - CORRIGIDO AUDITORIA 25:
+VERSAO V3.5 - CORRIGIDO AUDITORIA 29:
 - Usa módulo centralizado direction_calculator.py
 - Implementa stops dinâmicos baseados em Reynolds
 - Exclui barra atual para evitar look-ahead
 - Calcula direção baseada em barras FECHADAS (igual ao optimizer)
 - Usa direção para filtrar sinais
 - Suporta volumes opcionais
+- AUDITORIA 29: Carrega parâmetros do config otimizado
+- AUDITORIA 29: Validação de dados de entrada
 """
 from datetime import datetime
 from typing import Optional, Tuple
 from collections import deque
 import numpy as np
+import json
+import os
 
 from ..base import BaseStrategy, Signal, SignalType
 from .fifn_fisher_navier import FluxoInformacaoFisherNavier
@@ -29,16 +33,72 @@ class FIFNStrategy(BaseStrategy):
     Usa o Número de Reynolds para identificar a "Kill Zone" (Sweet Spot)
     onde breakouts institucionais limpos ocorrem.
 
-    VERSAO V3.4 - CORRIGIDO AUDITORIA 25:
+    VERSAO V3.5 - CORRIGIDO AUDITORIA 29:
     - Usa módulo centralizado direction_calculator.py
     - Implementa stops dinâmicos baseados em Reynolds
     - Sem look-ahead bias (exclui barra atual)
     - Direção baseada em barras FECHADAS
     - Consistente com optimizer.py
+    - Carrega parâmetros do config otimizado
+    - Validação de dados de entrada
     """
 
     # AUDITORIA 25: Mínimo de barras = lookback(10) + 2 + buffer
     MIN_BARS_FOR_DIRECTION = 14
+
+    # AUDITORIA 29: Caminho padrão do config otimizado
+    DEFAULT_CONFIG_PATH = "configs/fifn-fishernavier_robust.json"
+
+    @classmethod
+    def from_config(cls, config_path: str = None) -> 'FIFNStrategy':
+        """
+        AUDITORIA 29: Carrega estratégia do config otimizado.
+
+        Isso garante que a strategy em produção usa os MESMOS parâmetros
+        que foram validados no backtest/otimização.
+
+        Args:
+            config_path: Caminho para o arquivo JSON de config.
+                        Se None, usa DEFAULT_CONFIG_PATH.
+
+        Returns:
+            FIFNStrategy inicializada com parâmetros otimizados
+
+        Raises:
+            FileNotFoundError: Se o arquivo não existir
+            ValueError: Se o arquivo tiver formato inválido
+        """
+        if config_path is None:
+            # Tentar encontrar o config relativo ao diretório do projeto
+            base_dir = os.path.dirname(os.path.dirname(os.path.dirname(
+                os.path.dirname(os.path.abspath(__file__))
+            )))
+            config_path = os.path.join(base_dir, cls.DEFAULT_CONFIG_PATH)
+
+        if not os.path.exists(config_path):
+            raise FileNotFoundError(
+                f"Config não encontrado: {config_path}\n"
+                f"Execute o optimizer primeiro para gerar o config."
+            )
+
+        with open(config_path, 'r') as f:
+            config = json.load(f)
+
+        # Validar estrutura do config
+        if 'parameters' not in config:
+            raise ValueError("Config inválido: falta seção 'parameters'")
+
+        params = config['parameters']
+
+        # Extrair parâmetros com valores default como fallback
+        return cls(
+            min_prices=100,  # AUDITORIA 28: Valor fixo unificado
+            stop_loss_pips=params.get('stop_loss_pips', 18.0),
+            take_profit_pips=params.get('take_profit_pips', 36.0),
+            reynolds_sweet_low=params.get('reynolds_sweet_low', 2300),
+            reynolds_sweet_high=params.get('reynolds_sweet_high', 4000),
+            skewness_threshold=params.get('skewness_threshold', 0.5)
+        )
 
     def __init__(self,
                  min_prices: int = 100,  # AUDITORIA 28: Unificado com optimizer
@@ -52,6 +112,9 @@ class FIFNStrategy(BaseStrategy):
 
         AUDITORIA 28: min_prices unificado com optimizer (era 120, optimizer usava 80)
         Valor de 100 é intermediário para garantir consistência entre backtest e produção.
+
+        AUDITORIA 29: Para produção, use FIFNStrategy.from_config() para carregar
+        os parâmetros otimizados automaticamente.
 
         Args:
             min_prices: Mínimo de preços necessários para análise (AUDITORIA 28: 100)
@@ -85,10 +148,45 @@ class FIFNStrategy(BaseStrategy):
         self.last_analysis = None
         self.signal_cooldown = 0
 
+    @staticmethod
+    def validate_data(prices: np.ndarray) -> Tuple[bool, str]:
+        """
+        AUDITORIA 29: Valida dados de entrada antes de processar.
+
+        Args:
+            prices: Array de preços a validar
+
+        Returns:
+            Tuple[is_valid, error_message]
+        """
+        if prices is None or len(prices) == 0:
+            return False, "Dados vazios"
+
+        if np.any(np.isnan(prices)):
+            return False, "Dados contêm NaN"
+
+        if np.any(np.isinf(prices)):
+            return False, "Dados contêm Inf"
+
+        if np.any(prices <= 0):
+            return False, "Preços negativos ou zero detectados"
+
+        # Verificar gaps extremos (> 5% em uma barra)
+        if len(prices) > 1:
+            returns = np.abs(np.diff(prices) / prices[:-1])
+            if np.any(returns > 0.05):  # 5% de variação
+                return False, f"Gap extremo detectado: {np.max(returns)*100:.2f}%"
+
+        return True, ""
+
     def add_price(self, price: float, volume: float = None):
         """Adiciona um preço e volume ao buffer"""
+        # AUDITORIA 29: Validação básica do preço
+        if price is None or price <= 0 or np.isnan(price) or np.isinf(price):
+            return  # Ignora preços inválidos
+
         self.prices.append(price)
-        if volume is not None:
+        if volume is not None and volume >= 0:
             self.volumes.append(volume)
 
     def _calculate_direction(self) -> int:

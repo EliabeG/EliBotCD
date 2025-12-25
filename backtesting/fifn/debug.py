@@ -62,7 +62,8 @@ async def main():
     )
 
     prices_buf = deque(maxlen=500)
-    min_prices = 80  # window_size + kl_lookback + buffer
+    # AUDITORIA 29: Unificado com optimizer e strategy
+    min_prices = 100  # window_size(50) + kl_lookback(10) + buffer(40)
 
     reynolds_values = []
     kl_divergences = []
