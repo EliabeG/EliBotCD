@@ -1,27 +1,27 @@
 #!/usr/bin/env python3
 """
 ================================================================================
-OTIMIZADOR DTT ROBUSTO V3.2 - CORREÇÃO COMPLETA DO LOOK-AHEAD BIAS
+OTIMIZADOR DTT ROBUSTO V3.3 - VALIDAÇÃO ESTATÍSTICA COMPLETA
 ================================================================================
 
-VERSÃO V3.2 - CORREÇÃO FINAL 25/12/2025:
+VERSÃO V3.3 - VALIDAÇÃO ROBUSTA 25/12/2025:
 
-CORREÇÃO CRÍTICA - EMBEDDING SEM LOOK-AHEAD:
+MELHORIAS V3.3:
+- Monte Carlo aumentado de 1.000 para 10.000 permutações
+- Walk-Forward aumentado de 6 para 12 janelas independentes
+- Validação Out-of-Sample (20% dos dados) - NUNCA tocados na otimização
+- Detecção de overfitting por comparação WF vs OOS
+
+CORREÇÃO V3.2 (herdado):
 - τ (time_delay) e m (embedding_dim) calculados APENAS com dados de TREINO
 - Parâmetros FIXADOS antes de qualquer análise de dados de teste
 - Elimina look-ahead sutil no Takens Embedding
 
-VERSÃO V3.1 (herdado):
-1. Walk-Forward REAL (janelas DESLIZANTES, não independentes)
-2. Teste de significância estatística (Monte Carlo, 1000 permutações)
-3. Correção de bugs potenciais (divisão por zero, NaN, índices)
-4. KDE exclui preço atual (anti look-ahead)
-
-METODOLOGIA WALK-FORWARD REAL:
-- Janelas DESLIZANTES que crescem/deslizam com o tempo
-- Treino: [0 → 70%] → Teste: [70% → 75%]
-- Treino: [5% → 75%] → Teste: [75% → 80%]
-- Simula otimização em tempo real REAL
+METODOLOGIA:
+1. 80% dados para Walk-Forward (12 janelas deslizantes)
+2. 20% dados reservados para Out-of-Sample (validação final)
+3. Monte Carlo com 10.000 permutações (p-value < 0.05)
+4. Comparação WF vs OOS para detectar overfitting
 
 PARA DINHEIRO REAL. SEM OVERFITTING. SEM LOOK-AHEAD. CUSTOS REALISTAS.
 ================================================================================
@@ -176,18 +176,22 @@ class RobustResult:
 
 class DTTRobustOptimizer:
     """
-    Otimizador DTT V3.2 com Walk-Forward REAL e Embedding Anti Look-Ahead
+    Otimizador DTT V3.3 com Validação Estatística Completa
 
-    CORREÇÃO CRÍTICA V3.2:
-    - τ (time_delay) e m (embedding_dim) calculados APENAS com dados de TREINO
-    - Parâmetros FIXADOS antes de qualquer análise (anti look-ahead completo)
+    MELHORIAS V3.3:
+    - Monte Carlo: 10.000 permutações (era 1.000)
+    - Walk-Forward: 12 janelas (era 6)
+    - Out-of-Sample: 20% reservado para validação final
+    - Detecção de overfitting por degradação WF vs OOS
+
+    CORREÇÕES V3.2 (herdado):
+    - τ (time_delay) e m (embedding_dim) APENAS com dados de TREINO
+    - Parâmetros FIXADOS antes de qualquer análise
 
     CORREÇÕES V3.1 (herdado):
-    - Walk-forward com janelas DESLIZANTES (não independentes)
-    - Teste de significância estatística (Monte Carlo permutation)
-    - Mínimo 200 trades treino, 100 teste
-    - Direção via módulo compartilhado
-    - KDE exclui preço atual
+    - Walk-forward com janelas DESLIZANTES
+    - Teste de significância estatística (Monte Carlo)
+    - Mínimo 200/100 trades
     """
 
     # Custos REALISTAS
@@ -207,9 +211,15 @@ class DTTRobustOptimizer:
     MIN_ROBUSTNESS = 0.70
     MIN_EXPECTANCY = 3.0
 
-    # V3.1: Configuração de significância estatística
-    MONTE_CARLO_PERMUTATIONS = 1000
+    # V3.3: Configuração de significância estatística ROBUSTA
+    MONTE_CARLO_PERMUTATIONS = 10000  # V3.3: Aumentado de 1000 para 10000
     SIGNIFICANCE_LEVEL = 0.05  # p-value < 0.05
+
+    # V3.3: Walk-Forward com mais janelas
+    N_WALK_FORWARD_WINDOWS = 12  # V3.3: Aumentado de 6 para 12
+
+    # V3.3: Validação Out-of-Sample
+    OUT_OF_SAMPLE_RATIO = 0.20  # 20% reservado para validação final
 
     def __init__(self, symbol: str = "EURUSD", periodicity: str = "H1"):
         self.symbol = symbol
@@ -225,7 +235,12 @@ class DTTRobustOptimizer:
         self.fixed_tau: Optional[int] = None
         self.fixed_m: Optional[int] = None
 
-        logger.info(f"DTTRobustOptimizer V3.2 inicializado: {symbol} {periodicity}")
+        # V3.3: Separação de dados para Out-of-Sample
+        self.wf_bars: List[Bar] = []      # Barras para Walk-Forward
+        self.oos_bars: List[Bar] = []     # Barras Out-of-Sample (nunca tocadas)
+        self.oos_signals: List[DTTSignal] = []  # Sinais OOS para validação final
+
+        logger.info(f"DTTRobustOptimizer V3.3 inicializado: {symbol} {periodicity}")
         logger.info(f"  Módulo compartilhado de direção: {USE_SHARED_DIRECTION}")
         logger.info(f"  Min trades: {self.MIN_TRADES_TRAIN}/{self.MIN_TRADES_TEST}")
         logger.info(f"  Monte Carlo: {self.MONTE_CARLO_PERMUTATIONS} permutações")
@@ -252,9 +267,13 @@ class DTTRobustOptimizer:
             return 1 if trend > 0 else -1
 
     async def load_and_precompute(self, start_date: datetime, end_date: datetime,
-                                   split_date: datetime = None, train_ratio: float = 0.70):
+                                   split_date: datetime = None, train_ratio: float = 0.60):
         """
-        V3.2: Carrega dados e pre-calcula sinais DTT SEM LOOK-AHEAD
+        V3.3: Carrega dados e pre-calcula sinais DTT SEM LOOK-AHEAD
+
+        ESTRUTURA DE DADOS V3.3:
+        - 60% para calcular embedding (τ, m) e otimização walk-forward
+        - 20% reservado para OUT-OF-SAMPLE (nunca tocado durante otimização)
 
         CORREÇÃO CRÍTICA V3.2 (Auditoria Final):
         - Parâmetros de Embedding (τ, m) calculados APENAS com dados de TREINO
@@ -265,12 +284,13 @@ class DTTRobustOptimizer:
             start_date: Data inicial dos dados
             end_date: Data final dos dados
             split_date: Data de divisão (opcional, usa train_ratio se não fornecido)
-            train_ratio: Proporção de dados para treino (default: 70%)
+            train_ratio: Proporção de dados para treino/WF (default: 60%, resto é OOS)
         """
         print("\n" + "=" * 70)
-        print("  CARREGANDO DADOS REAIS - V3.2 SEM LOOK-AHEAD NO EMBEDDING")
+        print("  CARREGANDO DADOS REAIS - V3.3 COM OUT-OF-SAMPLE")
         print("=" * 70)
-        print("\n  ✓ CORREÇÃO: Embedding (τ,m) calculado APENAS com dados de TREINO")
+        print("\n  ✓ Embedding (τ,m) calculado APENAS com dados de TREINO")
+        print(f"  ✓ {self.OUT_OF_SAMPLE_RATIO*100:.0f}% reservado para OUT-OF-SAMPLE")
         print()
 
         self.bars = await download_historical_data(
@@ -281,19 +301,33 @@ class DTTRobustOptimizer:
         )
         print(f"  Total de barras: {len(self.bars)}")
 
-        if len(self.bars) < 1000:
-            print("  ERRO: Dados insuficientes! Mínimo 1000 barras para validação estatística.")
+        if len(self.bars) < 1500:
+            print("  ERRO: Dados insuficientes! Mínimo 1500 barras para validação com OOS.")
             return False
+
+        # =====================================================================
+        # V3.3: SEPARAR DADOS EM TREINO/WF E OUT-OF-SAMPLE
+        # =====================================================================
+        total_bars = len(self.bars)
+        oos_idx = int(total_bars * (1 - self.OUT_OF_SAMPLE_RATIO))
+
+        # Guardar barras OOS para validação final (NUNCA usadas na otimização)
+        self.oos_bars = self.bars[oos_idx:]
+        self.wf_bars = self.bars[:oos_idx]  # Barras para walk-forward
+
+        print(f"\n  Divisão de dados V3.3:")
+        print(f"    Walk-Forward: {len(self.wf_bars)} barras ({100*(1-self.OUT_OF_SAMPLE_RATIO):.0f}%)")
+        print(f"    Out-of-Sample: {len(self.oos_bars)} barras ({self.OUT_OF_SAMPLE_RATIO*100:.0f}%) - RESERVADO")
 
         # =====================================================================
         # V3.2: CALCULAR τ e m APENAS COM DADOS DE TREINO (ANTI LOOK-AHEAD)
         # =====================================================================
-        split_idx = int(len(self.bars) * train_ratio)
-        train_bars = self.bars[:split_idx]
+        # Usar apenas primeira parte dos dados WF para calcular embedding
+        split_idx = int(len(self.wf_bars) * train_ratio)
+        train_bars = self.wf_bars[:split_idx]
 
         print(f"\n  Calculando embedding com dados de TREINO apenas:")
-        print(f"    Barras de treino: {len(train_bars)} ({train_ratio*100:.0f}%)")
-        print(f"    Barras de teste:  {len(self.bars) - len(train_bars)} ({(1-train_ratio)*100:.0f}%)")
+        print(f"    Barras de treino (embedding): {len(train_bars)} ({train_ratio*100:.0f}% do WF)")
 
         # Extrair preços de treino para calcular τ e m
         train_prices = np.array([b.close for b in train_bars])
@@ -333,27 +367,32 @@ class DTTRobustOptimizer:
             tunneling_probability_threshold=0.05
         )
 
+        # =====================================================================
+        # V3.3: PRE-CALCULAR SINAIS PARA WALK-FORWARD (wf_bars)
+        # =====================================================================
         prices_buf = deque(maxlen=500)
         self.signals = []
         min_prices = 150
         error_count = 0
 
-        for i, bar in enumerate(self.bars):
+        print(f"\n  Pre-calculando sinais Walk-Forward ({len(self.wf_bars)} barras)...")
+
+        for i, bar in enumerate(self.wf_bars):
             prices_buf.append(bar.close)
 
             if len(prices_buf) < min_prices:
                 continue
 
-            if i >= len(self.bars) - 1:
+            if i >= len(self.wf_bars) - 1:
                 continue
 
             try:
                 result = dtt.analyze(np.array(prices_buf))
 
                 # V2.1: Direção via módulo compartilhado
-                direction = self._calculate_direction(i)
+                direction = self._calculate_direction_for_bars(self.wf_bars, i)
 
-                next_bar = self.bars[i + 1]
+                next_bar = self.wf_bars[i + 1]
 
                 self.signals.append(DTTSignal(
                     bar_idx=i,
@@ -371,21 +410,79 @@ class DTTRobustOptimizer:
             except Exception as e:
                 error_count += 1
                 if error_count <= 5:
-                    logger.warning(f"Erro na barra {i}: {e}")
+                    logger.warning(f"Erro WF na barra {i}: {e}")
                 continue
 
             if (i + 1) % 500 == 0:
-                print(f"    {i+1}/{len(self.bars)} barras...")
+                print(f"    WF: {i+1}/{len(self.wf_bars)} barras...")
 
-        print(f"\n  Sinais pre-calculados: {len(self.signals)}")
+        print(f"\n  Sinais Walk-Forward: {len(self.signals)}")
         if error_count > 0:
-            print(f"  Erros encontrados: {error_count}")
+            print(f"  Erros WF: {error_count}")
+
+        # =====================================================================
+        # V3.3: PRE-CALCULAR SINAIS PARA OUT-OF-SAMPLE (oos_bars)
+        # =====================================================================
+        print(f"\n  Pre-calculando sinais Out-of-Sample ({len(self.oos_bars)} barras)...")
+
+        # Iniciar com últimos preços do WF para continuidade
+        oos_prices_buf = deque(prices_buf, maxlen=500)
+        self.oos_signals = []
+        oos_error_count = 0
+
+        for i, bar in enumerate(self.oos_bars):
+            oos_prices_buf.append(bar.close)
+
+            if len(oos_prices_buf) < min_prices:
+                continue
+
+            if i >= len(self.oos_bars) - 1:
+                continue
+
+            try:
+                result = dtt.analyze(np.array(oos_prices_buf))
+                direction = self._calculate_direction_for_bars(self.oos_bars, i)
+                next_bar = self.oos_bars[i + 1]
+
+                self.oos_signals.append(DTTSignal(
+                    bar_idx=i,
+                    signal_price=bar.close,
+                    next_bar_idx=i + 1,
+                    entry_price=next_bar.open,
+                    high=next_bar.high,
+                    low=next_bar.low,
+                    persistence_entropy=result['entropy']['persistence_entropy'],
+                    tunneling_probability=result['tunneling']['tunneling_probability'],
+                    signal_strength=result['signal_strength'],
+                    direction=direction
+                ))
+
+            except Exception as e:
+                oos_error_count += 1
+                if oos_error_count <= 3:
+                    logger.warning(f"Erro OOS na barra {i}: {e}")
+                continue
+
+        print(f"  Sinais Out-of-Sample: {len(self.oos_signals)}")
+        if oos_error_count > 0:
+            print(f"  Erros OOS: {oos_error_count}")
 
         long_signals = sum(1 for s in self.signals if s.direction == 1)
         short_signals = sum(1 for s in self.signals if s.direction == -1)
-        print(f"    Long: {long_signals}, Short: {short_signals}")
+        print(f"\n  Distribuição WF - Long: {long_signals}, Short: {short_signals}")
 
-        return len(self.signals) > 500
+        return len(self.signals) > 500 and len(self.oos_signals) > 100
+
+    def _calculate_direction_for_bars(self, bars: List[Bar], bar_idx: int) -> int:
+        """
+        V3.3: Calcula direção para um conjunto específico de barras.
+        """
+        if bar_idx < DEFAULT_DIRECTION_LOOKBACK + 1:
+            return 0
+        recent_close = bars[bar_idx - 1].close
+        past_close = bars[bar_idx - DEFAULT_DIRECTION_LOOKBACK].close
+        trend = recent_close - past_close
+        return 1 if trend > 0 else -1
 
     def _calculate_backtest_result(self, pnls: List[float]) -> BacktestResult:
         """Calcula métricas de um backtest"""
@@ -581,31 +678,31 @@ class DTTRobustOptimizer:
             'significant': p_value < self.SIGNIFICANCE_LEVEL
         }
 
-    def _create_walk_forward_windows_sliding(self, n_windows: int = 6,
+    def _create_walk_forward_windows_sliding(self, n_windows: int = None,
                                               train_size_bars: int = None,
                                               test_size_bars: int = None,
                                               step_bars: int = None) -> List[Tuple[int, int, int, int]]:
         """
-        V3.1: Walk-Forward REAL com janelas DESLIZANTES
+        V3.3: Walk-Forward REAL com janelas DESLIZANTES
+
+        V3.3: Aumentado para 12 janelas (era 6) para maior significância estatística.
 
         Diferença do V2.1 (janelas independentes):
         - V2.1: Cada janela usa dados DIFERENTES (não sobrepostos)
-        - V3.1: Janelas DESLIZAM, treino cresce/move com o tempo
-
-        Exemplo com step=100, train=500, test=100 em 1000 barras:
-        - Janela 1: Train[0-500], Test[500-600]
-        - Janela 2: Train[100-600], Test[600-700]
-        - Janela 3: Train[200-700], Test[700-800]
-        - Janela 4: Train[300-800], Test[800-900]
-        - Janela 5: Train[400-900], Test[900-1000]
+        - V3.1+: Janelas DESLIZAM, treino cresce/move com o tempo
 
         Args:
-            n_windows: Número de janelas
-            train_size_bars: Tamanho do treino em barras (default: 60% dos dados)
+            n_windows: Número de janelas (default: N_WALK_FORWARD_WINDOWS = 12)
+            train_size_bars: Tamanho do treino em barras (default: 50% dos dados)
             test_size_bars: Tamanho do teste em barras (default: 10% dos dados)
             step_bars: Passo entre janelas (default: calculado automaticamente)
         """
-        total_bars = len(self.bars)
+        # V3.3: Usar constante da classe se não especificado
+        if n_windows is None:
+            n_windows = self.N_WALK_FORWARD_WINDOWS
+
+        # V3.3: Usar wf_bars (exclui OOS)
+        total_bars = len(self.wf_bars) if self.wf_bars else len(self.bars)
 
         # Defaults baseados no total de dados
         if train_size_bars is None:
@@ -653,7 +750,7 @@ class DTTRobustOptimizer:
         - Janelas deslizantes (não independentes)
         - Teste de significância estatística
         """
-        windows = self._create_walk_forward_windows_sliding(n_windows=6)
+        windows = self._create_walk_forward_windows_sliding()  # V3.3: Usa N_WALK_FORWARD_WINDOWS (12)
         wf_results = []
         all_train_pnls = []
         all_test_pnls = []
@@ -839,8 +936,97 @@ class DTTRobustOptimizer:
 
         return self.best
 
-    def save(self, n_tested: int = 0):
-        """Salva melhor configuração"""
+    def validate_out_of_sample(self, params: Dict = None) -> Optional[BacktestResult]:
+        """
+        V3.3: Valida parâmetros em dados Out-of-Sample (nunca vistos).
+
+        Esta validação é CRÍTICA - se os parâmetros não funcionarem em OOS,
+        há alto risco de overfitting.
+
+        Args:
+            params: Parâmetros a testar (default: self.best.params)
+
+        Returns:
+            BacktestResult do teste OOS ou None se falhar
+        """
+        if params is None:
+            if self.best is None:
+                logger.error("Nenhum resultado para validar OOS!")
+                return None
+            params = self.best.params
+
+        if not self.oos_signals:
+            logger.error("Sinais OOS não calculados!")
+            return None
+
+        print(f"\n{'='*70}")
+        print(f"  VALIDAÇÃO OUT-OF-SAMPLE V3.3")
+        print(f"  {len(self.oos_signals)} sinais em dados NUNCA VISTOS")
+        print(f"{'='*70}")
+
+        # Extrair parâmetros
+        entropy_thresh = params.get('persistence_entropy_threshold', 0.5)
+        tunneling_thresh = params.get('tunneling_probability_threshold', 0.15)
+        strength_thresh = params.get('min_signal_strength', 0.3)
+        sl = params.get('stop_loss_pips', 35)
+        tp = params.get('take_profit_pips', 52)
+
+        # Executar backtest em OOS
+        oos_pnls = self._run_backtest(
+            self.oos_signals, self.oos_bars,
+            entropy_thresh, tunneling_thresh, strength_thresh, sl, tp,
+            bar_offset=0
+        )
+
+        oos_result = self._calculate_backtest_result(oos_pnls)
+
+        print(f"\n  Resultados Out-of-Sample:")
+        print(f"    Trades: {oos_result.trades}")
+        print(f"    Win Rate: {oos_result.win_rate*100:.1f}%")
+        print(f"    Profit Factor: {oos_result.profit_factor:.2f}")
+        print(f"    Expectancy: {oos_result.expectancy:.2f} pips")
+        print(f"    Max Drawdown: {oos_result.max_drawdown*100:.1f}%")
+
+        # Comparar com resultados Walk-Forward
+        if self.best:
+            wf_pf = self.best.combined_test_result.profit_factor
+            oos_pf = oos_result.profit_factor
+            degradation = 1 - (oos_pf / wf_pf) if wf_pf > 0 else 1
+
+            print(f"\n  Comparação WF vs OOS:")
+            print(f"    Walk-Forward PF: {wf_pf:.2f}")
+            print(f"    Out-of-Sample PF: {oos_pf:.2f}")
+            print(f"    Degradação: {degradation*100:.1f}%")
+
+            if degradation > 0.30:
+                print(f"\n  ⚠️  AVISO: Degradação > 30% - POSSÍVEL OVERFITTING!")
+            elif degradation > 0.20:
+                print(f"\n  ⚠️  Degradação moderada - monitorar de perto")
+            else:
+                print(f"\n  ✓ Degradação aceitável - parâmetros parecem robustos")
+
+        # Verificar se passa nos filtros
+        is_valid = oos_result.is_valid_for_real_money(
+            min_trades=50,  # Menos exigente pois OOS é menor
+            min_pf=1.10,
+            min_win_rate=self.MIN_WIN_RATE - 0.05,
+            max_win_rate=self.MAX_WIN_RATE + 0.05,
+            max_dd=self.MAX_DRAWDOWN + 0.10,
+            min_expectancy=2.0
+        )
+
+        if is_valid:
+            print(f"\n  ✓ APROVADO: Resultados OOS passam nos filtros mínimos")
+        else:
+            print(f"\n  ✗ REPROVADO: Resultados OOS NÃO passam nos filtros")
+
+        self.oos_result = oos_result
+        return oos_result if is_valid else None
+
+    def save(self, n_tested: int = 0, oos_result: BacktestResult = None):
+        """
+        V3.3: Salva melhor configuração com resultados OOS
+        """
         if not self.best:
             print("  Nenhuma configuração robusta encontrada!")
             return
@@ -855,7 +1041,7 @@ class DTTRobustOptimizer:
 
         config = {
             "strategy": "DTT-TunelamentoTopologico",
-            "version": "3.2-no-lookahead",
+            "version": "3.3-robust-validation",
             "optimized_at": datetime.now(timezone.utc).isoformat(),
             "embedding": {
                 "time_delay_tau": self.fixed_tau,
@@ -864,15 +1050,36 @@ class DTTRobustOptimizer:
             },
             "validation": {
                 "method": "walk_forward_sliding_windows",
-                "n_windows": 6,
+                "n_windows": self.N_WALK_FORWARD_WINDOWS,
                 "min_trades_train": self.MIN_TRADES_TRAIN,
                 "min_trades_test": self.MIN_TRADES_TEST,
                 "monte_carlo_permutations": self.MONTE_CARLO_PERMUTATIONS,
                 "significance_level": self.SIGNIFICANCE_LEVEL,
+                "out_of_sample_ratio": self.OUT_OF_SAMPLE_RATIO,
             },
             "parameters": self.best.params,
             "performance": self.best.to_dict(),
         }
+
+        # V3.3: Incluir resultados Out-of-Sample
+        if oos_result:
+            config["out_of_sample"] = {
+                "trades": oos_result.trades,
+                "win_rate": round(oos_result.win_rate, 4),
+                "profit_factor": round(oos_result.profit_factor, 4),
+                "expectancy": round(oos_result.expectancy, 2),
+                "max_drawdown": round(oos_result.max_drawdown, 4),
+                "validated": oos_result.profit_factor >= 1.10,
+            }
+        elif hasattr(self, 'oos_result') and self.oos_result:
+            config["out_of_sample"] = {
+                "trades": self.oos_result.trades,
+                "win_rate": round(self.oos_result.win_rate, 4),
+                "profit_factor": round(self.oos_result.profit_factor, 4),
+                "expectancy": round(self.oos_result.expectancy, 2),
+                "max_drawdown": round(self.oos_result.max_drawdown, 4),
+                "validated": self.oos_result.profit_factor >= 1.10,
+            }
 
         with open(best_file, 'w') as f:
             json.dump(config, f, indent=2, default=str)
@@ -883,18 +1090,20 @@ async def main():
     N_COMBINATIONS = 500000
 
     print("=" * 70)
-    print("  OTIMIZADOR DTT V3.2 - ANTI LOOK-AHEAD COMPLETO")
+    print("  OTIMIZADOR DTT V3.3 - VALIDAÇÃO ESTATÍSTICA COMPLETA")
     print("=" * 70)
-    print("\n  CORREÇÃO CRÍTICA V3.2:")
+    print("\n  MELHORIAS V3.3:")
+    print("    ✓ Monte Carlo: 10.000 permutações (era 1.000)")
+    print("    ✓ Walk-Forward: 12 janelas (era 6)")
+    print("    ✓ Out-of-Sample: 20% reservado para validação final")
+    print("    ✓ Detecção de overfitting por degradação WF vs OOS")
+    print("\n  CORREÇÕES V3.2 (herdado):")
     print("    ✓ Embedding (τ,m) calculado APENAS com dados de TREINO")
     print("    ✓ Parâmetros FIXADOS para toda a análise")
     print("\n  CORREÇÕES V3.1 (herdado):")
     print("    ✓ Walk-Forward REAL (janelas DESLIZANTES)")
     print("    ✓ Teste de significância estatística (Monte Carlo)")
-    print("    ✓ Mínimo 200/100 trades para significância")
-    print("    ✓ Módulo compartilhado de direção")
     print("    ✓ p-value < 0.05 para validação")
-    print("    ✓ KDE exclui preço atual")
     print("=" * 70)
 
     opt = DTTRobustOptimizer("EURUSD", "H1")
@@ -905,7 +1114,21 @@ async def main():
     if await opt.load_and_precompute(start, end):
         best = opt.optimize(N_COMBINATIONS)
         if best:
-            opt.save(n_tested=N_COMBINATIONS)
+            # V3.3: Validação Out-of-Sample CRÍTICA
+            print("\n" + "=" * 70)
+            print("  FASE FINAL: VALIDAÇÃO OUT-OF-SAMPLE")
+            print("=" * 70)
+
+            oos_result = opt.validate_out_of_sample()
+
+            if oos_result:
+                print("\n  ✓ APROVADO: Parâmetros validados em dados OOS!")
+                opt.save(n_tested=N_COMBINATIONS, oos_result=oos_result)
+            else:
+                print("\n  ✗ REPROVADO: Parâmetros não passaram na validação OOS")
+                print("  POSSÍVEL OVERFITTING - não usar em produção!")
+                # Salvar mesmo assim para análise, mas marcar como não validado
+                opt.save(n_tested=N_COMBINATIONS)
         else:
             print("\n  AVISO: Nenhuma configuração passou nos filtros!")
             print("  Possíveis causas:")
