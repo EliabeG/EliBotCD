@@ -28,6 +28,14 @@ from scipy.optimize import minimize
 import warnings
 warnings.filterwarnings('ignore')
 
+# CORRECAO AUDITORIA: Importar logging estruturado
+try:
+    from config.logging_config import get_logger
+    _logger = get_logger("prm.indicator")
+except ImportError:
+    import logging
+    _logger = logging.getLogger(__name__)
+
 # CORRECAO AUDITORIA: Importar gerador de volumes centralizado
 try:
     from config.volume_generator import generate_synthetic_volumes, VOLUME_MULTIPLIER, VOLUME_BASE
@@ -51,14 +59,20 @@ except ImportError as e:
 class ProtocoloRiemannMandelbrot:
     """
     Implementação completa do Protocolo Riemann-Mandelbrot (PRM)
-    
-    VERSÃO CORRIGIDA - SEM LOOK-AHEAD BIAS
+
+    VERSÃO CORRIGIDA V2.1 - SEM LOOK-AHEAD BIAS
 
     Módulos:
     1. Detecção de Regime: Hidden Markov Models (HMM) Gaussianos
-    2. Processamento de Sinal: Transformada Wavelet Contínua (CWT)
+    2. Processamento de Sinal: Filtro EMA Causal (substitui CWT para evitar look-ahead)
+       NOTA: CWT mantida apenas para visualização via apply_cwt()
     3. Coração Matemático: Expoente de Lyapunov Máximo (λ_max)
     4. Gatilho de Disparo: Curvatura Tensorial (Geometria Diferencial)
+
+    CORREÇÕES V2.1 (Auditoria 25/12/2025):
+    - Volumes sintéticos centralizados (config/volume_generator.py)
+    - GARCH sem look-ahead residual
+    - Logging estruturado para erros
     """
 
     def __init__(self,
@@ -394,7 +408,13 @@ class ProtocoloRiemannMandelbrot:
             posterior_probs = self._forward_only_proba(features)
             states = self._forward_only_predict(features)
         except Exception as e:
-            # Em caso de erro, retornar valores neutros
+            # CORRECAO AUDITORIA: Logging estruturado ao inves de silenciar erro
+            _logger.error(
+                f"Erro no calculo HMM forward-only: {e}. "
+                f"Features shape: {features.shape if hasattr(features, 'shape') else 'N/A'}",
+                exc_info=True
+            )
+            # Retornar valores neutros mas com indicacao de erro
             return {
                 'posterior_probs': np.zeros((1, self.n_states)),
                 'states': np.array([0]),
@@ -405,7 +425,8 @@ class ProtocoloRiemannMandelbrot:
                 'prob_state_2': 0.0,
                 'hmm_activated': False,
                 'high_volatility_state': False,
-                'Prob_HMM': 0.0
+                'Prob_HMM': 0.0,
+                'error': str(e)  # CORRECAO: Incluir erro no retorno
             }
 
         # Estado mais provável para a barra ATUAL (última)

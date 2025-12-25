@@ -20,6 +20,14 @@ import numpy as np
 from ..base import BaseStrategy, Signal, SignalType
 from .prm_riemann_mandelbrot import ProtocoloRiemannMandelbrot
 
+# CORRECAO AUDITORIA: Importar logging estruturado
+try:
+    from config.logging_config import get_logger
+    _logger = get_logger("prm.strategy")
+except ImportError:
+    import logging
+    _logger = logging.getLogger(__name__)
+
 # CORRECAO AUDITORIA: Importar configuracao centralizada
 try:
     from config.prm_config import (
@@ -218,8 +226,12 @@ class PRMStrategy(BaseStrategy):
                 return signal
 
         except Exception as e:
-            # Log do erro mas continua operando
-            print(f"Erro na análise PRM: {e}")
+            # CORRECAO AUDITORIA: Usar logging estruturado
+            _logger.error(
+                f"Erro na análise PRM: {e}. "
+                f"Preços: {len(self.prices)}, Bar: {self.bar_count}",
+                exc_info=True
+            )
 
         return None
 
