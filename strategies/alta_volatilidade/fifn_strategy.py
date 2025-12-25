@@ -1,6 +1,12 @@
 """
 Adaptador de Estratégia para o Fluxo de Informação Fisher-Navier
 Integra o indicador FIFN com o sistema de trading
+
+VERSAO V3.0 - CORRIGIDO AUDITORIA 11:
+- Exclui barra atual para evitar look-ahead
+- Calcula direção baseada em barras FECHADAS (igual ao optimizer)
+- Usa direção para filtrar sinais
+- Suporta volumes opcionais
 """
 from datetime import datetime
 from typing import Optional
@@ -17,7 +23,15 @@ class FIFNStrategy(BaseStrategy):
 
     Usa o Número de Reynolds para identificar a "Kill Zone" (Sweet Spot)
     onde breakouts institucionais limpos ocorrem.
+
+    VERSAO V3.0 - CORRIGIDO:
+    - Sem look-ahead bias (exclui barra atual)
+    - Direção baseada em barras FECHADAS
+    - Consistente com optimizer.py
     """
+
+    # Parâmetros para cálculo de direção (consistente com optimizer)
+    MIN_BARS_FOR_DIRECTION = 12
 
     def __init__(self,
                  min_prices: int = 120,
@@ -42,9 +56,11 @@ class FIFNStrategy(BaseStrategy):
         self.min_prices = min_prices
         self.stop_loss_pips = stop_loss_pips
         self.take_profit_pips = take_profit_pips
+        self.skewness_threshold = skewness_threshold
 
-        # Buffer de preços
+        # Buffer de preços e volumes
         self.prices = deque(maxlen=600)
+        self.volumes = deque(maxlen=600)
 
         # Indicador FIFN
         self.fifn = FluxoInformacaoFisherNavier(
@@ -59,24 +75,49 @@ class FIFNStrategy(BaseStrategy):
         self.last_analysis = None
         self.signal_cooldown = 0
 
-    def add_price(self, price: float):
-        """Adiciona um preço ao buffer"""
+    def add_price(self, price: float, volume: float = None):
+        """Adiciona um preço e volume ao buffer"""
         self.prices.append(price)
+        if volume is not None:
+            self.volumes.append(volume)
 
-    def analyze(self, price: float, timestamp: datetime, **indicators) -> Optional[Signal]:
+    def _calculate_direction(self) -> int:
+        """
+        Calcula direção baseada em barras FECHADAS (igual ao optimizer)
+
+        AUDITORIA 11: Consistente com optimizer.py linhas 301-309
+        Usa tendência das últimas 10 barras FECHADAS
+        """
+        if len(self.prices) < self.MIN_BARS_FOR_DIRECTION:
+            return 0
+
+        prices_list = list(self.prices)
+        # IMPORTANTE: Usar barra -2 (última FECHADA), não -1 (atual em formação)
+        recent_close = prices_list[-2]   # Última barra FECHADA
+        past_close = prices_list[-12]    # 10 barras antes
+        trend = recent_close - past_close
+        return 1 if trend > 0 else -1
+
+    def analyze(self, price: float, timestamp: datetime, volume: float = None, **indicators) -> Optional[Signal]:
         """
         Analisa o mercado e retorna sinal se estiver na Kill Zone
+
+        VERSAO V3.0 - CORRIGIDO AUDITORIA 11:
+        - Exclui barra atual (prices_array[:-1])
+        - Calcula direção baseada em barras FECHADAS
+        - Filtra sinais usando direção (igual ao optimizer)
 
         Args:
             price: Preço atual
             timestamp: Timestamp do tick
+            volume: Volume do tick (opcional)
             **indicators: Indicadores adicionais
 
         Returns:
             Signal se na Kill Zone com direção clara, None caso contrário
         """
-        # Adiciona preço ao buffer
-        self.add_price(price)
+        # Adiciona preço e volume ao buffer
+        self.add_price(price, volume)
 
         # Verifica se temos dados suficientes
         if len(self.prices) < self.min_prices:
@@ -87,28 +128,50 @@ class FIFNStrategy(BaseStrategy):
             self.signal_cooldown -= 1
             return None
 
-        # Converte para numpy array
-        prices_array = np.array(self.prices)
+        # AUDITORIA 11 FIX #1: Excluir barra atual para evitar look-ahead
+        # A barra atual ainda está em formação, não podemos usar seu valor
+        prices_array = np.array(self.prices)[:-1]  # Exclui barra atual!
+
+        # Preparar volumes se disponíveis
+        volumes_array = None
+        if len(self.volumes) > 0:
+            volumes_array = np.array(self.volumes)[:-1]  # Também exclui volume atual
 
         try:
-            # Executa análise FIFN
-            result = self.fifn.analyze(prices_array)
+            # Executa análise FIFN (sem a barra atual)
+            result = self.fifn.analyze(prices_array, volumes_array)
             self.last_analysis = result
+
+            # AUDITORIA 11 FIX #2: Calcular direção baseada em barras FECHADAS
+            trend_direction = self._calculate_direction()
 
             # Verifica sinal
             directional = result['directional_signal']
+            skewness = directional['skewness']
+            pressure_gradient = directional['pressure_gradient']
 
-            if directional['signal'] != 0 and directional['in_sweet_spot']:
-                # Determina direção
-                if directional['signal'] == 1:
-                    direction = SignalType.BUY
-                else:
-                    direction = SignalType.SELL
+            # AUDITORIA 11 FIX #3: Filtrar usando direção (igual ao optimizer)
+            # Consistente com optimizer.py linhas 437-445
+            signal_type = None
 
+            if directional['in_sweet_spot']:
+                # LONG: skewness positiva, pressão negativa, tendência ALTA
+                if (skewness > self.skewness_threshold and
+                    pressure_gradient < 0 and
+                    trend_direction == 1):
+                    signal_type = SignalType.BUY
+
+                # SHORT: skewness negativa, pressão positiva, tendência BAIXA
+                elif (skewness < -self.skewness_threshold and
+                      pressure_gradient > 0 and
+                      trend_direction == -1):
+                    signal_type = SignalType.SELL
+
+            if signal_type is not None:
                 # Calcula níveis de stop e take profit
                 pip_value = 0.0001
 
-                if direction == SignalType.BUY:
+                if signal_type == SignalType.BUY:
                     stop_loss = price - (self.stop_loss_pips * pip_value)
                     take_profit = price + (self.take_profit_pips * pip_value)
                 else:
@@ -120,14 +183,14 @@ class FIFNStrategy(BaseStrategy):
 
                 # Cria sinal
                 signal = Signal(
-                    type=direction,
+                    type=signal_type,
                     price=price,
                     timestamp=timestamp,
                     strategy_name=self.name,
                     confidence=confidence,
                     stop_loss=stop_loss,
                     take_profit=take_profit,
-                    reason=self._generate_reason(result)
+                    reason=self._generate_reason(result, trend_direction)
                 )
 
                 self.last_signal = signal
@@ -140,19 +203,22 @@ class FIFNStrategy(BaseStrategy):
 
         return None
 
-    def _generate_reason(self, result: dict) -> str:
+    def _generate_reason(self, result: dict, trend_direction: int = 0) -> str:
         """Gera descrição do motivo do sinal"""
         re_class = result['reynolds_classification']
         directional = result['directional_signal']
+        trend_str = "UP" if trend_direction == 1 else ("DOWN" if trend_direction == -1 else "NEUTRAL")
 
         return (f"FIFN Kill Zone | "
                 f"Re={re_class['reynolds']:.0f} ({re_class['state']}) | "
                 f"Skew={directional['skewness']:.3f} | "
-                f"KL={directional['kl_divergence']:.4f}")
+                f"KL={directional['kl_divergence']:.4f} | "
+                f"Trend={trend_str}")
 
     def reset(self):
         """Reseta o estado da estratégia"""
         self.prices.clear()
+        self.volumes.clear()
         self.last_analysis = None
         self.last_signal = None
         self.signal_cooldown = 0
