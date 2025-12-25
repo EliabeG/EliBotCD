@@ -86,15 +86,27 @@ class FIFNStrategy(BaseStrategy):
         Calcula direção baseada em barras FECHADAS (igual ao optimizer)
 
         AUDITORIA 11: Consistente com optimizer.py linhas 301-309
-        Usa tendência das últimas 10 barras FECHADAS
+        AUDITORIA 23: Verificado que índices são equivalentes:
+        - Strategy: prices[-2] e prices[-12] -> diferença de 10 barras
+        - Optimizer: bars[i-1] e bars[i-11] -> diferença de 10 barras
+
+        Mapeamento:
+        - prices[-1] = barra atual (em formação)
+        - prices[-2] = última barra FECHADA = bars[i-1]
+        - prices[-12] = 10 barras antes da última fechada = bars[i-11]
         """
         if len(self.prices) < self.MIN_BARS_FOR_DIRECTION:
             return 0
 
         prices_list = list(self.prices)
-        # IMPORTANTE: Usar barra -2 (última FECHADA), não -1 (atual em formação)
+
+        # AUDITORIA 23: Índices verificados para consistência com optimizer
+        # recent_close = última barra FECHADA (prices[-2] = bars[i-1])
+        # past_close = 10 barras antes (prices[-12] = bars[i-11])
+        # Diferença: (-2) - (-12) = 10 barras = (i-1) - (i-11) = 10 barras ✓
         recent_close = prices_list[-2]   # Última barra FECHADA
-        past_close = prices_list[-12]    # 10 barras antes
+        past_close = prices_list[-12]    # 10 barras antes da última fechada
+
         trend = recent_close - past_close
         return 1 if trend > 0 else -1
 

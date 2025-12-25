@@ -564,8 +564,11 @@ class FIFNRobustOptimizer:
 
         return pnls
 
-    # AUDITORIA 3: Gap entre treino e teste para evitar data leakage
-    TRAIN_TEST_GAP_BARS = 24  # 24 barras = 1 dia para H1
+    # AUDITORIA 3/23: Gap entre treino e teste para evitar data leakage
+    # AUDITORIA 23: Aumentado de 24 para 70 barras
+    # Motivo: FIFN usa window_size=50 + kl_lookback=10 = 60 barras de dependência temporal
+    # Gap deve ser >= 60 + buffer(10) = 70 para evitar data leakage
+    TRAIN_TEST_GAP_BARS = 70  # 70 barras >= window_size + kl_lookback + buffer
 
     def _create_walk_forward_windows(self, n_windows: int = 4) -> List[Tuple[int, int, int, int]]:
         """
@@ -573,6 +576,7 @@ class FIFNRobustOptimizer:
 
         CORRIGIDO AUDITORIA 1: Janelas NAO-SOBREPOSTAS
         CORRIGIDO AUDITORIA 3: Gap de 24 barras entre treino e teste
+        CORRIGIDO AUDITORIA 23: Gap aumentado para 70 barras (>= dependência do indicador)
         Divide os dados em n_windows janelas sequenciais
         Cada janela: 70% treino, 30% teste (com gap)
         Janelas sao completamente independentes (sem overlap)
