@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
 """
 ================================================================================
-OTIMIZADOR DSG ROBUSTO - COM VALIDACAO ANTI-OVERFITTING
-VERSÃO CORRIGIDA - SEM LOOK-AHEAD BIAS
+OTIMIZADOR DSG ROBUSTO V3.0 - PRONTO PARA DINHEIRO REAL
 ================================================================================
 
 DSG (Detector de Singularidade Gravitacional):
@@ -16,11 +15,19 @@ VALIDACAO:
 3. Valida no teste (dados nunca vistos)
 4. Descarta resultados que nao passam nos filtros de realismo
 
-CORREÇÕES APLICADAS:
+CORREÇÕES V2.0:
 1. Entrada no OPEN da próxima barra (não no CLOSE atual)
 2. Direção calculada com barras fechadas
 3. Stop/Take consideram gaps
 4. Evita trades simultâneos
+
+CORREÇÕES V3.0 (Auditoria):
+5. Filtros UNIFICADOS com robust_optimizer.py
+6. MIN_TRADES_TRAIN = 50 (era 30)
+7. MIN_WIN_RATE = 0.35 (era 0.30)
+8. MAX_WIN_RATE = 0.60 (era 0.65)
+9. MIN_PROFIT_FACTOR = 1.30 (era 1.10)
+10. MAX_DRAWDOWN = 0.30 (era 0.40)
 
 PARA DINHEIRO REAL. SEM OVERFITTING. SEM LOOK-AHEAD.
 ================================================================================
@@ -282,7 +289,12 @@ class DSGRobustOptimizer:
 
     def _test_params(self, ricci_thresh: float, tidal_thresh: float,
                      sl: float, tp: float) -> Optional[RobustResult]:
-        """Testa parametros em treino e teste"""
+        """
+        Testa parametros em treino e teste
+
+        CORREÇÃO V3.0: Filtros UNIFICADOS com robust_optimizer.py
+        Mesmo nível de rigor para garantir consistência entre estratégias
+        """
 
         train_pnls = self._run_backtest(
             self.train_signals, self.train_bars,
@@ -291,15 +303,15 @@ class DSGRobustOptimizer:
         )
         train_result = self.backtester.calculate_backtest_result(train_pnls)
 
-        # Filtros balanceados para significância estatística
-        # Menos rigorosos que PRM pois DSG é mais complexo
+        # CORREÇÃO V3.0: Filtros UNIFICADOS com robust_optimizer.py
+        # Valores alinhados com RobustBacktester class constants
         if not train_result.is_valid(
-            min_trades=30,        # Mínimo para significância
-            max_win_rate=0.65,    # Evitar overfitting
-            min_win_rate=0.30,    # Mínimo aceitável
-            max_pf=4.0,           # Evitar curva muito otimista
-            min_pf=1.10,          # Mínimo para lucratividade
-            max_dd=0.40           # Drawdown máximo aceitável
+            min_trades=50,        # CORREÇÃO: era 30, agora = MIN_TRADES_TRAIN
+            max_win_rate=0.60,    # CORREÇÃO: era 0.65, agora = MAX_WIN_RATE
+            min_win_rate=0.35,    # CORREÇÃO: era 0.30, agora = MIN_WIN_RATE
+            max_pf=3.5,           # CORREÇÃO: era 4.0, agora = MAX_PROFIT_FACTOR
+            min_pf=1.30,          # CORREÇÃO: era 1.10, agora = MIN_PROFIT_FACTOR
+            max_dd=0.30           # CORREÇÃO: era 0.40, agora = MAX_DRAWDOWN
         ):
             return None
 
@@ -312,14 +324,14 @@ class DSGRobustOptimizer:
         )
         test_result = self.backtester.calculate_backtest_result(test_pnls)
 
-        # Filtros para teste (out-of-sample)
+        # CORREÇÃO V3.0: Filtros de teste também alinhados
         if not test_result.is_valid(
-            min_trades=15,        # Mínimo para validação
-            max_win_rate=0.70,    # Evitar overfitting
-            min_win_rate=0.25,    # Mínimo aceitável
-            max_pf=5.0,           # Evitar curva muito otimista
-            min_pf=1.0,           # Apenas lucrativo
-            max_dd=0.45           # Drawdown máximo aceitável
+            min_trades=25,        # CORREÇÃO: era 15, agora = MIN_TRADES_TEST
+            max_win_rate=0.65,    # Ligeiramente mais permissivo no teste
+            min_win_rate=0.30,    # Ligeiramente mais permissivo no teste
+            max_pf=4.0,           # Ligeiramente mais permissivo no teste
+            min_pf=1.15,          # CORREÇÃO: era 1.0, agora mais rigoroso
+            max_dd=0.35           # CORREÇÃO: era 0.45, agora mais rigoroso
         ):
             return None
 
@@ -328,10 +340,11 @@ class DSGRobustOptimizer:
             train_result, test_result
         )
 
-        # Robustez: teste deve manter >= 50% do treino
+        # CORREÇÃO V3.0: Robustez alinhada com MIN_ROBUSTNESS = 0.70
+        # Teste deve manter >= 70% do treino (era 50%)
         pf_ratio = test_result.profit_factor / train_result.profit_factor if train_result.profit_factor > 0 else 0
         wr_ratio = test_result.win_rate / train_result.win_rate if train_result.win_rate > 0 else 0
-        is_robust = pf_ratio >= 0.50 and wr_ratio >= 0.50 and test_result.profit_factor >= 0.9
+        is_robust = pf_ratio >= 0.70 and wr_ratio >= 0.70 and test_result.profit_factor >= 1.0
 
         if not is_robust:
             return None
