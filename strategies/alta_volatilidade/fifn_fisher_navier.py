@@ -432,6 +432,10 @@ class FluxoInformacaoFisherNavier:
     # MÓDULO 3: O Discriminador - Número de Reynolds Financeiro (Re)
     # =========================================================================
 
+    # AUDITORIA 22: Escala FIXA para Reynolds (calibrada com dados históricos)
+    # Isso garante consistência entre diferentes períodos de dados
+    REYNOLDS_SCALE_FACTOR = 1500.0  # Calibrado offline com 1 ano de dados EURUSD H1
+
     def calculate_reynolds_number(self, velocity: np.ndarray, viscosity: np.ndarray) -> np.ndarray:
         """
         O Discriminador: Número de Reynolds Financeiro (Re)
@@ -446,20 +450,20 @@ class FluxoInformacaoFisherNavier:
         - SWEET SPOT (2300 < Re < 4000): Transição de Turbulência. É aqui que ocorrem
           os breakouts institucionais limpos. A inércia venceu a viscosidade, mas o caos ainda
           não tomou conta.
+
+        AUDITORIA 22: Corrigido para usar escala FIXA
+        - Antes: scale_factor = 3000 / median(reynolds) -> variável!
+        - Depois: REYNOLDS_SCALE_FACTOR = 1500 -> fixo
         """
         L = self.characteristic_length
 
         # Re = |u| * L / nu
         reynolds = np.abs(velocity) * L / (viscosity + self.eps)
 
-        # Normalizar baseado nos percentis da distribuição
-        # Queremos que valores típicos caiam na faixa 1000-5000
-        p10 = np.percentile(reynolds[reynolds > 0], 10) if np.any(reynolds > 0) else 1
-        p90 = np.percentile(reynolds[reynolds > 0], 90) if np.any(reynolds > 0) else 1
-
-        # Escalar para que a mediana fique em torno de 2500-3000
-        scale_factor = 3000 / (np.median(reynolds[reynolds > 0]) + self.eps) if np.any(reynolds > 0) else 1000
-        reynolds_scaled = reynolds * scale_factor
+        # AUDITORIA 22: Usar escala FIXA (não depende dos dados atuais)
+        # Isso garante que o mesmo estado de mercado terá o mesmo Reynolds
+        # independente do período de dados carregado
+        reynolds_scaled = reynolds * self.REYNOLDS_SCALE_FACTOR
 
         # Limitar extremos
         reynolds_scaled = np.clip(reynolds_scaled, 0, 10000)
