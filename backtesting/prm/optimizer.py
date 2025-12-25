@@ -47,6 +47,21 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from api.fxopen_historical_ws import Bar, download_historical_data
 from strategies.alta_volatilidade.prm_riemann_mandelbrot import ProtocoloRiemannMandelbrot
 
+# CORRECAO AUDITORIA: Importar custos e filtros CENTRALIZADOS
+from config.execution_costs import SPREAD_PIPS, SLIPPAGE_PIPS
+from config.optimizer_filters import (
+    MIN_TRADES_TRAIN,
+    MIN_TRADES_TEST,
+    MIN_WIN_RATE,
+    MAX_WIN_RATE,
+    MIN_PROFIT_FACTOR,
+    MAX_PROFIT_FACTOR,
+    MAX_DRAWDOWN,
+    MIN_ROBUSTNESS,
+    MIN_EXPECTANCY_PIPS,
+)
+from config.prm_config import MIN_PRICES, HMM_MIN_TRAINING_SAMPLES
+
 
 @dataclass
 class PRMSignal:
@@ -173,24 +188,29 @@ class PRMRobustOptimizer:
     Otimizador PRM V2.0 com Walk-Forward Validation
 
     PRONTO PARA DINHEIRO REAL
+
+    CORRECAO AUDITORIA: Todos os custos e filtros agora sao importados
+    de config/execution_costs.py e config/optimizer_filters.py
     """
 
-    # Custos REALISTAS de execução
-    SPREAD_PIPS = 1.5      # Spread realista para EURUSD
-    SLIPPAGE_PIPS = 0.8    # Slippage médio realista
-    COMMISSION_PIPS = 0.0  # Comissão (se aplicável)
+    # CORRECAO AUDITORIA: Usar custos CENTRALIZADOS (config/execution_costs.py)
+    # Anteriormente definidos localmente, agora importados do config
+    SPREAD_PIPS = SPREAD_PIPS      # Importado de config/execution_costs.py
+    SLIPPAGE_PIPS = SLIPPAGE_PIPS  # Importado de config/execution_costs.py
+    COMMISSION_PIPS = 0.0          # Comissão (se aplicável)
 
-    # Filtros RIGOROSOS para dinheiro real
-    MIN_TRADES_TRAIN = 50
-    MIN_TRADES_TEST = 25
-    MIN_WIN_RATE = 0.35
-    MAX_WIN_RATE = 0.60
-    MIN_PF_TRAIN = 1.30    # Profit Factor mínimo treino
-    MIN_PF_TEST = 1.15     # Profit Factor mínimo teste
-    MAX_PF = 3.5           # Máximo (evitar overfitting)
-    MAX_DRAWDOWN = 0.30    # 30% máximo
-    MIN_ROBUSTNESS = 0.70  # Teste >= 70% do treino
-    MIN_EXPECTANCY = 3.0   # 3 pips por trade mínimo
+    # CORRECAO AUDITORIA: Usar filtros CENTRALIZADOS (config/optimizer_filters.py)
+    # Anteriormente definidos localmente, agora importados do config
+    MIN_TRADES_TRAIN = MIN_TRADES_TRAIN  # Importado de config
+    MIN_TRADES_TEST = MIN_TRADES_TEST    # Importado de config
+    MIN_WIN_RATE = MIN_WIN_RATE          # Importado de config
+    MAX_WIN_RATE = MAX_WIN_RATE          # Importado de config
+    MIN_PF_TRAIN = MIN_PROFIT_FACTOR     # Importado de config (MIN_PROFIT_FACTOR)
+    MIN_PF_TEST = 1.15                   # Profit Factor mínimo teste
+    MAX_PF = MAX_PROFIT_FACTOR           # Importado de config
+    MAX_DRAWDOWN = MAX_DRAWDOWN          # Importado de config
+    MIN_ROBUSTNESS = MIN_ROBUSTNESS      # Importado de config
+    MIN_EXPECTANCY = MIN_EXPECTANCY_PIPS # CORRECAO: Era 3.0, config usa 1.5
 
     def __init__(self, symbol: str = "EURUSD", periodicity: str = "H1"):
         self.symbol = symbol
@@ -258,6 +278,7 @@ class PRMRobustOptimizer:
         # Pre-calcular sinais para TODOS os dados
         print("\n  Pre-calculando sinais PRM V2.0 (sem look-ahead)...")
 
+        # CORRECAO AUDITORIA: Usar parametros centralizados
         prm = ProtocoloRiemannMandelbrot(
             n_states=3,
             hmm_threshold=0.1,
@@ -265,14 +286,14 @@ class PRMRobustOptimizer:
             curvature_threshold=0.0001,
             lookback_window=100,
             hmm_training_window=200,
-            hmm_min_training_samples=50
+            hmm_min_training_samples=HMM_MIN_TRAINING_SAMPLES  # CORRECAO: Usa config
         )
 
         prices_buf = deque(maxlen=500)
         volumes_buf = deque(maxlen=500)
         self.signals = []
 
-        min_prices = 50
+        min_prices = MIN_PRICES  # CORRECAO AUDITORIA: Era 50, agora usa config
         min_bars_for_direction = 12
 
         for i, bar in enumerate(self.bars):

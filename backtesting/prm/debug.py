@@ -30,6 +30,13 @@ from collections import deque
 from api.fxopen_historical_ws import download_historical_data
 from strategies.alta_volatilidade.prm_riemann_mandelbrot import ProtocoloRiemannMandelbrot
 
+# CORRECAO AUDITORIA: Importar min_prices centralizado
+try:
+    from config.prm_config import MIN_PRICES, HMM_MIN_TRAINING_SAMPLES
+except ImportError:
+    MIN_PRICES = 100
+    HMM_MIN_TRAINING_SAMPLES = 50
+
 
 async def main():
     print("=" * 60)
@@ -50,13 +57,13 @@ async def main():
         print("ERRO: Dados insuficientes!")
         return
 
-    # Calcular PRM com parâmetros CORRIGIDOS
+    # CORRECAO AUDITORIA: Usar config centralizado
     prm = ProtocoloRiemannMandelbrot(
         n_states=3,
         hmm_threshold=0.1,
         lyapunov_threshold_k=0.001,
-        hmm_training_window=200,        # Janela de treino do HMM
-        hmm_min_training_samples=50     # Mínimo de amostras
+        hmm_training_window=200,
+        hmm_min_training_samples=HMM_MIN_TRAINING_SAMPLES  # CORRECAO: Usa config
     )
 
     prices_buf = deque(maxlen=500)
@@ -78,7 +85,8 @@ async def main():
         prices_buf.append(bar.close)
         volumes_buf.append(bar.volume)
 
-        if len(prices_buf) < 50:
+        # CORRECAO AUDITORIA: Usar min_prices centralizado
+        if len(prices_buf) < MIN_PRICES:
             continue
 
         try:

@@ -20,6 +20,33 @@ import numpy as np
 from ..base import BaseStrategy, Signal, SignalType
 from .prm_riemann_mandelbrot import ProtocoloRiemannMandelbrot
 
+# CORRECAO AUDITORIA: Importar configuracao centralizada
+try:
+    from config.prm_config import (
+        MIN_PRICES,
+        DEFAULT_STOP_LOSS_PIPS,
+        DEFAULT_TAKE_PROFIT_PIPS,
+        HMM_THRESHOLD_DEFAULT,
+        LYAPUNOV_THRESHOLD_DEFAULT,
+        CURVATURE_THRESHOLD_DEFAULT,
+        HMM_TRAINING_WINDOW,
+        HMM_MIN_TRAINING_SAMPLES,
+        TREND_LOOKBACK,
+        SIGNAL_COOLDOWN,
+    )
+except ImportError:
+    # Fallback para valores padrão se config não disponível
+    MIN_PRICES = 100
+    DEFAULT_STOP_LOSS_PIPS = 20.0
+    DEFAULT_TAKE_PROFIT_PIPS = 40.0
+    HMM_THRESHOLD_DEFAULT = 0.85
+    LYAPUNOV_THRESHOLD_DEFAULT = 0.5
+    CURVATURE_THRESHOLD_DEFAULT = 0.1
+    HMM_TRAINING_WINDOW = 200
+    HMM_MIN_TRAINING_SAMPLES = 50
+    TREND_LOOKBACK = 10
+    SIGNAL_COOLDOWN = 10
+
 
 class PRMStrategy(BaseStrategy):
     """
@@ -37,15 +64,15 @@ class PRMStrategy(BaseStrategy):
     """
 
     def __init__(self,
-                 min_prices: int = 100,
-                 stop_loss_pips: float = 15.0,
-                 take_profit_pips: float = 30.0,
-                 hmm_threshold: float = 0.85,
-                 lyapunov_threshold: float = 0.5,
-                 curvature_threshold: float = 0.1,
-                 hmm_training_window: int = 200,
-                 hmm_min_training_samples: int = 50,
-                 trend_lookback: int = 10):
+                 min_prices: int = None,  # CORRECAO: Usa config centralizado
+                 stop_loss_pips: float = None,  # CORRECAO: Usa config centralizado
+                 take_profit_pips: float = None,  # CORRECAO: Usa config centralizado
+                 hmm_threshold: float = None,
+                 lyapunov_threshold: float = None,
+                 curvature_threshold: float = None,
+                 hmm_training_window: int = None,
+                 hmm_min_training_samples: int = None,
+                 trend_lookback: int = None):
         """
         Inicializa a estratégia PRM
 
@@ -62,31 +89,40 @@ class PRMStrategy(BaseStrategy):
         """
         super().__init__(name="PRM-RiemannMandelbrot")
 
-        self.min_prices = min_prices
-        self.stop_loss_pips = stop_loss_pips
-        self.take_profit_pips = take_profit_pips
-        self.trend_lookback = trend_lookback
+        # CORRECAO AUDITORIA: Usar valores centralizados quando não especificado
+        self.min_prices = min_prices if min_prices is not None else MIN_PRICES
+        self.stop_loss_pips = stop_loss_pips if stop_loss_pips is not None else DEFAULT_STOP_LOSS_PIPS
+        self.take_profit_pips = take_profit_pips if take_profit_pips is not None else DEFAULT_TAKE_PROFIT_PIPS
+        self.trend_lookback = trend_lookback if trend_lookback is not None else TREND_LOOKBACK
+
+        # Valores para o PRM
+        _hmm_threshold = hmm_threshold if hmm_threshold is not None else HMM_THRESHOLD_DEFAULT
+        _lyapunov_threshold = lyapunov_threshold if lyapunov_threshold is not None else LYAPUNOV_THRESHOLD_DEFAULT
+        _curvature_threshold = curvature_threshold if curvature_threshold is not None else CURVATURE_THRESHOLD_DEFAULT
+        _hmm_training_window = hmm_training_window if hmm_training_window is not None else HMM_TRAINING_WINDOW
+        _hmm_min_training_samples = hmm_min_training_samples if hmm_min_training_samples is not None else HMM_MIN_TRAINING_SAMPLES
 
         # Buffer de preços
         self.prices = deque(maxlen=500)
         self.volumes = deque(maxlen=500)
-        
+
         # NOVO: Buffer de closes para calcular tendência sem look-ahead
         self.closes_history = deque(maxlen=500)
 
-        # Indicador PRM com novos parâmetros
+        # Indicador PRM com parâmetros centralizados
         self.prm = ProtocoloRiemannMandelbrot(
             n_states=3,
-            hmm_threshold=hmm_threshold,
-            lyapunov_threshold_k=lyapunov_threshold,
-            curvature_threshold=curvature_threshold,
+            hmm_threshold=_hmm_threshold,
+            lyapunov_threshold_k=_lyapunov_threshold,
+            curvature_threshold=_curvature_threshold,
             lookback_window=100,
-            hmm_training_window=hmm_training_window,          # NOVO
-            hmm_min_training_samples=hmm_min_training_samples  # NOVO
+            hmm_training_window=_hmm_training_window,
+            hmm_min_training_samples=_hmm_min_training_samples
         )
 
         # Estado
         self.last_analysis = None
+        self._signal_cooldown_max = SIGNAL_COOLDOWN
         self.signal_cooldown = 0  # Evita sinais em sequência
         self.bar_count = 0  # NOVO: Contador de barras processadas
 
@@ -177,7 +213,7 @@ class PRMStrategy(BaseStrategy):
                 )
 
                 self.last_signal = signal
-                self.signal_cooldown = 10  # Cooldown de 10 ticks
+                self.signal_cooldown = self._signal_cooldown_max  # CORRECAO: Usa config
 
                 return signal
 
