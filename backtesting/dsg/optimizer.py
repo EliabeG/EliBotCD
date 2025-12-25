@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 ================================================================================
-OTIMIZADOR DSG ROBUSTO V3.0 - PRONTO PARA DINHEIRO REAL
+OTIMIZADOR DSG ROBUSTO V3.1 - PRONTO PARA DINHEIRO REAL
 ================================================================================
 
 DSG (Detector de Singularidade Gravitacional):
@@ -28,6 +28,11 @@ CORREÇÕES V3.0 (Auditoria):
 8. MAX_WIN_RATE = 0.60 (era 0.65)
 9. MIN_PROFIT_FACTOR = 1.30 (era 1.10)
 10. MAX_DRAWDOWN = 0.30 (era 0.40)
+
+CORREÇÕES V3.1 (Auditoria Completa 24/12/2025):
+11. Usa DSG V3.1 com validação de inputs, thread-safety, subsampling adaptativo
+12. Volumes sintéticos agora usam função CENTRALIZADA (config/volume_generator.py)
+13. Consistência garantida entre backtest, estratégia e indicador
 
 PARA DINHEIRO REAL. SEM OVERFITTING. SEM LOOK-AHEAD.
 ================================================================================
