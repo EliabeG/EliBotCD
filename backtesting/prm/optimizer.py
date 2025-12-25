@@ -104,10 +104,17 @@ class BacktestResult:
                                 max_pf: float = 3.5,
                                 min_pf: float = 1.30,
                                 max_dd: float = 0.30,
-                                min_expectancy: float = 3.0) -> bool:
+                                min_expectancy: float = None) -> bool:
         """
         Verifica se o resultado passa nos filtros RIGOROSOS para dinheiro real
+
+        CORRECAO AUDITORIA: min_expectancy agora usa None como default
+        e busca valor do config/optimizer_filters.py quando não especificado.
         """
+        # CORRECAO: Usar valor do config se não especificado
+        if min_expectancy is None:
+            min_expectancy = MIN_EXPECTANCY_PIPS
+
         if self.trades < min_trades:
             return False
         if self.win_rate > max_win_rate or self.win_rate < min_win_rate:
