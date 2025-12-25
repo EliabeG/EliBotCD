@@ -22,6 +22,9 @@ CORREÇÕES V2.1 (Quarta Auditoria 25/12/2025):
 3. WALK-FORWARD CORRETO: Janela deslizante real (não expanding window)
 4. Consistência garantida entre optimizer.py e optimizer_wf.py
 
+CORREÇÕES V2.2 (Quinta Auditoria 25/12/2025):
+5. RANGES UNIFICADOS: Ricci range agora igual ao optimizer.py (-51000 a -49500)
+
 ================================================================================
 """
 
@@ -586,9 +589,9 @@ class DSGWalkForwardOptimizer:
 
         # Ranges calibrados baseados na distribuicao REAL
         # Ricci: sempre muito negativo (-51000 a -49500)
-        # Como ricci_collapse sempre e True, o threshold nao importa muito
-        # Mas vamos testar uma faixa que permite variar a sensibilidade
-        ricci_vals = np.linspace(-51000, -49000, 15)
+        # CORREÇÃO V2.2: Unificado com optimizer.py para consistência
+        # Valores reais observados: -51000 a -49500
+        ricci_vals = np.linspace(-51000, -49500, 15)
 
         # Tidal: 0.0001 a 0.067 (media 0.009)
         # Vamos testar percentis para calibrar

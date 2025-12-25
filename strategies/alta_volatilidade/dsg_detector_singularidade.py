@@ -12,7 +12,7 @@ infinita e as regras normais cessam.
 Dependências Críticas: jax ou tensorflow (para operações tensoriais aceleradas e diferenciação
 automática), numpy (uso extensivo de einsum), scipy.spatial
 
-VERSÃO V3.4 - CORREÇÕES DA QUARTA AUDITORIA (25/12/2025)
+VERSÃO V3.5 - CORREÇÕES DA QUINTA AUDITORIA (25/12/2025)
 ===========================================================
 Correções aplicadas (V2.0):
 1. Substituído gaussian_filter1d (não-causal) por EMA causal
@@ -52,6 +52,11 @@ Correções aplicadas (V3.4 - Quarta Auditoria 25/12/2025):
 25. RICCI_THRESHOLD: Valor padrão corrigido para escala real (-50500 ao invés de -0.5)
 26. RICCI_CONDITION: Usa percentil dinâmico do histórico para filtrar sinais
 27. DIRECTION_FALLBACK: Removido fallback que gerava sinais com histórico insuficiente
+
+Correções aplicadas (V3.5 - Quinta Auditoria 25/12/2025):
+28. NAN_HANDLING: NaN NÃO é mais substituído por 0.0 (semanticamente errado)
+29. HAS_VALID_DATA: Novo flag para tratar dados NaN corretamente
+30. SIGNAL_GENERATION: Retorna NEUTRO quando dados são NaN (não 0.0)
 """
 
 import numpy as np
@@ -1082,18 +1087,19 @@ class DetectorSingularidadeGravitacional:
         tidal_series = self._apply_ema_causal(tidal_series, alpha=0.3)
 
         # CORREÇÃO V3.0: Valores da última barra FECHADA (não a atual)
-        # CORREÇÃO V3.2: Tratar NaN - se o valor é NaN, usar 0.0 como fallback
         current_ricci = ricci_series[last_closed_idx] if last_closed_idx < len(ricci_series) else ricci_series[-1]
         current_tidal = tidal_series[last_closed_idx] if last_closed_idx < len(tidal_series) else tidal_series[-1]
         current_distance = distance_series[last_closed_idx] if last_closed_idx < len(distance_series) else distance_series[-1]
 
-        # CORREÇÃO V3.2: Se valores são NaN (insuficiente histórico), usar 0.0
-        if np.isnan(current_ricci):
-            current_ricci = 0.0
-        if np.isnan(current_tidal):
-            current_tidal = 0.0
-        if np.isnan(current_distance):
-            current_distance = 0.0
+        # CORREÇÃO V3.5: NÃO substituir NaN por 0.0 (era semanticamente errado)
+        # Ricci=0 significa "espaço plano" (mercado eficiente)
+        # Ricci=NaN significa "dados insuficientes"
+        # Agora mantemos NaN e tratamos corretamente em _generate_signal()
+        has_valid_data = (
+            not np.isnan(current_ricci) and
+            not np.isnan(current_tidal) and
+            not np.isnan(current_distance)
+        )
 
         # CORREÇÃO V3.2: Acesso aos históricos DENTRO do lock para thread-safety
         with self._lock:
@@ -1139,11 +1145,13 @@ class DetectorSingularidadeGravitacional:
         # Gerar sinal
         # CORREÇÃO V3.3: Passar tamanho do histórico para validação
         # CORREÇÃO V3.4: Passar histórico de Ricci para percentil dinâmico
+        # CORREÇÃO V3.5: Passar flag de dados válidos (não NaN)
         signal_result = self._generate_signal(
             current_ricci, current_tidal, current_distance,
             ricci_collapsing, crossing_horizon, geodesic_direction,
             history_length=len(self._coords_history),
-            ricci_history=self._ricci_history.copy()  # Cópia para evitar modificação
+            ricci_history=self._ricci_history.copy(),  # Cópia para evitar modificação
+            has_valid_data=has_valid_data  # CORREÇÃO V3.5: Flag para dados válidos
         )
 
         # Output principal
@@ -1215,7 +1223,8 @@ class DetectorSingularidadeGravitacional:
                          ricci_collapsing: bool, crossing_horizon: bool,
                          geodesic_direction: float,
                          history_length: int = 0,
-                         ricci_history: list = None) -> dict:
+                         ricci_history: list = None,
+                         has_valid_data: bool = True) -> dict:
         """
         Gera sinal de trading baseado na análise gravitacional
 
@@ -1232,7 +1241,21 @@ class DetectorSingularidadeGravitacional:
         CORREÇÃO V3.4: Parâmetro ricci_history adicionado para usar percentil
         dinâmico ao invés de threshold fixo. Isso garante que o filtro de Ricci
         seja efetivo na prática.
+
+        CORREÇÃO V3.5: Parâmetro has_valid_data adicionado para tratar NaN
+        corretamente. NaN NÃO é substituído por 0.0 (semanticamente errado).
         """
+        # CORREÇÃO V3.5: Verificar se dados são válidos (não NaN)
+        # NaN significa "dados insuficientes", NÃO "espaço plano" (que seria 0.0)
+        if not has_valid_data:
+            return {
+                'signal': 0,
+                'signal_name': 'NEUTRO',
+                'confidence': 0.0,
+                'reasons': ['Dados insuficientes (NaN detectado em Ricci, Tidal ou Distance)'],
+                'conditions_met': 0
+            }
+
         # CORREÇÃO V3.3: Verificar histórico mínimo ANTES de gerar sinal
         # Sinais com histórico insuficiente não são confiáveis
         if history_length < self.min_history_for_signal:
