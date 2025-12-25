@@ -156,6 +156,9 @@ class FluxoInformacaoFisherNavier:
         g(theta) = integral p(x|theta) * (d ln p / d theta)^2 dx
 
         Na prática, usamos a variância do score function como aproximação.
+
+        AUDITORIA 23: Corrigido gradient clipping ANTES de elevar ao quadrado
+        - Previne overflow numérico quando pdf é próximo de zero nas caudas
         """
         if len(returns) < 5:
             return 0.0
@@ -169,6 +172,10 @@ class FluxoInformacaoFisherNavier:
 
         # Derivada numérica (central differences para estabilidade)
         d_log_pdf = np.gradient(log_pdf, dx)
+
+        # AUDITORIA 23 FIX: Clip gradient ANTES de elevar ao quadrado
+        # Previne overflow quando pdf é próximo de zero nas caudas
+        d_log_pdf = np.clip(d_log_pdf, -100, 100)
 
         # Fisher Information: E[(d ln p / d theta)^2] = integral p(x) * (d ln p / d theta)^2 dx
         fisher_info = simps(pdf * d_log_pdf**2, x_grid)
@@ -432,8 +439,8 @@ class FluxoInformacaoFisherNavier:
     # MÓDULO 3: O Discriminador - Número de Reynolds Financeiro (Re)
     # =========================================================================
 
-    # AUDITORIA 22: Escala FIXA para Reynolds (calibrada com dados históricos)
-    # Isso garante consistência entre diferentes períodos de dados
+    # AUDITORIA 22/23: Escala FIXA para Reynolds (calibrada com dados históricos)
+    # AUDITORIA 23: Normalização de velocity/viscosity para consistência
     REYNOLDS_SCALE_FACTOR = 1500.0  # Calibrado offline com 1 ano de dados EURUSD H1
 
     def calculate_reynolds_number(self, velocity: np.ndarray, viscosity: np.ndarray) -> np.ndarray:
@@ -452,17 +459,26 @@ class FluxoInformacaoFisherNavier:
           não tomou conta.
 
         AUDITORIA 22: Corrigido para usar escala FIXA
-        - Antes: scale_factor = 3000 / median(reynolds) -> variável!
-        - Depois: REYNOLDS_SCALE_FACTOR = 1500 -> fixo
+        AUDITORIA 23: Normalização de velocity/viscosity ANTES do cálculo
+        - Garante que valores de entrada são comparáveis entre diferentes períodos
         """
         L = self.characteristic_length
 
-        # Re = |u| * L / nu
-        reynolds = np.abs(velocity) * L / (viscosity + self.eps)
+        # AUDITORIA 23 FIX: Normalizar velocity e viscosity ANTES de calcular Reynolds
+        # Isso garante consistência mesmo quando os dados de entrada variam
+        velocity_std = np.std(velocity) + self.eps
+        viscosity_mean = np.mean(viscosity) + self.eps
+
+        # Z-score normalização para velocity (centraliza em 0, std=1)
+        velocity_normalized = velocity / velocity_std
+
+        # Normalização por média para viscosity (escala relativa)
+        viscosity_normalized = viscosity / viscosity_mean
+
+        # Re = |u| * L / nu (com valores normalizados)
+        reynolds = np.abs(velocity_normalized) * L / (viscosity_normalized + self.eps)
 
         # AUDITORIA 22: Usar escala FIXA (não depende dos dados atuais)
-        # Isso garante que o mesmo estado de mercado terá o mesmo Reynolds
-        # independente do período de dados carregado
         reynolds_scaled = reynolds * self.REYNOLDS_SCALE_FACTOR
 
         # Limitar extremos
