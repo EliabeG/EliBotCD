@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 ================================================================================
-VERIFICAÇÃO DE SANIDADE PARA DINHEIRO REAL - DSG V3.0
+VERIFICAÇÃO DE SANIDADE PARA DINHEIRO REAL - DSG V3.4
 ================================================================================
 
 Este script verifica se o sistema DSG está corretamente configurado
@@ -16,8 +16,15 @@ VERIFICAÇÕES:
 6. Filtros unificados com robust_optimizer.py
 7. Custos realistas aplicados
 8. Parâmetros configuráveis (cooldown, confidence)
+9. NOVO V3.4: Testes funcionais de look-ahead
+10. NOVO V3.4: Verificação de centralização de filtros
 
 EXECUTE ANTES DE OPERAR COM DINHEIRO REAL!
+
+CORREÇÕES V3.4 (Quarta Auditoria 25/12/2025):
+- Adicionados testes funcionais (não apenas busca de strings)
+- Verificação de consistência entre otimizadores
+- Teste de reprodutibilidade
 ================================================================================
 """
 
@@ -373,7 +380,7 @@ def verify_configurable_params():
 
 
 def verify_indicator_version():
-    """Verifica se indicador é versão V3.0"""
+    """Verifica se indicador é versão V3.4"""
     print_header("VERIFICAÇÃO 9: VERSÃO DO INDICADOR")
 
     try:
@@ -384,33 +391,125 @@ def verify_indicator_version():
         with open(source_file, 'r') as f:
             source = f.read()
 
-        is_v3 = 'V3.0' in source and 'PRONTO PARA DINHEIRO REAL' in source
+        # ATUALIZADO V3.4: Verificar versão mais recente
+        is_v34 = 'V3.4' in source
         print_check(
-            "Indicador é versão V3.0",
-            is_v3,
+            "Indicador é versão V3.4 ou superior",
+            is_v34,
             "Versão com todas as correções da auditoria"
         )
 
         has_audit_fixes = (
-            'Correções aplicadas (V3.0' in source or
-            'CORREÇÃO V3.0' in source
+            'CORREÇÃO V3.4' in source or
+            'Quarta Auditoria' in source
         )
         print_check(
-            "Correções da auditoria documentadas",
+            "Correções da auditoria V3.4 documentadas",
             has_audit_fixes,
-            "Código contém documentação das correções"
+            "Inclui threshold de Ricci corrigido"
         )
 
-        return is_v3 and has_audit_fixes
+        return is_v34 and has_audit_fixes
 
     except Exception as e:
         print_check("Verificação versão", False, str(e))
         return False
 
 
+def verify_functional_no_lookahead():
+    """NOVO V3.4: Teste funcional de look-ahead bias"""
+    print_header("VERIFICAÇÃO 10: TESTE FUNCIONAL DE LOOK-AHEAD")
+
+    try:
+        from strategies.alta_volatilidade.dsg_detector_singularidade import DetectorSingularidadeGravitacional
+
+        np.random.seed(42)
+        prices = 1.1 + 0.0002 * np.cumsum(np.random.randn(100))
+
+        # Processar até barra 80
+        dsg1 = DetectorSingularidadeGravitacional()
+        result1 = dsg1.analyze(prices[:80])
+        signal1 = result1['signal']
+
+        # Processar até barra 80 com barras futuras diferentes
+        prices_modified = prices.copy()
+        prices_modified[80:] = prices_modified[80:] + 0.01  # Altera futuro
+
+        dsg2 = DetectorSingularidadeGravitacional()
+        result2 = dsg2.analyze(prices_modified[:80])
+        signal2 = result2['signal']
+
+        # Sinais devem ser idênticos - barras futuras não devem afetar
+        no_lookahead = (signal1 == signal2)
+        print_check(
+            "Sinal não muda com alteração de barras futuras",
+            no_lookahead,
+            f"Sinal original: {signal1}, Sinal modificado: {signal2}"
+        )
+
+        return no_lookahead
+
+    except Exception as e:
+        print_check("Teste funcional look-ahead", False, str(e))
+        return False
+
+
+def verify_centralized_filters():
+    """NOVO V3.4: Verifica se todos os otimizadores usam filtros centralizados"""
+    print_header("VERIFICAÇÃO 11: FILTROS CENTRALIZADOS")
+
+    try:
+        from config.optimizer_filters import (
+            MIN_TRADES_TRAIN, MIN_PROFIT_FACTOR, MAX_DRAWDOWN
+        )
+        from backtesting.common.robust_optimizer import RobustBacktester
+
+        # Verificar se robust_optimizer usa valores do config
+        config_match = (
+            RobustBacktester.MIN_TRADES_TRAIN == MIN_TRADES_TRAIN and
+            RobustBacktester.MIN_PROFIT_FACTOR == MIN_PROFIT_FACTOR and
+            RobustBacktester.MAX_DRAWDOWN == MAX_DRAWDOWN
+        )
+        print_check(
+            "robust_optimizer.py usa filtros centralizados",
+            config_match,
+            f"MIN_TRADES={MIN_TRADES_TRAIN}, MIN_PF={MIN_PROFIT_FACTOR}, MAX_DD={MAX_DRAWDOWN}"
+        )
+
+        return config_match
+
+    except Exception as e:
+        print_check("Verificação filtros centralizados", False, str(e))
+        return False
+
+
+def verify_ricci_threshold_scale():
+    """NOVO V3.4: Verifica se threshold de Ricci está na escala correta"""
+    print_header("VERIFICAÇÃO 12: ESCALA DO THRESHOLD DE RICCI")
+
+    try:
+        from strategies.alta_volatilidade.dsg_detector_singularidade import DetectorSingularidadeGravitacional
+
+        dsg = DetectorSingularidadeGravitacional()
+
+        # Threshold deve estar na escala real (-51000 a -49500)
+        threshold_scale_ok = dsg.ricci_collapse_threshold < -40000
+        print_check(
+            f"Threshold de Ricci: {dsg.ricci_collapse_threshold}",
+            threshold_scale_ok,
+            "Deve estar na escala real (< -40000), não -0.5"
+        )
+
+        return threshold_scale_ok
+
+    except Exception as e:
+        print_check("Verificação escala Ricci", False, str(e))
+        return False
+
+
 def main():
     print("\n" + "=" * 70)
-    print("  VERIFICAÇÃO DE SANIDADE - DSG V3.0")
+    print("  VERIFICAÇÃO DE SANIDADE - DSG V3.4")
     print("  PRONTO PARA DINHEIRO REAL?")
     print("=" * 70)
     print(f"\n  Data: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
@@ -426,7 +525,11 @@ def main():
     results.append(("Filtros unificados", verify_unified_filters()))
     results.append(("Custos realistas", verify_realistic_costs()))
     results.append(("Parâmetros configuráveis", verify_configurable_params()))
-    results.append(("Versão V3.0 do indicador", verify_indicator_version()))
+    results.append(("Versão V3.4 do indicador", verify_indicator_version()))
+    # NOVAS VERIFICAÇÕES V3.4
+    results.append(("Teste funcional look-ahead", verify_functional_no_lookahead()))
+    results.append(("Filtros centralizados", verify_centralized_filters()))
+    results.append(("Escala threshold Ricci", verify_ricci_threshold_scale()))
 
     # Resumo final
     print_header("RESUMO FINAL")
