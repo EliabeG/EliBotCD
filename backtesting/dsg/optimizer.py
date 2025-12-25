@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 ================================================================================
-OTIMIZADOR DSG ROBUSTO V3.1 - PRONTO PARA DINHEIRO REAL
+OTIMIZADOR DSG ROBUSTO V3.2 - PRONTO PARA DINHEIRO REAL
 ================================================================================
 
 DSG (Detector de Singularidade Gravitacional):
@@ -29,10 +29,17 @@ CORREÇÕES V3.0 (Auditoria):
 9. MIN_PROFIT_FACTOR = 1.30 (era 1.10)
 10. MAX_DRAWDOWN = 0.30 (era 0.40)
 
-CORREÇÕES V3.1 (Auditoria Completa 24/12/2025):
+CORREÇÕES V3.1 (Auditoria Completa):
 11. Usa DSG V3.1 com validação de inputs, thread-safety, subsampling adaptativo
 12. Volumes sintéticos agora usam função CENTRALIZADA (config/volume_generator.py)
 13. Consistência garantida entre backtest, estratégia e indicador
+
+CORREÇÕES V3.2 (Segunda Auditoria 24/12/2025):
+14. Verificação de erro em resultado de análise
+15. Usa DSG V3.2 com correções de look-ahead residual
+16. Step function usa NaN ao invés de 0.0
+17. Centro de massa usa NaN quando histórico vazio
+18. Thread-safety completo em todos os acessos ao histórico
 
 PARA DINHEIRO REAL. SEM OVERFITTING. SEM LOOK-AHEAD.
 ================================================================================
@@ -186,7 +193,14 @@ class DSGRobustOptimizer:
 
             try:
                 prices_arr = np.array(prices_buf)
+                # CORREÇÃO V3.2: Volumes não passados explicitamente porque
+                # DSG V3.2 usa generate_synthetic_volumes() internamente
+                # Isso garante consistência com dsg_strategy.py em produção
                 result = dsg.analyze(prices_arr)
+
+                # CORREÇÃO V3.2: Verificar se análise falhou
+                if 'error' in result and result['error']:
+                    continue
 
                 # CORREÇÃO: Entrada no OPEN da PRÓXIMA barra
                 next_bar = self.bars[i + 1]
