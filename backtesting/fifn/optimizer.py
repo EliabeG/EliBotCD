@@ -182,14 +182,16 @@ class FIFNRobustOptimizer:
     COMMISSION_PIPS = 0.0
 
     # Filtros RIGOROSOS para dinheiro real
+    # AUDITORIA 24: Aumentado MIN_TRADES_TEST de 25 para 35
+    # AUDITORIA 24: Reduzido MAX_DRAWDOWN de 30% para 20%
     MIN_TRADES_TRAIN = 50
-    MIN_TRADES_TEST = 25
+    MIN_TRADES_TEST = 35    # AUDITORIA 24: Aumentado de 25 para 35
     MIN_WIN_RATE = 0.35
     MAX_WIN_RATE = 0.65
     MIN_PF_TRAIN = 1.30
     MIN_PF_TEST = 1.15
     MAX_PF = 3.5
-    MAX_DRAWDOWN = 0.30
+    MAX_DRAWDOWN = 0.20     # AUDITORIA 24: Reduzido de 0.30 para 0.20
     MIN_ROBUSTNESS = 0.70
     MIN_EXPECTANCY = 3.0
 
