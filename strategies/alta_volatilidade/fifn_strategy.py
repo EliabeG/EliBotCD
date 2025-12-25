@@ -41,7 +41,7 @@ class FIFNStrategy(BaseStrategy):
     MIN_BARS_FOR_DIRECTION = 14
 
     def __init__(self,
-                 min_prices: int = 120,
+                 min_prices: int = 100,  # AUDITORIA 28: Unificado com optimizer
                  stop_loss_pips: float = 18.0,
                  take_profit_pips: float = 36.0,
                  reynolds_sweet_low: float = 2300,
@@ -50,10 +50,13 @@ class FIFNStrategy(BaseStrategy):
         """
         Inicializa a estratégia FIFN
 
+        AUDITORIA 28: min_prices unificado com optimizer (era 120, optimizer usava 80)
+        Valor de 100 é intermediário para garantir consistência entre backtest e produção.
+
         Args:
-            min_prices: Mínimo de preços necessários para análise
-            stop_loss_pips: Stop loss em pips
-            take_profit_pips: Take profit em pips
+            min_prices: Mínimo de preços necessários para análise (AUDITORIA 28: 100)
+            stop_loss_pips: Stop loss base em pips (ajustado dinamicamente por Reynolds)
+            take_profit_pips: Take profit base em pips (ajustado dinamicamente por Reynolds)
             reynolds_sweet_low: Limite inferior da Kill Zone
             reynolds_sweet_high: Limite superior da Kill Zone
             skewness_threshold: Limiar de assimetria para sinal

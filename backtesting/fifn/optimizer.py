@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 ================================================================================
-OTIMIZADOR FIFN ROBUSTO V2.1 - PRONTO PARA DINHEIRO REAL
+OTIMIZADOR FIFN ROBUSTO V2.2 - PRONTO PARA DINHEIRO REAL
 ================================================================================
 
 Este otimizador implementa:
@@ -21,6 +21,12 @@ AUDITORIA 27 (V2.1):
 1. Latin Hypercube Sampling para melhor cobertura do espaco de parametros
 2. Aumento de 500k para 800k combinacoes (~16.5% de cobertura)
 3. LHS equivale a ~25% de eficiencia vs random sampling
+
+AUDITORIA 28 (V2.2) - CRITICO:
+1. Stops DINAMICOS baseados em Reynolds (igual strategy) - CRITICO
+2. min_prices unificado: 100 barras (era 80 optimizer, 120 strategy) - CRITICO
+3. Cooldown de 12 barras apos cada trade (igual strategy) - CRITICO
+4. Documentacao de prevencao de look-ahead no indicador
 
 REGRAS PARA DINHEIRO REAL:
 - Minimo 50 trades no treino, 35 no teste (AUDITORIA 25: aumentado de 25)
@@ -210,6 +216,48 @@ class FIFNRobustOptimizer:
     MIN_ROBUSTNESS = 0.70
     MIN_EXPECTANCY = 3.0
 
+    # AUDITORIA 28: Cooldown para consistência com strategy
+    SIGNAL_COOLDOWN_BARS = 12  # Ignora 12 barras após cada trade (igual strategy)
+
+    # AUDITORIA 28: Parâmetros para stops dinâmicos (igual strategy)
+    BASE_STOP_LOSS_PIPS = 18.0
+    BASE_TAKE_PROFIT_PIPS = 36.0
+
+    # Limites para gaps extremos
+    MAX_GAP_PIPS = 100
+
+    @staticmethod
+    def _calculate_dynamic_stops(reynolds: float, base_sl: float, base_tp: float) -> tuple:
+        """
+        AUDITORIA 28: Calcula stops dinâmicos baseados em Reynolds.
+        Implementação IDÊNTICA à fifn_strategy.py para garantir consistência.
+
+        O Número de Reynolds indica o regime de mercado:
+        - Turbulento (Re > 4000): Alta volatilidade → stops mais largos
+        - Sweet Spot (2300-4000): Volatilidade moderada → stops padrão
+        - Laminar (Re < 2000): Baixa volatilidade → stops mais apertados
+
+        Args:
+            reynolds: Número de Reynolds do mercado
+            base_sl: Stop loss base em pips
+            base_tp: Take profit base em pips
+
+        Returns:
+            Tuple[dynamic_sl, dynamic_tp]: Stops ajustados por regime
+        """
+        if reynolds > 4000:  # Turbulento - stops mais largos para evitar ruído
+            multiplier = 1.5
+        elif reynolds > 3000:  # Transição alta
+            multiplier = 1.2
+        elif reynolds < 2000:  # Laminar - stops mais apertados
+            multiplier = 0.8
+        elif reynolds < 2300:  # Transição baixa
+            multiplier = 0.9
+        else:  # Sweet Spot (2300-3000)
+            multiplier = 1.0
+
+        return base_sl * multiplier, base_tp * multiplier
+
     def __init__(self, symbol: str = "EURUSD", periodicity: str = "H1"):
         self.symbol = symbol
         self.periodicity = periodicity
@@ -285,7 +333,8 @@ class FIFNRobustOptimizer:
         prices_buf = deque(maxlen=500)
         self.signals = []
 
-        min_prices = 80  # window_size + kl_lookback + buffer
+        # AUDITORIA 28: Unificado com strategy (era 80, strategy usa 120)
+        min_prices = 100  # Valor intermediário para consistência
         min_bars_for_direction = 12
 
         for i, bar in enumerate(self.bars):
@@ -435,6 +484,7 @@ class FIFNRobustOptimizer:
             return []
 
         # Encontra entradas validas
+        # AUDITORIA 28: Agora inclui Reynolds para stops dinâmicos
         entries = []
         for s in signals:
             # Verificar se esta na zona de operacao (sweet spot)
@@ -450,11 +500,13 @@ class FIFNRobustOptimizer:
                 # LONG: skewness positiva, pressao negativa, tendencia alta
                 if s.skewness > skewness_thresh and s.pressure_gradient < 0 and s.direction == 1:
                     execution_idx = s.next_bar_idx - bar_offset
-                    entries.append((execution_idx, s.entry_price, 1))
+                    # AUDITORIA 28: Inclui Reynolds para stops dinâmicos
+                    entries.append((execution_idx, s.entry_price, 1, s.reynolds))
                 # SHORT: skewness negativa, pressao positiva, tendencia baixa
                 elif s.skewness < -skewness_thresh and s.pressure_gradient > 0 and s.direction == -1:
                     execution_idx = s.next_bar_idx - bar_offset
-                    entries.append((execution_idx, s.entry_price, -1))
+                    # AUDITORIA 28: Inclui Reynolds para stops dinâmicos
+                    entries.append((execution_idx, s.entry_price, -1, s.reynolds))
 
         if len(entries) < 5:
             return []
@@ -466,24 +518,36 @@ class FIFNRobustOptimizer:
         slippage = self.SLIPPAGE_PIPS * pip
         total_cost = spread + slippage
 
+        # AUDITORIA 28: Controle de cooldown (igual strategy)
         last_exit_idx = -1
+        cooldown_until_idx = -1
 
-        for entry_idx, entry_price_raw, direction in entries:
+        for entry_idx, entry_price_raw, direction, signal_reynolds in entries:
             if entry_idx < 0 or entry_idx >= len(bars) - 1:
+                continue
+
+            # AUDITORIA 28: Verificar cooldown (igual strategy)
+            if entry_idx <= cooldown_until_idx:
                 continue
 
             if entry_idx <= last_exit_idx:
                 continue
 
+            # AUDITORIA 28: Calcular stops dinâmicos baseados em Reynolds
+            # Usa SL/TP BASE da otimização, mas AJUSTA pelo regime de volatilidade
+            dynamic_sl, dynamic_tp = self._calculate_dynamic_stops(
+                signal_reynolds, sl, tp
+            )
+
             # Aplicar custos na entrada
             if direction == 1:  # LONG
                 entry_price = entry_price_raw + total_cost / 2
-                stop_price = entry_price - sl * pip
-                take_price = entry_price + tp * pip
+                stop_price = entry_price - dynamic_sl * pip
+                take_price = entry_price + dynamic_tp * pip
             else:  # SHORT
                 entry_price = entry_price_raw - total_cost / 2
-                stop_price = entry_price + sl * pip
-                take_price = entry_price - tp * pip
+                stop_price = entry_price + dynamic_sl * pip
+                take_price = entry_price - dynamic_tp * pip
 
             # Simular execucao
             exit_price = None
@@ -573,6 +637,9 @@ class FIFNRobustOptimizer:
 
             pnls.append(pnl_pips)
             last_exit_idx = exit_bar_idx
+
+            # AUDITORIA 28: Aplicar cooldown após cada trade (igual strategy)
+            cooldown_until_idx = exit_bar_idx + self.SIGNAL_COOLDOWN_BARS
 
         return pnls
 
@@ -968,7 +1035,7 @@ async def main():
     N_COMBINATIONS = 800000
 
     print("=" * 70)
-    print("  OTIMIZADOR FIFN V2.1 - PRONTO PARA DINHEIRO REAL")
+    print("  OTIMIZADOR FIFN V2.2 - PRONTO PARA DINHEIRO REAL")
     print("  AUDITORIA 27: Latin Hypercube Sampling + 800k samples")
     print("=" * 70)
     print("\n  CARACTERISTICAS:")
