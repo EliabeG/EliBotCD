@@ -28,6 +28,16 @@ from scipy.optimize import minimize
 import warnings
 warnings.filterwarnings('ignore')
 
+# CORRECAO AUDITORIA: Importar gerador de volumes centralizado
+try:
+    from config.volume_generator import generate_synthetic_volumes, VOLUME_MULTIPLIER, VOLUME_BASE
+    _HAS_VOLUME_GENERATOR = True
+except ImportError:
+    _HAS_VOLUME_GENERATOR = False
+    # Fallback para quando executado sem o config disponivel
+    VOLUME_MULTIPLIER = 10000.0
+    VOLUME_BASE = 50.0
+
 # Dependências Críticas
 try:
     import pywt
@@ -173,11 +183,42 @@ class ProtocoloRiemannMandelbrot:
                          Isso elimina look-ahead bias na normalização
         """
         returns = self._calculate_log_returns(prices)
-        volatility = self._estimate_garch_volatility(returns)
 
-        # Se volume não for fornecido, usar proxy baseado em volatilidade
+        # CORRECAO AUDITORIA 1.3: Calcular GARCH SEM look-ahead
+        # PROBLEMA: Quando exclude_last=True, volatilidade[-1] ja foi calculada
+        # usando returns[-1], criando look-ahead sutil.
+        # SOLUCAO: Calcular GARCH em returns[:-1] e depois estimar o ultimo ponto
+        # usando apenas dados passados (incrementalmente).
+        if exclude_last and len(returns) > 1:
+            # Calcular GARCH excluindo ultimo ponto
+            volatility_past = self._estimate_garch_volatility(returns[:-1])
+
+            # Estimar volatilidade do ultimo ponto incrementalmente (causal)
+            # Usando: sigma_t = sqrt(omega + alpha * r_{t-1}^2 + beta * sigma_{t-1}^2)
+            omega = self.garch_omega
+            alpha = self.garch_alpha
+            beta = self.garch_beta
+            last_variance = (omega +
+                             alpha * (returns[-2] ** 2) +
+                             beta * (volatility_past[-1] ** 2))
+            last_volatility = np.sqrt(max(last_variance, 1e-10))
+
+            # Concatenar para formar volatilidade completa
+            volatility = np.concatenate([volatility_past, [last_volatility]])
+        else:
+            volatility = self._estimate_garch_volatility(returns)
+
+        # CORRECAO AUDITORIA 1.2: Usar gerador de volumes CENTRALIZADO
+        # ANTES (ERRADO): volume = np.abs(returns) * 1000 (multiplicador 1000)
+        # AGORA (CORRETO): Usa config/volume_generator.py (multiplicador 10000)
         if volume is None:
-            volume = np.abs(returns) * 1000  # Proxy simples
+            if _HAS_VOLUME_GENERATOR:
+                # Usar gerador centralizado
+                bid_vols, _ = generate_synthetic_volumes(prices)
+                volume = bid_vols[1:]  # Alinhar com retornos
+            else:
+                # Fallback: usar mesma formula do gerador centralizado
+                volume = np.abs(returns) * VOLUME_MULTIPLIER + VOLUME_BASE
         else:
             volume = volume[1:]  # Alinhar com retornos
 
@@ -425,42 +466,41 @@ class ProtocoloRiemannMandelbrot:
             'power': power
         }
 
-    def filter_cwt_reconstruct(self, prices: np.ndarray,
-                                low_scale_cutoff: int = 5,
-                                high_scale_cutoff: int = 64) -> np.ndarray:
+    def filter_ema_causal(self, prices: np.ndarray,
+                           fast_window: int = 5,
+                           slow_window: int = 64) -> np.ndarray:
         """
-        CORREÇÃO #4: Substituir CWT não-causal por filtro CAUSAL
+        Filtro causal baseado em EMA (Exponential Moving Average)
 
-        O problema original: A CWT (Continuous Wavelet Transform) usa convolução
-        que naturalmente olha para pontos futuros, introduzindo look-ahead bias.
+        CORRECAO AUDITORIA 1.6: Metodo renomeado de filter_cwt_reconstruct
+        para refletir a implementacao real (EMA, nao CWT).
 
-        Solução: Usar média móvel exponencial (EMA) que é 100% causal.
-        A EMA suaviza ruído de alta frequência mantendo a estrutura de preços,
-        similar ao objetivo original da CWT mas sem look-ahead.
+        A versao anterior usava CWT que tem look-ahead bias. Esta versao
+        usa EMA que e 100% causal (so usa dados passados).
 
-        Parâmetros mantidos para compatibilidade, mas agora usam EMA adaptativa:
-        -----------
-        low_scale_cutoff : int
-            Controla suavização rápida (janela curta)
-        high_scale_cutoff : int
-            Controla suavização lenta (janela longa)
+        Args:
+            prices: Array de precos
+            fast_window: Janela para EMA rapida (default: 5)
+            slow_window: Janela para EMA lenta (default: 64)
+
+        Returns:
+            Precos filtrados (media das duas EMAs)
         """
         n = len(prices)
         if n < 3:
             return prices.copy()
 
-        # CORREÇÃO #4: Usar filtro causal baseado em EMA adaptativa
-        # Combina duas EMAs: uma rápida e uma lenta, para filtrar ruído
-        # mantendo estrutura de preços (similar ao objetivo da wavelet)
+        # Filtro causal baseado em EMA adaptativa
+        # Combina duas EMAs: uma rapida e uma lenta, para filtrar ruido
+        # mantendo estrutura de precos
 
-        # EMA rápida (equivalente a low_scale_cutoff)
-        # alpha_fast = 2 / (low_scale_cutoff + 1)
-        fast_window = max(3, low_scale_cutoff)
-        alpha_fast = 2.0 / (fast_window + 1)
+        # EMA rapida
+        _fast_window = max(3, fast_window)
+        alpha_fast = 2.0 / (_fast_window + 1)
 
-        # EMA lenta (equivalente a high_scale_cutoff)
-        slow_window = min(high_scale_cutoff, n // 2)
-        alpha_slow = 2.0 / (slow_window + 1)
+        # EMA lenta
+        _slow_window = min(slow_window, n // 2)
+        alpha_slow = 2.0 / (_slow_window + 1)
 
         # Calcular EMA rápida (causal - só usa dados passados)
         ema_fast = np.zeros(n)
@@ -479,6 +519,26 @@ class ProtocoloRiemannMandelbrot:
         filtered = (ema_fast + ema_slow) / 2.0
 
         return filtered
+
+    def filter_cwt_reconstruct(self, prices: np.ndarray,
+                                low_scale_cutoff: int = 5,
+                                high_scale_cutoff: int = 64) -> np.ndarray:
+        """
+        DEPRECATED: Wrapper para compatibilidade.
+
+        CORRECAO AUDITORIA 1.6: Este metodo foi renomeado para filter_ema_causal()
+        para refletir a implementacao real (EMA ao inves de CWT).
+
+        AVISO: O nome 'filter_cwt_reconstruct' e enganoso pois a implementacao
+        atual usa EMA, nao CWT. Use filter_ema_causal() diretamente.
+
+        Mantido apenas para compatibilidade com codigo existente.
+        """
+        return self.filter_ema_causal(
+            prices,
+            fast_window=low_scale_cutoff,
+            slow_window=high_scale_cutoff
+        )
 
     def filter_cwt_reconstruct_original(self, prices: np.ndarray,
                                          low_scale_cutoff: int = 5,

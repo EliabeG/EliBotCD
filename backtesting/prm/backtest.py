@@ -38,11 +38,15 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspa
 from backtesting.common.backtest_engine import BacktestEngine, run_backtest, BacktestResult
 from strategies.alta_volatilidade import PRMStrategy
 
+# CORRECAO AUDITORIA: Importar custos e config centralizados
+from config.execution_costs import SPREAD_PIPS, SLIPPAGE_PIPS
+from config.prm_config import MIN_PRICES, DEFAULT_STOP_LOSS_PIPS, DEFAULT_TAKE_PROFIT_PIPS
+
 
 def create_prm_strategy(
-    min_prices: int = 50,
-    stop_loss_pips: float = 20.0,
-    take_profit_pips: float = 40.0,
+    min_prices: int = None,  # CORRECAO: Usa config centralizado
+    stop_loss_pips: float = None,  # CORRECAO: Usa config centralizado
+    take_profit_pips: float = None,  # CORRECAO: Usa config centralizado
     hmm_threshold: float = 0.85,
     lyapunov_threshold: float = 0.5,
     curvature_threshold: float = 0.1,
@@ -65,6 +69,14 @@ def create_prm_strategy(
     Returns:
         Instancia de PRMStrategy
     """
+    # CORRECAO AUDITORIA: Usar valores centralizados quando nao especificado
+    if min_prices is None:
+        min_prices = MIN_PRICES
+    if stop_loss_pips is None:
+        stop_loss_pips = DEFAULT_STOP_LOSS_PIPS
+    if take_profit_pips is None:
+        take_profit_pips = DEFAULT_TAKE_PROFIT_PIPS
+
     return PRMStrategy(
         min_prices=min_prices,
         stop_loss_pips=stop_loss_pips,
@@ -82,9 +94,9 @@ def run_prm_backtest(
     days: int = 30,
     periodicity: str = "H1",
     initial_capital: float = 10000.0,
-    min_prices: int = 50,
-    stop_loss_pips: float = 20.0,
-    take_profit_pips: float = 40.0,
+    min_prices: int = None,  # CORRECAO: Usa config centralizado
+    stop_loss_pips: float = None,  # CORRECAO: Usa config centralizado
+    take_profit_pips: float = None,  # CORRECAO: Usa config centralizado
     verbose: bool = True
 ) -> BacktestResult:
     """
@@ -106,11 +118,21 @@ def run_prm_backtest(
     Returns:
         BacktestResult com metricas
     """
+    # CORRECAO AUDITORIA: Usar valores centralizados quando nao especificado
+    if min_prices is None:
+        min_prices = MIN_PRICES
+    if stop_loss_pips is None:
+        stop_loss_pips = DEFAULT_STOP_LOSS_PIPS
+    if take_profit_pips is None:
+        take_profit_pips = DEFAULT_TAKE_PROFIT_PIPS
+
     print("\n" + "=" * 70)
     print("  BACKTEST PRM - PROTOCOLO RIEMANN-MANDELBROT")
     print("  Dados Historicos REAIS do Mercado Forex")
     print("  VERSAO CORRIGIDA - Sem Look-Ahead Bias")
     print("=" * 70)
+    # CORRECAO AUDITORIA: Mostrar custos utilizados
+    print(f"  Custos: Spread={SPREAD_PIPS} pips, Slippage={SLIPPAGE_PIPS} pips")
 
     # Cria estrategia com novos parametros
     strategy = create_prm_strategy(
@@ -119,13 +141,15 @@ def run_prm_backtest(
         take_profit_pips=take_profit_pips
     )
 
-    # Configura engine (versao corrigida)
+    # CORRECAO AUDITORIA: Usar custos CENTRALIZADOS (config/execution_costs.py)
+    # ANTES (ERRADO): spread_pips=1.0, slippage_pips=0.5
+    # AGORA (CORRETO): Usa constantes do config centralizado
     engine = BacktestEngine(
         initial_capital=initial_capital,
         position_size=0.01,  # Mini lote
         pip_value=0.0001,
-        spread_pips=1.0,
-        slippage_pips=0.5
+        spread_pips=SPREAD_PIPS,      # CORRECAO: Era 1.0, agora usa config
+        slippage_pips=SLIPPAGE_PIPS   # CORRECAO: Era 0.5, agora usa config
     )
 
     # Define periodo

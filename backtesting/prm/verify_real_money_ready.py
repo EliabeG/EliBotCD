@@ -1,18 +1,20 @@
 #!/usr/bin/env python3
 """
 ================================================================================
-VERIFICAÇÃO DE SANIDADE PARA DINHEIRO REAL - PRM V2.0
+VERIFICAÇÃO DE SANIDADE PARA DINHEIRO REAL - PRM V2.1
 ================================================================================
 
 Este script verifica se o sistema PRM está corretamente configurado
 para operar com dinheiro real.
 
-VERIFICAÇÕES:
-1. Sem look-ahead bias no indicador
+VERIFICAÇÕES (ATUALIZADAS AUDITORIA 25/12/2025):
+1. Sem look-ahead bias no indicador (HMM e GARCH)
 2. Sem look-ahead bias no backtesting
-3. Custos realistas aplicados
-4. Filtros rigorosos configurados
-5. Walk-Forward validation funcionando
+3. Custos CENTRALIZADOS aplicados (config/execution_costs.py)
+4. Volumes CENTRALIZADOS (config/volume_generator.py)
+5. Filtros CENTRALIZADOS configurados (config/optimizer_filters.py)
+6. min_prices UNIFICADO entre componentes
+7. Walk-Forward validation funcionando
 
 EXECUTE ANTES DE OPERAR COM DINHEIRO REAL!
 ================================================================================
@@ -133,32 +135,45 @@ def verify_garch_initialization():
 
 
 def verify_realistic_costs():
-    """Verifica se custos realistas estão configurados"""
-    print_header("VERIFICAÇÃO 3: CUSTOS REALISTAS")
+    """Verifica se custos realistas e CENTRALIZADOS estão configurados"""
+    print_header("VERIFICAÇÃO 3: CUSTOS CENTRALIZADOS")
 
     try:
+        # CORRECAO AUDITORIA: Verificar custos do config centralizado
+        from config.execution_costs import SPREAD_PIPS, SLIPPAGE_PIPS
         from backtesting.prm.optimizer import PRMRobustOptimizer
 
         opt = PRMRobustOptimizer()
 
-        # Verificar spread
-        spread_ok = opt.SPREAD_PIPS >= 1.0
+        # Verificar se optimizer usa valores do config
+        uses_centralized = (
+            opt.SPREAD_PIPS == SPREAD_PIPS and
+            opt.SLIPPAGE_PIPS == SLIPPAGE_PIPS
+        )
         print_check(
-            f"Spread realista: {opt.SPREAD_PIPS} pips",
+            "Optimizer usa custos CENTRALIZADOS",
+            uses_centralized,
+            f"Config: spread={SPREAD_PIPS}, slippage={SLIPPAGE_PIPS}"
+        )
+
+        # Verificar spread
+        spread_ok = SPREAD_PIPS >= 1.0
+        print_check(
+            f"Spread realista: {SPREAD_PIPS} pips",
             spread_ok,
             "Mínimo recomendado: 1.0 pips"
         )
 
         # Verificar slippage
-        slippage_ok = opt.SLIPPAGE_PIPS >= 0.5
+        slippage_ok = SLIPPAGE_PIPS >= 0.5
         print_check(
-            f"Slippage realista: {opt.SLIPPAGE_PIPS} pips",
+            f"Slippage realista: {SLIPPAGE_PIPS} pips",
             slippage_ok,
             "Mínimo recomendado: 0.5 pips"
         )
 
         # Custo total
-        total_cost = opt.SPREAD_PIPS + opt.SLIPPAGE_PIPS
+        total_cost = SPREAD_PIPS + SLIPPAGE_PIPS
         cost_ok = total_cost >= 2.0
         print_check(
             f"Custo total por trade: {total_cost} pips",
@@ -166,10 +181,90 @@ def verify_realistic_costs():
             "Mínimo recomendado: 2.0 pips"
         )
 
-        return spread_ok and slippage_ok
+        return uses_centralized and spread_ok and slippage_ok
 
     except Exception as e:
         print_check("Verificação custos", False, str(e))
+        return False
+
+
+def verify_centralized_volumes():
+    """NOVA: Verifica se volumes sintéticos são centralizados"""
+    print_header("VERIFICAÇÃO 4: VOLUMES CENTRALIZADOS")
+
+    try:
+        from config.volume_generator import VOLUME_MULTIPLIER, VOLUME_BASE, generate_synthetic_volumes
+
+        # Verificar constantes
+        mult_ok = VOLUME_MULTIPLIER == 10000.0
+        print_check(
+            f"VOLUME_MULTIPLIER = {VOLUME_MULTIPLIER}",
+            mult_ok,
+            "Deve ser 10000.0 (não 1000)"
+        )
+
+        base_ok = VOLUME_BASE == 50.0
+        print_check(
+            f"VOLUME_BASE = {VOLUME_BASE}",
+            base_ok,
+            "Deve ser 50.0"
+        )
+
+        # Verificar se PRM importa do config
+        from strategies.alta_volatilidade.prm_riemann_mandelbrot import _HAS_VOLUME_GENERATOR
+        uses_generator = _HAS_VOLUME_GENERATOR
+        print_check(
+            "PRM usa gerador de volumes centralizado",
+            uses_generator,
+            "Importa generate_synthetic_volumes do config"
+        )
+
+        # Testar gerador
+        test_prices = np.array([1.1, 1.1001, 1.1002, 1.1001, 1.1003])
+        bid_vols, ask_vols = generate_synthetic_volumes(test_prices)
+        vols_valid = len(bid_vols) == len(test_prices) and bid_vols[0] == VOLUME_BASE
+        print_check(
+            "Gerador de volumes funciona",
+            vols_valid,
+            f"Volumes gerados: {len(bid_vols)} pontos"
+        )
+
+        return mult_ok and base_ok and uses_generator
+
+    except Exception as e:
+        print_check("Verificação volumes", False, str(e))
+        return False
+
+
+def verify_unified_min_prices():
+    """NOVA: Verifica se min_prices é unificado entre componentes"""
+    print_header("VERIFICAÇÃO 5: min_prices UNIFICADO")
+
+    try:
+        from config.prm_config import MIN_PRICES as CONFIG_MIN_PRICES
+
+        # Verificar valor no config
+        config_ok = CONFIG_MIN_PRICES >= 50
+        print_check(
+            f"config/prm_config.py: MIN_PRICES = {CONFIG_MIN_PRICES}",
+            config_ok,
+            "Mínimo recomendado: 50"
+        )
+
+        # Verificar se estratégia usa config
+        from strategies.alta_volatilidade.prm_strategy import PRMStrategy
+        strategy = PRMStrategy()
+        strategy_uses_config = strategy.min_prices == CONFIG_MIN_PRICES
+        print_check(
+            f"PRMStrategy usa config: min_prices = {strategy.min_prices}",
+            strategy_uses_config,
+            f"Deve ser igual ao config: {CONFIG_MIN_PRICES}"
+        )
+
+        return config_ok and strategy_uses_config
+
+    except Exception as e:
+        print_check("Verificação min_prices", False, str(e))
         return False
 
 
@@ -306,17 +401,20 @@ def verify_direction_closed_bars():
 
 def main():
     print("\n" + "=" * 70)
-    print("  VERIFICAÇÃO DE SANIDADE - PRM V2.0")
+    print("  VERIFICAÇÃO DE SANIDADE - PRM V2.1")
     print("  PRONTO PARA DINHEIRO REAL?")
+    print("  ATUALIZADO: Auditoria 25/12/2025")
     print("=" * 70)
     print(f"\n  Data: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
 
     results = []
 
-    # Executar todas as verificações
+    # Executar todas as verificações (ATUALIZADAS AUDITORIA)
     results.append(("HMM sem look-ahead", verify_hmm_no_lookahead()))
     results.append(("GARCH inicialização", verify_garch_initialization()))
-    results.append(("Custos realistas", verify_realistic_costs()))
+    results.append(("Custos CENTRALIZADOS", verify_realistic_costs()))
+    results.append(("Volumes CENTRALIZADOS", verify_centralized_volumes()))
+    results.append(("min_prices UNIFICADO", verify_unified_min_prices()))
     results.append(("Filtros rigorosos", verify_rigorous_filters()))
     results.append(("Walk-Forward validation", verify_walk_forward()))
     results.append(("Direção barras fechadas", verify_direction_closed_bars()))
