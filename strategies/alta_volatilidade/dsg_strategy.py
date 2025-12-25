@@ -2,7 +2,7 @@
 Adaptador de Estratégia para o Detector de Singularidade Gravitacional
 Integra o indicador DSG com o sistema de trading
 
-VERSÃO V3.3 - CORREÇÕES DA TERCEIRA AUDITORIA (25/12/2025)
+VERSÃO V3.4 - CORREÇÕES DA QUARTA AUDITORIA (25/12/2025)
 ===========================================================
 Correções aplicadas (V2.0):
 1. Stop/Take passados em PIPS (não níveis de preço)
@@ -25,11 +25,17 @@ Correções aplicadas (V3.2 - Segunda Auditoria 24/12/2025):
 Correções aplicadas (V3.3 - Terceira Auditoria 25/12/2025):
 11. RESET THREAD-SAFE: Usa lock do indicador ao resetar históricos
 12. Indicador DSG V3.3 com correções de eh_distance e _generate_signal
+
+Correções aplicadas (V3.4 - Quarta Auditoria 25/12/2025):
+13. LOCK PRÓPRIO: Estratégia tem lock próprio para proteger buffers
+14. RESET COMPLETO: Todas as operações protegidas por lock
+15. Indicador DSG V3.4 com Ricci threshold corrigido e percentil dinâmico
 """
 from datetime import datetime
 from typing import Optional, Dict
 from collections import deque
 import numpy as np
+import threading  # CORREÇÃO V3.4: Lock para thread-safety
 
 from ..base import BaseStrategy, Signal, SignalType
 from .dsg_detector_singularidade import DetectorSingularidadeGravitacional
@@ -119,6 +125,10 @@ class DSGStrategy(BaseStrategy):
         # Estado
         self.last_analysis = None
         self.signal_cooldown = 0
+
+        # CORREÇÃO V3.4: Lock próprio para proteger buffers da estratégia
+        # Evita race conditions se reset() for chamado durante analyze()
+        self._strategy_lock = threading.Lock()
 
     def add_price(self, price: float, bid_vol: float = None, ask_vol: float = None):
         """Adiciona um preço e volumes ao buffer"""
@@ -256,16 +266,22 @@ class DSGStrategy(BaseStrategy):
         """
         Reseta o estado da estratégia
 
-        CORREÇÃO V3.3: Usa lock do indicador para thread-safety
+        CORREÇÃO V3.4: Usa lock PRÓPRIO para proteger TODOS os buffers
+        ANTES: Apenas histórico do indicador era protegido
+        AGORA: Buffers da estratégia também são protegidos
+
         Evita race conditions se reset() for chamado durante analyze()
         """
-        self.prices.clear()
-        self.bid_volumes.clear()
-        self.ask_volumes.clear()
-        self.last_analysis = None
-        self.last_signal = None
-        self.signal_cooldown = 0
-        # CORREÇÃO V3.3: Reseta histórico do indicador COM lock
+        # CORREÇÃO V3.4: Proteger TODAS as operações com lock
+        with self._strategy_lock:
+            self.prices.clear()
+            self.bid_volumes.clear()
+            self.ask_volumes.clear()
+            self.last_analysis = None
+            self.last_signal = None
+            self.signal_cooldown = 0
+
+        # CORREÇÃO V3.3/V3.4: Reseta histórico do indicador COM lock
         with self.dsg._lock:
             self.dsg._ricci_history = []
             self.dsg._distance_history = []
