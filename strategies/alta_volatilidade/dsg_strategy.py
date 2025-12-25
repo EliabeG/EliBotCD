@@ -2,8 +2,8 @@
 Adaptador de Estratégia para o Detector de Singularidade Gravitacional
 Integra o indicador DSG com o sistema de trading
 
-VERSÃO V3.2 - CORREÇÕES DA SEGUNDA AUDITORIA COMPLETA (24/12/2025)
-==================================================================
+VERSÃO V3.3 - CORREÇÕES DA TERCEIRA AUDITORIA (25/12/2025)
+===========================================================
 Correções aplicadas (V2.0):
 1. Stop/Take passados em PIPS (não níveis de preço)
 2. BacktestEngine recalcula níveis baseado no entry_price REAL
@@ -21,6 +21,10 @@ Correções aplicadas (V3.1 - Auditoria Completa):
 Correções aplicadas (V3.2 - Segunda Auditoria 24/12/2025):
 9. VERIFICAÇÃO DE ERRO: Checa campo 'error' antes de usar resultado
 10. Indicador DSG V3.2 com correções de look-ahead residual
+
+Correções aplicadas (V3.3 - Terceira Auditoria 25/12/2025):
+11. RESET THREAD-SAFE: Usa lock do indicador ao resetar históricos
+12. Indicador DSG V3.3 com correções de eh_distance e _generate_signal
 """
 from datetime import datetime
 from typing import Optional, Dict
@@ -249,17 +253,23 @@ class DSGStrategy(BaseStrategy):
                 f"{reasons_str}")
 
     def reset(self):
-        """Reseta o estado da estratégia"""
+        """
+        Reseta o estado da estratégia
+
+        CORREÇÃO V3.3: Usa lock do indicador para thread-safety
+        Evita race conditions se reset() for chamado durante analyze()
+        """
         self.prices.clear()
         self.bid_volumes.clear()
         self.ask_volumes.clear()
         self.last_analysis = None
         self.last_signal = None
         self.signal_cooldown = 0
-        # Reseta histórico do indicador
-        self.dsg._ricci_history = []
-        self.dsg._distance_history = []
-        self.dsg._coords_history = []
+        # CORREÇÃO V3.3: Reseta histórico do indicador COM lock
+        with self.dsg._lock:
+            self.dsg._ricci_history = []
+            self.dsg._distance_history = []
+            self.dsg._coords_history = []
 
     def get_analysis_summary(self) -> Optional[dict]:
         """Retorna resumo da última análise"""
