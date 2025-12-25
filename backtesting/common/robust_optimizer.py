@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 ================================================================================
-OTIMIZADOR ROBUSTO V2.0 - PRONTO PARA DINHEIRO REAL
+OTIMIZADOR ROBUSTO V2.1 - PRONTO PARA DINHEIRO REAL
 ================================================================================
 
 Este otimizador implementa:
@@ -16,6 +16,10 @@ CORREÇÕES V2.0:
 3. Spread realista: 1.5 pips
 4. Slippage realista: 0.8 pips
 5. Filtros mais rigorosos (PF > 1.3)
+
+CORREÇÕES V2.1 (Quarta Auditoria 25/12/2025):
+6. Filtros CENTRALIZADOS: Importa de config/optimizer_filters.py
+7. Consistência garantida com optimizer.py e optimizer_wf.py
 
 REGRAS PARA DINHEIRO REAL:
 - Minimo 50 trades no treino, 25 no teste
@@ -41,6 +45,19 @@ import os
 from config.execution_costs import (
     SPREAD_PIPS,
     SLIPPAGE_PIPS,
+)
+
+# CORREÇÃO V2.1: Importar filtros centralizados
+from config.optimizer_filters import (
+    MIN_TRADES_TRAIN as FILTER_MIN_TRADES_TRAIN,
+    MIN_TRADES_TEST as FILTER_MIN_TRADES_TEST,
+    MIN_WIN_RATE as FILTER_MIN_WIN_RATE,
+    MAX_WIN_RATE as FILTER_MAX_WIN_RATE,
+    MIN_PROFIT_FACTOR as FILTER_MIN_PROFIT_FACTOR,
+    MAX_PROFIT_FACTOR as FILTER_MAX_PROFIT_FACTOR,
+    MAX_DRAWDOWN as FILTER_MAX_DRAWDOWN,
+    MIN_ROBUSTNESS as FILTER_MIN_ROBUSTNESS,
+    MIN_EXPECTANCY_PIPS as FILTER_MIN_EXPECTANCY,
 )
 
 
@@ -125,21 +142,25 @@ class RobustResult:
 
 class RobustBacktester:
     """
-    Backtester robusto V2.0 - Pronto para dinheiro real
+    Backtester robusto V2.1 - Pronto para dinheiro real
 
     Custos REALISTAS e filtros RIGOROSOS
+
+    CORREÇÃO V2.1: Filtros agora são importados de config/optimizer_filters.py
+    para garantir consistência com todos os otimizadores do sistema.
     """
 
-    # Constantes RIGOROSAS para dinheiro real
-    MIN_TRADES_TRAIN = 50
-    MIN_TRADES_TEST = 25
-    MIN_WIN_RATE = 0.35
-    MAX_WIN_RATE = 0.60
-    MIN_PROFIT_FACTOR = 1.30   # V2.0: Mais rigoroso
-    MAX_PROFIT_FACTOR = 3.5
-    MAX_DRAWDOWN = 0.30        # V2.0: Mais conservador
-    MIN_ROBUSTNESS = 0.70      # V2.0: Teste deve ter >= 70% da performance do treino
-    MIN_EXPECTANCY = 3.0       # V2.0: Mínimo 3 pips por trade
+    # CORREÇÃO V2.1: Constantes agora vêm do config/optimizer_filters.py
+    # Mantidas como atributos de classe para retrocompatibilidade
+    MIN_TRADES_TRAIN = FILTER_MIN_TRADES_TRAIN
+    MIN_TRADES_TEST = FILTER_MIN_TRADES_TEST
+    MIN_WIN_RATE = FILTER_MIN_WIN_RATE
+    MAX_WIN_RATE = FILTER_MAX_WIN_RATE
+    MIN_PROFIT_FACTOR = FILTER_MIN_PROFIT_FACTOR
+    MAX_PROFIT_FACTOR = FILTER_MAX_PROFIT_FACTOR
+    MAX_DRAWDOWN = FILTER_MAX_DRAWDOWN
+    MIN_ROBUSTNESS = FILTER_MIN_ROBUSTNESS
+    MIN_EXPECTANCY = FILTER_MIN_EXPECTANCY
 
     def __init__(self, pip: float = 0.0001, spread: float = None, slippage: float = None):
         """

@@ -40,6 +40,15 @@ import threading  # CORREÇÃO V3.4: Lock para thread-safety
 from ..base import BaseStrategy, Signal, SignalType
 from .dsg_detector_singularidade import DetectorSingularidadeGravitacional
 
+# CORREÇÃO V3.4: Usar logging estruturado ao invés de print()
+try:
+    from config.logging_config import get_logger
+    logger = get_logger("dsg.strategy")
+except ImportError:
+    # Fallback para logging básico se módulo não disponível
+    import logging
+    logger = logging.getLogger(__name__)
+
 # CORREÇÃO V3.1: Importar gerador de volumes centralizado
 try:
     from config.volume_generator import generate_single_volume, get_volume_base
@@ -246,7 +255,8 @@ class DSGStrategy(BaseStrategy):
                 return signal
 
         except Exception as e:
-            print(f"Erro na análise DSG: {e}")
+            # CORREÇÃO V3.4: Usar logging estruturado
+            logger.error(f"Erro na análise DSG: {e}", exc_info=True)
 
         return None
 

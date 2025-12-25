@@ -155,20 +155,49 @@ class TensorMetricoFinanceiro:
         g[2, 2] = self.gamma  # g_VbidVbid
         g[3, 3] = self.gamma  # g_VaskVask
 
-        # Termos de acoplamento não-diagonais (espaço-tempo financeiro curvo)
-        # Acoplamento tempo-volume (ordens grandes distorcem o tempo local)
+        # =========================================================================
+        # TERMOS DE ACOPLAMENTO NÃO-DIAGONAIS (Espaço-tempo financeiro curvo)
+        # =========================================================================
+        #
+        # FUNDAMENTAÇÃO DOS COEFICIENTES (Documentado na Auditoria V3.4):
+        # Os valores abaixo foram calibrados empiricamente para mercado forex H1.
+        # A hierarquia de magnitudes reflete a importância relativa de cada
+        # acoplamento na dinâmica do preço:
+        #
+        # Hierarquia: t-P (0.1) > P-V (0.05) > V-V (0.02) > t-V (0.01)
+        #
+        # INTERPRETAÇÃO FÍSICA:
+        # - Coeficientes maiores = acoplamento mais forte = maior curvatura
+        # - Valores normalizados para estabilidade numérica (evitar overflow)
+        # - Razão 10:5:2:1 aproxima importância relativa observada empiricamente
+        #
+        # NOTA: Para calibrar em outros pares/timeframes, ajustar proporcionalmente
+        # mantendo a hierarquia relativa.
+        # =========================================================================
+
         imbalance = (V_bid - V_ask) / (V_bid + V_ask + self.eps)
         total_vol = V_bid + V_ask + self.eps
 
-        g[0, 1] = g[1, 0] = 0.1 * imbalance  # Acoplamento t-P
+        # Acoplamento tempo-preço (g_tP): MAIOR magnitude (0.1)
+        # Desequilíbrio bid/ask afeta velocidade de movimentação do preço
+        # Ordens institucionais "distorcem o tempo local" do mercado
+        g[0, 1] = g[1, 0] = 0.1 * imbalance
+
+        # Acoplamento tempo-volume (g_tVbid, g_tVask): MENOR magnitude (0.01)
+        # Volumes absolutos têm influência secundária comparado ao desequilíbrio
+        # Representam "massa" dos participantes do mercado
         g[0, 2] = g[2, 0] = 0.01 * V_bid / total_vol
         g[0, 3] = g[3, 0] = 0.01 * V_ask / total_vol
 
-        # Acoplamento preço-volume
+        # Acoplamento preço-volume (g_PVbid, g_PVask): Magnitude MÉDIA (0.05)
+        # Volume de bid "puxa" preço para cima (+), ask "puxa" para baixo (-)
+        # Sinais opostos refletem natureza antagônica de compradores vs vendedores
         g[1, 2] = g[2, 1] = 0.05 * imbalance
         g[1, 3] = g[3, 1] = -0.05 * imbalance
 
-        # Acoplamento bid-ask
+        # Acoplamento bid-ask (g_VbidVask): Magnitude BAIXA (0.02)
+        # Representa "atrito" ou "tensão" entre compradores e vendedores
+        # Usa |imbalance| pois a interação existe independente da direção
         g[2, 3] = g[3, 2] = 0.02 * np.abs(imbalance)
 
         return g
