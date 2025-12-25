@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 ================================================================================
-VERIFICACAO DE PRONTIDAO PARA DINHEIRO REAL - ODMN V2.1
+VERIFICACAO DE PRONTIDAO PARA DINHEIRO REAL - ODMN V2.2
 ================================================================================
 
 Este script verifica se o sistema ODMN esta pronto para dinheiro real,
@@ -18,9 +18,12 @@ VERIFICACOES REALIZADAS:
 6. Custos centralizados e realistas
 7. Filtros rigorosos configurados
 8. Walk-Forward Validation implementada
-9. [NOVO] Suporte a seed para reprodutibilidade
-10. [NOVO] Consistencia de parametros (config vs componentes)
-11. [NOVO] Teste de reprodutibilidade (mesmos resultados com mesmo seed)
+9. Signal inclui stop_loss_pips e take_profit_pips
+10. MIN_CONFIDENCE do config centralizado
+11. direction_calculator centralizado usado
+12. Suporte a seed para reprodutibilidade
+13. Consistencia de parametros (config vs componentes)
+14. Teste de reprodutibilidade (mesmos resultados com mesmo seed)
 
 FUNDAMENTOS TEORICOS DO ODMN:
 ============================
@@ -28,7 +31,7 @@ FUNDAMENTOS TEORICOS DO ODMN:
 2. Calculo de Malliavin: Derivadas estocasticas para fragilidade
 3. Mean Field Games: Equilibrio Nash para comportamento institucional
 
-SE TODAS AS 11 VERIFICACOES PASSAREM = PRONTO PARA DINHEIRO REAL
+SE TODAS AS 14 VERIFICACOES PASSAREM = PRONTO PARA DINHEIRO REAL
 
 Uso:
     python -m backtesting.odmn.verify_real_money_ready
@@ -534,6 +537,169 @@ def verify_walk_forward_implemented() -> ODMNVerificationResult:
         )
 
 
+def verify_signal_includes_pips() -> ODMNVerificationResult:
+    """
+    Verifica 9: Signal inclui stop_loss_pips e take_profit_pips
+
+    O Signal deve incluir valores em pips para que o BacktestEngine
+    possa recalcular os niveis baseado no preco de entrada real.
+    """
+    strategy_path = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+        "strategies", "alta_volatilidade", "odmn_strategy.py"
+    )
+
+    try:
+        with open(strategy_path, 'r') as f:
+            content = f.read()
+
+        details = []
+
+        # Verifica se stop_loss_pips e take_profit_pips sao passados no Signal
+        has_sl_pips = "stop_loss_pips=self.stop_loss_pips" in content
+        has_tp_pips = "take_profit_pips=self.take_profit_pips" in content
+
+        if has_sl_pips:
+            details.append("stop_loss_pips incluido no Signal")
+        else:
+            details.append("ERRO: stop_loss_pips NAO incluido no Signal")
+
+        if has_tp_pips:
+            details.append("take_profit_pips incluido no Signal")
+        else:
+            details.append("ERRO: take_profit_pips NAO incluido no Signal")
+
+        passed = has_sl_pips and has_tp_pips
+        return ODMNVerificationResult(
+            "Signal inclui stop/take em pips",
+            passed,
+            "; ".join(details)
+        )
+
+    except Exception as e:
+        return ODMNVerificationResult(
+            "Signal inclui stop/take em pips",
+            False,
+            f"Erro ao verificar: {e}"
+        )
+
+
+def verify_min_confidence_from_config() -> ODMNVerificationResult:
+    """
+    Verifica 10: MIN_CONFIDENCE importado do config
+
+    A confianca minima deve vir do config centralizado,
+    nao de valores hardcoded.
+    """
+    strategy_path = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+        "strategies", "alta_volatilidade", "odmn_strategy.py"
+    )
+
+    try:
+        with open(strategy_path, 'r') as f:
+            content = f.read()
+
+        details = []
+
+        # Verifica se importa MIN_CONFIDENCE
+        imports_config = "from config.odmn_config import MIN_CONFIDENCE" in content
+
+        # Verifica se usa MIN_CONFIDENCE no codigo
+        uses_config = "confidence >= MIN_CONFIDENCE" in content
+
+        # Verifica se NAO tem 0.6 hardcoded
+        no_hardcoded = "confidence >= 0.6" not in content
+
+        if imports_config:
+            details.append("Importa MIN_CONFIDENCE do config")
+        else:
+            details.append("ERRO: Nao importa MIN_CONFIDENCE")
+
+        if uses_config:
+            details.append("Usa MIN_CONFIDENCE no codigo")
+        else:
+            details.append("ERRO: Nao usa MIN_CONFIDENCE")
+
+        if no_hardcoded:
+            details.append("Sem valor hardcoded 0.6")
+        else:
+            details.append("AVISO: Valor 0.6 hardcoded encontrado")
+
+        passed = imports_config and uses_config and no_hardcoded
+        return ODMNVerificationResult(
+            "MIN_CONFIDENCE do config centralizado",
+            passed,
+            "; ".join(details)
+        )
+
+    except Exception as e:
+        return ODMNVerificationResult(
+            "MIN_CONFIDENCE do config centralizado",
+            False,
+            f"Erro ao verificar: {e}"
+        )
+
+
+def verify_direction_calculator_used() -> ODMNVerificationResult:
+    """
+    Verifica 11: direction_calculator centralizado usado
+
+    O optimizer e debug devem usar direction_calculator para
+    garantir consistencia no calculo de direcao.
+    """
+    optimizer_path = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+        "backtesting", "odmn", "optimizer.py"
+    )
+
+    debug_path = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+        "backtesting", "odmn", "debug.py"
+    )
+
+    try:
+        with open(optimizer_path, 'r') as f:
+            optimizer_content = f.read()
+
+        with open(debug_path, 'r') as f:
+            debug_content = f.read()
+
+        details = []
+
+        # Verifica optimizer
+        optimizer_imports = "from backtesting.common.direction_calculator import" in optimizer_content
+        optimizer_uses = "calculate_direction_from_bars" in optimizer_content
+
+        # Verifica debug
+        debug_imports = "from backtesting.common.direction_calculator import" in debug_content
+        debug_uses = "calculate_direction_from_bars" in debug_content or "TREND_LOOKBACK" in debug_content
+
+        if optimizer_imports and optimizer_uses:
+            details.append("Optimizer usa direction_calculator")
+        else:
+            details.append("ERRO: Optimizer nao usa direction_calculator")
+
+        if debug_imports or debug_uses:
+            details.append("Debug usa direction_calculator ou TREND_LOOKBACK")
+        else:
+            details.append("AVISO: Debug pode ter valores hardcoded")
+
+        passed = optimizer_imports and optimizer_uses
+        return ODMNVerificationResult(
+            "direction_calculator centralizado usado",
+            passed,
+            "; ".join(details)
+        )
+
+    except Exception as e:
+        return ODMNVerificationResult(
+            "direction_calculator centralizado usado",
+            False,
+            f"Erro ao verificar: {e}"
+        )
+
+
 def verify_seed_reproducibility_support() -> ODMNVerificationResult:
     """
     Verifica 9: Suporte a seed para reprodutibilidade
@@ -775,10 +941,10 @@ def verify_reproducibility_test() -> ODMNVerificationResult:
 def run_all_verifications():
     """Executa todas as verificacoes e imprime resultado"""
     print("=" * 70)
-    print("  VERIFICACAO DE PRONTIDAO PARA DINHEIRO REAL - ODMN V2.1")
+    print("  VERIFICACAO DE PRONTIDAO PARA DINHEIRO REAL - ODMN V2.2")
     print("  Oraculo de Derivativos de Malliavin-Nash")
     print("=" * 70)
-    print("\n  11 verificacoes criticas para evitar look-ahead bias\n")
+    print("\n  14 verificacoes criticas para evitar look-ahead bias\n")
 
     verifications = [
         verify_heston_calibration_no_lookahead,
@@ -789,6 +955,9 @@ def run_all_verifications():
         verify_centralized_costs,
         verify_rigorous_filters,
         verify_walk_forward_implemented,
+        verify_signal_includes_pips,
+        verify_min_confidence_from_config,
+        verify_direction_calculator_used,
         verify_seed_reproducibility_support,
         verify_parameter_consistency,
         verify_reproducibility_test,
@@ -815,7 +984,7 @@ def run_all_verifications():
 
     if passed_count == total_count:
         print("\n  +++ SISTEMA ODMN PRONTO PARA DINHEIRO REAL +++")
-        print("\n  O indicador ODMN passou em TODAS as 11 verificacoes criticas:")
+        print("\n  O indicador ODMN passou em TODAS as 14 verificacoes criticas:")
         print("    1. Calibracao Heston usa apenas dados passados")
         print("    2. Malliavin Monte Carlo e causal (forward simulation)")
         print("    3. Mean Field Games resolve PDEs sem dados futuros")
@@ -824,9 +993,12 @@ def run_all_verifications():
         print("    6. Custos realistas (spread 1.5 + slippage 0.8 pips)")
         print("    7. Filtros rigorosos (PF >= 1.3, Exp >= 1.5 pips)")
         print("    8. Walk-Forward Validation com 4 janelas")
-        print("    9. Suporte a seed para reprodutibilidade")
-        print("   10. Consistencia de parametros (config vs componentes)")
-        print("   11. Teste de reprodutibilidade (np.random.Generator)")
+        print("    9. Signal inclui stop_loss_pips e take_profit_pips")
+        print("   10. MIN_CONFIDENCE do config centralizado")
+        print("   11. direction_calculator centralizado usado")
+        print("   12. Suporte a seed para reprodutibilidade")
+        print("   13. Consistencia de parametros (config vs componentes)")
+        print("   14. Teste de reprodutibilidade (np.random.Generator)")
         print("\n  Proximos passos:")
         print("    1. Execute o optimizer: python -m backtesting.odmn.optimizer")
         print("    2. Valide os resultados no periodo de teste")

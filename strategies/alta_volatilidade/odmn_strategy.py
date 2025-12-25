@@ -10,6 +10,12 @@ import numpy as np
 from ..base import BaseStrategy, Signal, SignalType
 from .odmn_malliavin_nash import OracloDerivativosMalliavinNash
 
+# Importar config centralizado
+try:
+    from config.odmn_config import MIN_CONFIDENCE
+except ImportError:
+    MIN_CONFIDENCE = 0.60
+
 
 class ODMNStrategy(BaseStrategy):
     """
@@ -103,8 +109,8 @@ class ODMNStrategy(BaseStrategy):
             result = self.odmn.analyze(prices_array)
             self.last_analysis = result
 
-            # Verifica sinal
-            if result['signal'] != 0 and result['confidence'] >= 0.6:
+            # Verifica sinal - usa MIN_CONFIDENCE do config
+            if result['signal'] != 0 and result['confidence'] >= MIN_CONFIDENCE:
                 # Determina direção
                 if result['signal'] == 1:
                     direction = SignalType.BUY
@@ -124,7 +130,7 @@ class ODMNStrategy(BaseStrategy):
                 # Confiança
                 confidence = result['confidence']
 
-                # Cria sinal
+                # Cria sinal - INCLUI stop_loss_pips e take_profit_pips
                 signal = Signal(
                     type=direction,
                     price=price,
@@ -133,6 +139,8 @@ class ODMNStrategy(BaseStrategy):
                     confidence=confidence,
                     stop_loss=stop_loss,
                     take_profit=take_profit,
+                    stop_loss_pips=self.stop_loss_pips,      # Para recalculo no entry real
+                    take_profit_pips=self.take_profit_pips,  # Para recalculo no entry real
                     reason=self._generate_reason(result)
                 )
 
