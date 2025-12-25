@@ -1,0 +1,302 @@
+[
+  {
+    "params": {
+      "ricci_collapse_threshold": -50142.86,
+      "tidal_force_threshold": 0.020842,
+      "stop_loss_pips": 22.9,
+      "take_profit_pips": 58.9
+    },
+    "walk_forward": {
+      "windows": 4,
+      "all_passed": true
+    },
+    "train": {
+      "trades": 794,
+      "win_rate": 0.3149,
+      "profit_factor": 1.1046,
+      "total_pnl_pips": 1370.77,
+      "max_drawdown": 0.0694,
+      "expectancy": 1.73
+    },
+    "test": {
+      "trades": 571,
+      "win_rate": 0.3065,
+      "profit_factor": 1.025,
+      "total_pnl_pips": 247.31,
+      "max_drawdown": 0.0834,
+      "expectancy": 0.43
+    },
+    "robustness_score": 1,
+    "degradation_pct": -0.69
+  },
+  {
+    "params": {
+      "ricci_collapse_threshold": -50142.86,
+      "tidal_force_threshold": 0.004053,
+      "stop_loss_pips": 22.9,
+      "take_profit_pips": 58.9
+    },
+    "walk_forward": {
+      "windows": 4,
+      "all_passed": true
+    },
+    "train": {
+      "trades": 794,
+      "win_rate": 0.3149,
+      "profit_factor": 1.1046,
+      "total_pnl_pips": 1370.77,
+      "max_drawdown": 0.0694,
+      "expectancy": 1.73
+    },
+    "test": {
+      "trades": 570,
+      "win_rate": 0.3053,
+      "profit_factor": 1.018,
+      "total_pnl_pips": 178.57,
+      "max_drawdown": 0.0834,
+      "expectancy": 0.31
+    },
+    "robustness_score": 1,
+    "degradation_pct": -0.41
+  },
+  {
+    "params": {
+      "ricci_collapse_threshold": -50142.86,
+      "tidal_force_threshold": 0.020842,
+      "stop_loss_pips": 22.9,
+      "take_profit_pips": 58.9
+    },
+    "walk_forward": {
+      "windows": 4,
+      "all_passed": true
+    },
+    "train": {
+      "trades": 794,
+      "win_rate": 0.3149,
+      "profit_factor": 1.1046,
+      "total_pnl_pips": 1370.77,
+      "max_drawdown": 0.0694,
+      "expectancy": 1.73
+    },
+    "test": {
+      "trades": 571,
+      "win_rate": 0.3065,
+      "profit_factor": 1.025,
+      "total_pnl_pips": 247.31,
+      "max_drawdown": 0.0834,
+      "expectancy": 0.43
+    },
+    "robustness_score": 1,
+    "degradation_pct": -0.69
+  },
+  {
+    "params": {
+      "ricci_collapse_threshold": -50142.86,
+      "tidal_force_threshold": 0.011684,
+      "stop_loss_pips": 22.9,
+      "take_profit_pips": 58.9
+    },
+    "walk_forward": {
+      "windows": 4,
+      "all_passed": true
+    },
+    "train": {
+      "trades": 794,
+      "win_rate": 0.3149,
+      "profit_factor": 1.1046,
+      "total_pnl_pips": 1370.77,
+      "max_drawdown": 0.0694,
+      "expectancy": 1.73
+    },
+    "test": {
+      "trades": 572,
+      "win_rate": 0.3059,
+      "profit_factor": 1.0215,
+      "total_pnl_pips": 213.06,
+      "max_drawdown": 0.0834,
+      "expectancy": 0.37
+    },
+    "robustness_score": 1,
+    "degradation_pct": -0.55
+  },
+  {
+    "params": {
+      "ricci_collapse_threshold": -50142.86,
+      "tidal_force_threshold": 0.004053,
+      "stop_loss_pips": 22.9,
+      "take_profit_pips": 58.9
+    },
+    "walk_forward": {
+      "windows": 4,
+      "all_passed": true
+    },
+    "train": {
+      "trades": 794,
+      "win_rate": 0.3149,
+      "profit_factor": 1.1046,
+      "total_pnl_pips": 1370.77,
+      "max_drawdown": 0.0694,
+      "expectancy": 1.73
+    },
+    "test": {
+      "trades": 570,
+      "win_rate": 0.3053,
+      "profit_factor": 1.018,
+      "total_pnl_pips": 178.57,
+      "max_drawdown": 0.0834,
+      "expectancy": 0.31
+    },
+    "robustness_score": 1,
+    "degradation_pct": -0.41
+  },
+  {
+    "params": {
+      "ricci_collapse_threshold": -50142.86,
+      "tidal_force_threshold": 0.010158,
+      "stop_loss_pips": 22.9,
+      "take_profit_pips": 58.9
+    },
+    "walk_forward": {
+      "windows": 4,
+      "all_passed": true
+    },
+    "train": {
+      "trades": 794,
+      "win_rate": 0.3149,
+      "profit_factor": 1.1046,
+      "total_pnl_pips": 1370.77,
+      "max_drawdown": 0.0694,
+      "expectancy": 1.73
+    },
+    "test": {
+      "trades": 572,
+      "win_rate": 0.3059,
+      "profit_factor": 1.0215,
+      "total_pnl_pips": 213.06,
+      "max_drawdown": 0.0834,
+      "expectancy": 0.37
+    },
+    "robustness_score": 1,
+    "degradation_pct": -0.55
+  },
+  {
+    "params": {
+      "ricci_collapse_threshold": -50142.86,
+      "tidal_force_threshold": 0.03,
+      "stop_loss_pips": 22.9,
+      "take_profit_pips": 58.9
+    },
+    "walk_forward": {
+      "windows": 4,
+      "all_passed": true
+    },
+    "train": {
+      "trades": 794,
+      "win_rate": 0.3149,
+      "profit_factor": 1.1046,
+      "total_pnl_pips": 1370.77,
+      "max_drawdown": 0.0694,
+      "expectancy": 1.73
+    },
+    "test": {
+      "trades": 571,
+      "win_rate": 0.3065,
+      "profit_factor": 1.025,
+      "total_pnl_pips": 247.31,
+      "max_drawdown": 0.0834,
+      "expectancy": 0.43
+    },
+    "robustness_score": 1,
+    "degradation_pct": -0.69
+  },
+  {
+    "params": {
+      "ricci_collapse_threshold": -50142.86,
+      "tidal_force_threshold": 0.03,
+      "stop_loss_pips": 22.9,
+      "take_profit_pips": 58.9
+    },
+    "walk_forward": {
+      "windows": 4,
+      "all_passed": true
+    },
+    "train": {
+      "trades": 794,
+      "win_rate": 0.3149,
+      "profit_factor": 1.1046,
+      "total_pnl_pips": 1370.77,
+      "max_drawdown": 0.0694,
+      "expectancy": 1.73
+    },
+    "test": {
+      "trades": 571,
+      "win_rate": 0.3065,
+      "profit_factor": 1.025,
+      "total_pnl_pips": 247.31,
+      "max_drawdown": 0.0834,
+      "expectancy": 0.43
+    },
+    "robustness_score": 1,
+    "degradation_pct": -0.69
+  },
+  {
+    "params": {
+      "ricci_collapse_threshold": -50142.86,
+      "tidal_force_threshold": 0.020842,
+      "stop_loss_pips": 22.9,
+      "take_profit_pips": 58.9
+    },
+    "walk_forward": {
+      "windows": 4,
+      "all_passed": true
+    },
+    "train": {
+      "trades": 794,
+      "win_rate": 0.3149,
+      "profit_factor": 1.1046,
+      "total_pnl_pips": 1370.77,
+      "max_drawdown": 0.0694,
+      "expectancy": 1.73
+    },
+    "test": {
+      "trades": 571,
+      "win_rate": 0.3065,
+      "profit_factor": 1.025,
+      "total_pnl_pips": 247.31,
+      "max_drawdown": 0.0834,
+      "expectancy": 0.43
+    },
+    "robustness_score": 1,
+    "degradation_pct": -0.69
+  },
+  {
+    "params": {
+      "ricci_collapse_threshold": -50142.86,
+      "tidal_force_threshold": 0.028474,
+      "stop_loss_pips": 22.9,
+      "take_profit_pips": 58.9
+    },
+    "walk_forward": {
+      "windows": 4,
+      "all_passed": true
+    },
+    "train": {
+      "trades": 794,
+      "win_rate": 0.3149,
+      "profit_factor": 1.1046,
+      "total_pnl_pips": 1370.77,
+      "max_drawdown": 0.0694,
+      "expectancy": 1.73
+    },
+    "test": {
+      "trades": 571,
+      "win_rate": 0.3065,
+      "profit_factor": 1.025,
+      "total_pnl_pips": 247.31,
+      "max_drawdown": 0.0834,
+      "expectancy": 0.43
+    },
+    "robustness_score": 1,
+    "degradation_pct": -0.69
+  }
+]
