@@ -46,13 +46,13 @@ def create_fifn_strategy(
     take_profit_pips: float = 40.0,
     reynolds_sweet_low: float = 2300.0,
     reynolds_sweet_high: float = 4000.0,
-    skewness_threshold: float = 0.5,
-    kl_divergence_threshold: float = 0.01
+    skewness_threshold: float = 0.5
 ) -> FIFNStrategy:
     """
     Cria instancia da estrategia FIFN com parametros customizados
 
     AUDITORIA 29: min_prices unificado em 100 para consistência
+    AUDITORIA 30: Removido kl_divergence_threshold (filtrado no optimizer, nao na strategy)
 
     Args:
         min_prices: Minimo de precos para analise (AUDITORIA 29: 100)
@@ -61,7 +61,6 @@ def create_fifn_strategy(
         reynolds_sweet_low: Limite inferior do sweet spot (Reynolds)
         reynolds_sweet_high: Limite superior do sweet spot (Reynolds)
         skewness_threshold: Threshold para skewness direcional
-        kl_divergence_threshold: Threshold para KL divergence
 
     Returns:
         Instancia de FIFNStrategy
@@ -72,8 +71,7 @@ def create_fifn_strategy(
         take_profit_pips=take_profit_pips,
         reynolds_sweet_low=reynolds_sweet_low,
         reynolds_sweet_high=reynolds_sweet_high,
-        skewness_threshold=skewness_threshold,
-        kl_divergence_threshold=kl_divergence_threshold
+        skewness_threshold=skewness_threshold
     )
 
 
