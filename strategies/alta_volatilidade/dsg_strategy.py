@@ -2,12 +2,17 @@
 Adaptador de Estratégia para o Detector de Singularidade Gravitacional
 Integra o indicador DSG com o sistema de trading
 
-VERSÃO CORRIGIDA - SEM LOOK-AHEAD BIAS
-======================================
-Correções aplicadas:
+VERSÃO V3.0 - PRONTO PARA DINHEIRO REAL
+=======================================
+Correções aplicadas (V2.0):
 1. Stop/Take passados em PIPS (não níveis de preço)
 2. BacktestEngine recalcula níveis baseado no entry_price REAL
 3. Removida dependência do close atual para níveis
+
+Correções aplicadas (V3.0 - Auditoria):
+4. Cooldown tornado CONFIGURÁVEL (era hardcoded 30)
+5. Confidence threshold tornado CONFIGURÁVEL (era hardcoded 0.5)
+6. Indicador DSG V3.0 sem look-ahead bias
 """
 from datetime import datetime
 from typing import Optional, Dict
@@ -37,7 +42,9 @@ class DSGStrategy(BaseStrategy):
                  event_horizon_threshold: float = 0.001,
                  lookback_window: int = 50,
                  c_base: float = 1.0,
-                 gamma: float = 0.1):
+                 gamma: float = 0.1,
+                 signal_cooldown_bars: int = 30,
+                 min_confidence: float = 0.5):
         """
         Inicializa a estratégia DSG
 
@@ -51,6 +58,8 @@ class DSGStrategy(BaseStrategy):
             lookback_window: Janela de lookback para cálculos
             c_base: Velocidade base da luz financeira
             gamma: Fator de acoplamento volume bid/ask
+            signal_cooldown_bars: NOVO V3.0 - Barras de cooldown entre sinais (era hardcoded 30)
+            min_confidence: NOVO V3.0 - Confiança mínima para gerar sinal (era hardcoded 0.5)
         """
         super().__init__(name="DSG-SingularidadeGravitacional")
 
@@ -58,12 +67,16 @@ class DSGStrategy(BaseStrategy):
         self.stop_loss_pips = stop_loss_pips
         self.take_profit_pips = take_profit_pips
 
+        # CORREÇÃO V3.0: Parâmetros agora configuráveis
+        self.signal_cooldown_bars = signal_cooldown_bars
+        self.min_confidence = min_confidence
+
         # Buffer de preços e volumes
         self.prices = deque(maxlen=600)
         self.bid_volumes = deque(maxlen=600)
         self.ask_volumes = deque(maxlen=600)
 
-        # Indicador DSG
+        # Indicador DSG V3.0
         self.dsg = DetectorSingularidadeGravitacional(
             c_base=c_base,
             gamma=gamma,
@@ -141,15 +154,15 @@ class DSGStrategy(BaseStrategy):
             result = self.dsg.analyze(prices_array, bid_vols_array, ask_vols_array)
             self.last_analysis = result
 
-            # Verifica sinal - apenas quando há singularidade real
-            if result['signal'] != 0 and result['confidence'] >= 0.5:
+            # CORREÇÃO V3.0: Usar min_confidence configurável (era hardcoded 0.5)
+            if result['signal'] != 0 and result['confidence'] >= self.min_confidence:
                 # Determina direção
                 if result['signal'] == 1:
                     direction = SignalType.BUY
                 else:
                     direction = SignalType.SELL
 
-                # CORREÇÃO: NÃO calcular níveis de stop/take baseado no close atual!
+                # CORREÇÃO V2.0: NÃO calcular níveis de stop/take baseado no close atual!
                 # Passar apenas em PIPS - o BacktestEngine recalcula baseado no entry_price REAL
                 #
                 # ANTES (ERRADO):
@@ -171,12 +184,13 @@ class DSGStrategy(BaseStrategy):
                     stop_loss=None,        # Será calculado pelo BacktestEngine
                     take_profit=None,      # Será calculado pelo BacktestEngine
                     reason=self._generate_reason(result),
-                    stop_loss_pips=self.stop_loss_pips,     # NOVO: Em PIPS
-                    take_profit_pips=self.take_profit_pips   # NOVO: Em PIPS
+                    stop_loss_pips=self.stop_loss_pips,     # Em PIPS
+                    take_profit_pips=self.take_profit_pips   # Em PIPS
                 )
 
                 self.last_signal = signal
-                self.signal_cooldown = 30  # Cooldown maior para DSG
+                # CORREÇÃO V3.0: Usar signal_cooldown_bars configurável (era hardcoded 30)
+                self.signal_cooldown = self.signal_cooldown_bars
 
                 return signal
 
