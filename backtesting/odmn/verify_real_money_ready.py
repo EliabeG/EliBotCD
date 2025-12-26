@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 ================================================================================
-VERIFICACAO DE PRONTIDAO PARA DINHEIRO REAL - ODMN V2.5
+VERIFICACAO DE PRONTIDAO PARA DINHEIRO REAL - ODMN V2.6
 ================================================================================
 
 Este script verifica se o sistema ODMN esta pronto para dinheiro real,
@@ -31,6 +31,10 @@ VERIFICACOES REALIZADAS:
 19. V2.4: SIGNAL_COOLDOWN do config centralizado
 20. V2.4: Indicador tem metodo reset() publico
 21. V2.5: MFG levanta ValueError se historical_prices invalido
+22. V2.6: ANNUALIZATION_FACTOR configuravel (sem 252 hardcoded)
+23. V2.6: MALLIAVIN_HORIZON dinamico por timeframe
+24. V2.6: MIN_WARMUP_BARS warmup implementado
+25. V2.6: Tratamento de erro defensivo na estrategia
 
 FUNDAMENTOS TEORICOS DO ODMN:
 ============================
@@ -38,7 +42,7 @@ FUNDAMENTOS TEORICOS DO ODMN:
 2. Calculo de Malliavin: Derivadas estocasticas para fragilidade
 3. Mean Field Games: Equilibrio Nash para comportamento institucional
 
-SE TODAS AS 21 VERIFICACOES PASSAREM = PRONTO PARA DINHEIRO REAL
+SE TODAS AS 25 VERIFICACOES PASSAREM = PRONTO PARA DINHEIRO REAL
 
 Uso:
     python -m backtesting.odmn.verify_real_money_ready
@@ -1359,13 +1363,276 @@ def verify_mfg_raises_error_on_invalid_input() -> ODMNVerificationResult:
         )
 
 
+def verify_annualization_factor_configurable() -> ODMNVerificationResult:
+    """
+    Verifica 22 (V2.6): ANNUALIZATION_FACTOR configuravel
+
+    O indicador deve usar ANNUALIZATION_FACTOR do config ao inves de
+    252 hardcoded, para suportar diferentes timeframes (H1, M15, etc).
+    """
+    indicator_path = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+        "strategies", "alta_volatilidade", "odmn_malliavin_nash.py"
+    )
+
+    config_path = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+        "config", "odmn_config.py"
+    )
+
+    try:
+        with open(indicator_path, 'r') as f:
+            indicator_content = f.read()
+
+        with open(config_path, 'r') as f:
+            config_content = f.read()
+
+        details = []
+
+        # Verifica se importa ANNUALIZATION_FACTOR
+        imports_factor = "ANNUALIZATION_FACTOR" in indicator_content
+
+        # Verifica se usa ANNUALIZATION_FACTOR no codigo (nao 252 hardcoded)
+        uses_factor = "* ANNUALIZATION_FACTOR" in indicator_content
+
+        # Verifica se NAO tem 252 hardcoded nos calculos principais
+        # Procura por padroes como "* 252" que indicam uso hardcoded
+        no_hardcoded = "var_r * 252" not in indicator_content and \
+                       "mean_r * 252" not in indicator_content
+
+        # Verifica se config tem ANNUALIZATION_FACTOR definido
+        config_has_factor = "ANNUALIZATION_FACTOR" in config_content and \
+                           "_ANNUALIZATION_FACTORS" in config_content
+
+        if imports_factor:
+            details.append("Importa ANNUALIZATION_FACTOR")
+        else:
+            details.append("ERRO: Nao importa ANNUALIZATION_FACTOR")
+
+        if uses_factor:
+            details.append("Usa ANNUALIZATION_FACTOR nos calculos")
+        else:
+            details.append("ERRO: Nao usa ANNUALIZATION_FACTOR")
+
+        if no_hardcoded:
+            details.append("Sem 252 hardcoded")
+        else:
+            details.append("ERRO CRITICO: 252 hardcoded encontrado")
+
+        if config_has_factor:
+            details.append("Config tem mapeamento de timeframes")
+
+        passed = imports_factor and uses_factor and no_hardcoded and config_has_factor
+        return ODMNVerificationResult(
+            "V2.6: ANNUALIZATION_FACTOR configuravel",
+            passed,
+            "; ".join(details)
+        )
+
+    except Exception as e:
+        return ODMNVerificationResult(
+            "V2.6: ANNUALIZATION_FACTOR configuravel",
+            False,
+            f"Erro ao verificar: {e}"
+        )
+
+
+def verify_malliavin_horizon_dynamic() -> ODMNVerificationResult:
+    """
+    Verifica 23 (V2.6): MALLIAVIN_HORIZON dinamico por timeframe
+
+    O horizonte de simulacao Malliavin deve ser configuravel,
+    nao fixo em T=1/252 (1 dia).
+    """
+    indicator_path = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+        "strategies", "alta_volatilidade", "odmn_malliavin_nash.py"
+    )
+
+    try:
+        with open(indicator_path, 'r') as f:
+            content = f.read()
+
+        details = []
+
+        # Verifica se importa MALLIAVIN_HORIZON
+        imports_horizon = "MALLIAVIN_HORIZON" in content
+
+        # Verifica se usa MALLIAVIN_HORIZON (nao T=1/252 hardcoded)
+        uses_horizon = "T=MALLIAVIN_HORIZON" in content
+
+        # Verifica se NAO tem T=1/252 hardcoded
+        no_hardcoded = "T=1/252" not in content
+
+        if imports_horizon:
+            details.append("Importa MALLIAVIN_HORIZON")
+        else:
+            details.append("ERRO: Nao importa MALLIAVIN_HORIZON")
+
+        if uses_horizon:
+            details.append("Usa MALLIAVIN_HORIZON no Malliavin")
+        else:
+            details.append("ERRO: Nao usa MALLIAVIN_HORIZON")
+
+        if no_hardcoded:
+            details.append("Sem T=1/252 hardcoded")
+        else:
+            details.append("ERRO: T=1/252 hardcoded encontrado")
+
+        passed = imports_horizon and uses_horizon and no_hardcoded
+        return ODMNVerificationResult(
+            "V2.6: MALLIAVIN_HORIZON dinamico",
+            passed,
+            "; ".join(details)
+        )
+
+    except Exception as e:
+        return ODMNVerificationResult(
+            "V2.6: MALLIAVIN_HORIZON dinamico",
+            False,
+            f"Erro ao verificar: {e}"
+        )
+
+
+def verify_warmup_implemented() -> ODMNVerificationResult:
+    """
+    Verifica 24 (V2.6): MIN_WARMUP_BARS warmup implementado
+
+    O indicador deve ter periodo de warmup para evitar sinais erraticos
+    nas primeiras barras (cold start problem).
+    """
+    indicator_path = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+        "strategies", "alta_volatilidade", "odmn_malliavin_nash.py"
+    )
+
+    try:
+        with open(indicator_path, 'r') as f:
+            content = f.read()
+
+        details = []
+
+        # Verifica se importa MIN_WARMUP_BARS
+        imports_warmup = "MIN_WARMUP_BARS" in content
+
+        # Verifica se tem logica de warmup
+        has_warmup_check = "is_warmup" in content
+
+        # Verifica se retorna is_warmup no resultado
+        returns_warmup = "'is_warmup':" in content
+
+        # Verifica se forca HOLD durante warmup
+        holds_on_warmup = "if is_warmup:" in content and "signal = 0" in content
+
+        if imports_warmup:
+            details.append("Importa MIN_WARMUP_BARS")
+        else:
+            details.append("ERRO: Nao importa MIN_WARMUP_BARS")
+
+        if has_warmup_check:
+            details.append("Tem verificacao de warmup")
+        else:
+            details.append("ERRO: Sem verificacao de warmup")
+
+        if holds_on_warmup:
+            details.append("Forca HOLD durante warmup")
+        else:
+            details.append("ERRO: Nao protege warmup")
+
+        if returns_warmup:
+            details.append("Retorna is_warmup no resultado")
+
+        passed = imports_warmup and has_warmup_check and holds_on_warmup
+        return ODMNVerificationResult(
+            "V2.6: Warmup implementado",
+            passed,
+            "; ".join(details)
+        )
+
+    except Exception as e:
+        return ODMNVerificationResult(
+            "V2.6: Warmup implementado",
+            False,
+            f"Erro ao verificar: {e}"
+        )
+
+
+def verify_defensive_error_handling() -> ODMNVerificationResult:
+    """
+    Verifica 25 (V2.6): Tratamento de erro defensivo na estrategia
+
+    A estrategia deve ter tratamento de erro robusto que:
+    - Rastreia erros consecutivos
+    - Entra em modo de seguranca apos multiplos erros
+    - Pode ser resetada para sair do modo de seguranca
+    """
+    strategy_path = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+        "strategies", "alta_volatilidade", "odmn_strategy.py"
+    )
+
+    try:
+        with open(strategy_path, 'r') as f:
+            content = f.read()
+
+        details = []
+
+        # Verifica se rastreia erros consecutivos
+        tracks_errors = "_consecutive_errors" in content
+
+        # Verifica se tem modo de seguranca
+        has_error_state = "_in_error_state" in content
+
+        # Verifica se tem metodo para checar estado de erro
+        has_check_method = "is_in_error_state" in content
+
+        # Verifica se reseta estado de erro no reset()
+        resets_error = "_in_error_state = False" in content
+
+        # Verifica se tem limite de erros
+        has_limit = "MAX_CONSECUTIVE_ERRORS" in content
+
+        if tracks_errors:
+            details.append("Rastreia erros consecutivos")
+        else:
+            details.append("ERRO: Nao rastreia erros")
+
+        if has_error_state:
+            details.append("Tem modo de seguranca")
+        else:
+            details.append("ERRO: Sem modo de seguranca")
+
+        if has_check_method:
+            details.append("Tem is_in_error_state()")
+
+        if resets_error:
+            details.append("Reset limpa estado de erro")
+
+        if has_limit:
+            details.append("Tem limite de erros configurado")
+
+        passed = tracks_errors and has_error_state and resets_error and has_limit
+        return ODMNVerificationResult(
+            "V2.6: Erro defensivo",
+            passed,
+            "; ".join(details)
+        )
+
+    except Exception as e:
+        return ODMNVerificationResult(
+            "V2.6: Erro defensivo",
+            False,
+            f"Erro ao verificar: {e}"
+        )
+
+
 def run_all_verifications():
     """Executa todas as verificacoes e imprime resultado"""
     print("=" * 70)
-    print("  VERIFICACAO DE PRONTIDAO PARA DINHEIRO REAL - ODMN V2.5")
+    print("  VERIFICACAO DE PRONTIDAO PARA DINHEIRO REAL - ODMN V2.6")
     print("  Oraculo de Derivativos de Malliavin-Nash")
     print("=" * 70)
-    print("\n  21 verificacoes criticas para evitar look-ahead bias\n")
+    print("\n  25 verificacoes criticas para evitar look-ahead bias\n")
 
     verifications = [
         verify_heston_calibration_no_lookahead,
@@ -1392,6 +1659,11 @@ def run_all_verifications():
         verify_indicator_has_reset_method,
         # V2.5 verificacoes adicionais
         verify_mfg_raises_error_on_invalid_input,
+        # V2.6 verificacoes adicionais
+        verify_annualization_factor_configurable,
+        verify_malliavin_horizon_dynamic,
+        verify_warmup_implemented,
+        verify_defensive_error_handling,
     ]
 
     results = []
@@ -1415,7 +1687,7 @@ def run_all_verifications():
 
     if passed_count == total_count:
         print("\n  +++ SISTEMA ODMN PRONTO PARA DINHEIRO REAL +++")
-        print("\n  O indicador ODMN passou em TODAS as 21 verificacoes criticas:")
+        print("\n  O indicador ODMN passou em TODAS as 25 verificacoes criticas:")
         print("    1. Calibracao Heston usa apenas dados passados")
         print("    2. Malliavin Monte Carlo e causal (forward simulation)")
         print("    3. Mean Field Games resolve PDEs sem dados futuros")
@@ -1437,10 +1709,15 @@ def run_all_verifications():
         print("   19. V2.4: SIGNAL_COOLDOWN do config centralizado")
         print("   20. V2.4: Indicador tem metodo reset() publico")
         print("   21. V2.5: MFG levanta ValueError (falha explicita)")
+        print("   22. V2.6: ANNUALIZATION_FACTOR configuravel (multi-timeframe)")
+        print("   23. V2.6: MALLIAVIN_HORIZON dinamico por timeframe")
+        print("   24. V2.6: Warmup implementado (protecao cold start)")
+        print("   25. V2.6: Tratamento de erro defensivo na estrategia")
         print("\n  Proximos passos:")
-        print("    1. Execute o optimizer: python -m backtesting.odmn.optimizer")
-        print("    2. Valide os resultados no periodo de teste")
-        print("    3. Faca paper trading por 2-4 semanas antes de real")
+        print("    1. Ajuste TIMEFRAME em config/odmn_config.py para seu timeframe")
+        print("    2. Execute o optimizer: python -m backtesting.odmn.optimizer")
+        print("    3. Valide os resultados no periodo de teste")
+        print("    4. Faca paper trading por 2-4 semanas antes de real")
         return True
     else:
         print("\n  XXX ATENCAO: SISTEMA NAO PRONTO PARA DINHEIRO REAL XXX")

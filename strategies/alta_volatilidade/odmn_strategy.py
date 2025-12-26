@@ -6,6 +6,8 @@ from datetime import datetime
 from typing import Optional
 from collections import deque
 import numpy as np
+import traceback
+import sys
 
 from ..base import BaseStrategy, Signal, SignalType
 from .odmn_malliavin_nash import OracloDerivativosMalliavinNash
@@ -16,6 +18,9 @@ try:
 except ImportError:
     MIN_CONFIDENCE = 0.60
     SIGNAL_COOLDOWN = 25
+
+# V2.6: Limite de erros consecutivos antes de entrar em modo de seguranca
+MAX_CONSECUTIVE_ERRORS = 3
 
 
 class ODMNStrategy(BaseStrategy):
@@ -76,7 +81,13 @@ class ODMNStrategy(BaseStrategy):
 
         # Estado
         self.last_analysis = None
-        self.signal_cooldown = 0
+        self.last_signal = None
+        self.signal_cooldown = SIGNAL_COOLDOWN  # V2.4: usa config centralizado
+
+        # V2.6: Tracking de erros para modo de seguranca
+        self._consecutive_errors = 0
+        self._last_error = None
+        self._in_error_state = False
 
     def add_price(self, price: float):
         """Adiciona um preço ao buffer"""
@@ -110,9 +121,18 @@ class ODMNStrategy(BaseStrategy):
         prices_array = np.array(self.prices)
 
         try:
+            # V2.6: Se em estado de erro, nao tenta analisar ate reset
+            if self._in_error_state:
+                print(f"[ODMN ERRO] Estrategia em modo de seguranca. Erros: {self._consecutive_errors}")
+                return None
+
             # Executa análise ODMN
             result = self.odmn.analyze(prices_array)
             self.last_analysis = result
+
+            # V2.6: Reset contador de erros em caso de sucesso
+            self._consecutive_errors = 0
+            self._last_error = None
 
             # Verifica sinal - usa MIN_CONFIDENCE do config
             if result['signal'] != 0 and result['confidence'] >= MIN_CONFIDENCE:
@@ -155,9 +175,41 @@ class ODMNStrategy(BaseStrategy):
                 return signal
 
         except Exception as e:
-            print(f"Erro na análise ODMN: {e}")
+            # V2.6: Tratamento de erro defensivo
+            self._consecutive_errors += 1
+            self._last_error = str(e)
+
+            # Log detalhado do erro
+            print(f"[ODMN ERRO CRITICO] Falha na analise #{self._consecutive_errors}: {e}",
+                  file=sys.stderr)
+
+            # Se atingir limite de erros consecutivos, entra em modo de seguranca
+            if self._consecutive_errors >= MAX_CONSECUTIVE_ERRORS:
+                self._in_error_state = True
+                print(f"[ODMN ALERTA] MODO DE SEGURANCA ATIVADO apos {self._consecutive_errors} erros!",
+                      file=sys.stderr)
+                print(f"[ODMN ALERTA] Ultimo erro: {self._last_error}", file=sys.stderr)
+                print(f"[ODMN ALERTA] Chame reset() para reativar a estrategia.", file=sys.stderr)
+
+            # Log do traceback em modo debug
+            if self._consecutive_errors == 1:
+                traceback.print_exc()
 
         return None
+
+    def is_in_error_state(self) -> bool:
+        """V2.6: Retorna True se a estrategia esta em modo de seguranca"""
+        return self._in_error_state
+
+    def get_error_info(self) -> Optional[dict]:
+        """V2.6: Retorna informacoes sobre o estado de erro"""
+        if self._consecutive_errors == 0:
+            return None
+        return {
+            'consecutive_errors': self._consecutive_errors,
+            'last_error': self._last_error,
+            'in_error_state': self._in_error_state
+        }
 
     def _generate_reason(self, result: dict) -> str:
         """Gera descrição do motivo do sinal"""
@@ -178,6 +230,10 @@ class ODMNStrategy(BaseStrategy):
         self.signal_cooldown = 0
         # V2.4: Usa método público reset() ao invés de acessar _cache diretamente
         self.odmn.reset()
+        # V2.6: Reseta estado de erro
+        self._consecutive_errors = 0
+        self._last_error = None
+        self._in_error_state = False
 
     def get_analysis_summary(self) -> Optional[dict]:
         """Retorna resumo da última análise"""
