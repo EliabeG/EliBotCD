@@ -10,11 +10,12 @@ import numpy as np
 from ..base import BaseStrategy, Signal, SignalType
 from .odmn_malliavin_nash import OracloDerivativosMalliavinNash
 
-# Importar config centralizado
+# Importar config centralizado - V2.4: inclui SIGNAL_COOLDOWN
 try:
-    from config.odmn_config import MIN_CONFIDENCE
+    from config.odmn_config import MIN_CONFIDENCE, SIGNAL_COOLDOWN
 except ImportError:
     MIN_CONFIDENCE = 0.60
+    SIGNAL_COOLDOWN = 25
 
 
 class ODMNStrategy(BaseStrategy):
@@ -149,7 +150,7 @@ class ODMNStrategy(BaseStrategy):
                 )
 
                 self.last_signal = signal
-                self.signal_cooldown = 25  # Cooldown maior para ODMN
+                self.signal_cooldown = SIGNAL_COOLDOWN  # V2.4: usa config centralizado
 
                 return signal
 
@@ -175,14 +176,8 @@ class ODMNStrategy(BaseStrategy):
         self.last_analysis = None
         self.last_signal = None
         self.signal_cooldown = 0
-        # Reseta cache do indicador
-        self.odmn._cache = {
-            'heston_params': None,
-            'malliavin_result': None,
-            'mfg_result': None,
-            'fragility_history': deque(maxlen=100),
-            'direction_history': deque(maxlen=100)
-        }
+        # V2.4: Usa método público reset() ao invés de acessar _cache diretamente
+        self.odmn.reset()
 
     def get_analysis_summary(self) -> Optional[dict]:
         """Retorna resumo da última análise"""

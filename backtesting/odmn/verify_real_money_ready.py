@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 ================================================================================
-VERIFICACAO DE PRONTIDAO PARA DINHEIRO REAL - ODMN V2.3
+VERIFICACAO DE PRONTIDAO PARA DINHEIRO REAL - ODMN V2.4
 ================================================================================
 
 Este script verifica se o sistema ODMN esta pronto para dinheiro real,
@@ -27,6 +27,9 @@ VERIFICACOES REALIZADAS:
 15. V2.3: Spread aplicado na SAIDA do optimizer
 16. V2.3: Seed passado na estrategia ODMN
 17. V2.3: MIN_EXPECTANCY >= 3.0 pips
+18. V2.4: MFG usa historical_prices para direcao correta
+19. V2.4: SIGNAL_COOLDOWN do config centralizado
+20. V2.4: Indicador tem metodo reset() publico
 
 FUNDAMENTOS TEORICOS DO ODMN:
 ============================
@@ -34,7 +37,7 @@ FUNDAMENTOS TEORICOS DO ODMN:
 2. Calculo de Malliavin: Derivadas estocasticas para fragilidade
 3. Mean Field Games: Equilibrio Nash para comportamento institucional
 
-SE TODAS AS 17 VERIFICACOES PASSAREM = PRONTO PARA DINHEIRO REAL
+SE TODAS AS 20 VERIFICACOES PASSAREM = PRONTO PARA DINHEIRO REAL
 
 Uso:
     python -m backtesting.odmn.verify_real_money_ready
@@ -1106,13 +1109,200 @@ def verify_min_expectancy_adequate() -> ODMNVerificationResult:
         )
 
 
+def verify_mfg_uses_historical_prices() -> ODMNVerificationResult:
+    """
+    Verifica 18 (V2.4): MFG usa historical_prices para direcao correta
+
+    BUG CRITICO V2.3: _analytical_approximation sempre retornava mfg_direction=0
+    porque mean_log_price = log_price. V2.4 corrige passando historical_prices
+    para calcular mean_log_price corretamente.
+    """
+    indicator_path = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+        "strategies", "alta_volatilidade", "odmn_malliavin_nash.py"
+    )
+
+    try:
+        with open(indicator_path, 'r') as f:
+            content = f.read()
+
+        details = []
+
+        # Verifica se _analytical_approximation aceita historical_prices
+        accepts_historical = "historical_prices: np.ndarray = None" in content
+
+        # Verifica se calcula mean_log_price a partir dos precos historicos
+        uses_historical = "np.mean(np.log(historical_prices))" in content
+
+        # Verifica se analyze() passa prices para MFG
+        passes_prices = "historical_prices=prices" in content
+
+        # Verifica que NAO tem o bug original (mean_log_price = log_price)
+        no_bug = "mean_log_price = log_price" not in content
+
+        if accepts_historical:
+            details.append("_analytical_approximation aceita historical_prices")
+        else:
+            details.append("ERRO: _analytical_approximation NAO aceita historical_prices")
+
+        if uses_historical:
+            details.append("Calcula mean_log_price de precos historicos")
+        else:
+            details.append("ERRO: Nao calcula mean_log_price corretamente")
+
+        if passes_prices:
+            details.append("analyze() passa prices para MFG")
+        else:
+            details.append("ERRO: analyze() nao passa prices para MFG")
+
+        if no_bug:
+            details.append("Bug original corrigido (mean_log_price != log_price)")
+        else:
+            details.append("ERRO CRITICO: Bug original presente (mfg_direction=0)")
+
+        passed = accepts_historical and uses_historical and passes_prices and no_bug
+        return ODMNVerificationResult(
+            "V2.4: MFG usa historical_prices",
+            passed,
+            "; ".join(details)
+        )
+
+    except Exception as e:
+        return ODMNVerificationResult(
+            "V2.4: MFG usa historical_prices",
+            False,
+            f"Erro ao verificar: {e}"
+        )
+
+
+def verify_signal_cooldown_from_config() -> ODMNVerificationResult:
+    """
+    Verifica 19 (V2.4): SIGNAL_COOLDOWN do config centralizado
+
+    A estrategia deve usar SIGNAL_COOLDOWN do config, nao valor hardcoded.
+    """
+    strategy_path = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+        "strategies", "alta_volatilidade", "odmn_strategy.py"
+    )
+
+    try:
+        with open(strategy_path, 'r') as f:
+            content = f.read()
+
+        details = []
+
+        # Verifica se importa SIGNAL_COOLDOWN do config
+        imports_cooldown = "from config.odmn_config import" in content and "SIGNAL_COOLDOWN" in content
+
+        # Verifica se usa SIGNAL_COOLDOWN (nao valor hardcoded)
+        uses_cooldown = "self.signal_cooldown = SIGNAL_COOLDOWN" in content
+
+        # Verifica se NAO tem valor hardcoded
+        no_hardcoded = "self.signal_cooldown = 25" not in content
+
+        if imports_cooldown:
+            details.append("Importa SIGNAL_COOLDOWN do config")
+        else:
+            details.append("ERRO: Nao importa SIGNAL_COOLDOWN")
+
+        if uses_cooldown:
+            details.append("Usa SIGNAL_COOLDOWN no codigo")
+        else:
+            details.append("ERRO: Nao usa SIGNAL_COOLDOWN")
+
+        if no_hardcoded:
+            details.append("Sem valor hardcoded 25")
+        else:
+            details.append("AVISO: Valor 25 hardcoded encontrado")
+
+        passed = imports_cooldown and uses_cooldown and no_hardcoded
+        return ODMNVerificationResult(
+            "V2.4: SIGNAL_COOLDOWN do config",
+            passed,
+            "; ".join(details)
+        )
+
+    except Exception as e:
+        return ODMNVerificationResult(
+            "V2.4: SIGNAL_COOLDOWN do config",
+            False,
+            f"Erro ao verificar: {e}"
+        )
+
+
+def verify_indicator_has_reset_method() -> ODMNVerificationResult:
+    """
+    Verifica 20 (V2.4): Indicador tem metodo reset() publico
+
+    O indicador deve ter metodo reset() publico para que a estrategia
+    possa resetar o estado sem acessar _cache diretamente.
+    """
+    indicator_path = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+        "strategies", "alta_volatilidade", "odmn_malliavin_nash.py"
+    )
+
+    strategy_path = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+        "strategies", "alta_volatilidade", "odmn_strategy.py"
+    )
+
+    try:
+        with open(indicator_path, 'r') as f:
+            indicator_content = f.read()
+
+        with open(strategy_path, 'r') as f:
+            strategy_content = f.read()
+
+        details = []
+
+        # Verifica se indicador tem metodo reset()
+        has_reset = "def reset(self):" in indicator_content and "self._cache = {" in indicator_content
+
+        # Verifica se estrategia usa self.odmn.reset() ao inves de acessar _cache
+        uses_reset = "self.odmn.reset()" in strategy_content
+
+        # Verifica se estrategia NAO acessa _cache diretamente
+        no_direct_cache = "self.odmn._cache" not in strategy_content
+
+        if has_reset:
+            details.append("Indicador tem metodo reset()")
+        else:
+            details.append("ERRO: Indicador NAO tem reset()")
+
+        if uses_reset:
+            details.append("Estrategia usa self.odmn.reset()")
+        else:
+            details.append("ERRO: Estrategia nao usa reset()")
+
+        if no_direct_cache:
+            details.append("Estrategia nao acessa _cache diretamente")
+        else:
+            details.append("AVISO: Estrategia acessa _cache diretamente")
+
+        passed = has_reset and uses_reset and no_direct_cache
+        return ODMNVerificationResult(
+            "V2.4: Indicador tem reset() publico",
+            passed,
+            "; ".join(details)
+        )
+
+    except Exception as e:
+        return ODMNVerificationResult(
+            "V2.4: Indicador tem reset() publico",
+            False,
+            f"Erro ao verificar: {e}"
+        )
+
+
 def run_all_verifications():
     """Executa todas as verificacoes e imprime resultado"""
     print("=" * 70)
-    print("  VERIFICACAO DE PRONTIDAO PARA DINHEIRO REAL - ODMN V2.3")
+    print("  VERIFICACAO DE PRONTIDAO PARA DINHEIRO REAL - ODMN V2.4")
     print("  Oraculo de Derivativos de Malliavin-Nash")
     print("=" * 70)
-    print("\n  17 verificacoes criticas para evitar look-ahead bias\n")
+    print("\n  20 verificacoes criticas para evitar look-ahead bias\n")
 
     verifications = [
         verify_heston_calibration_no_lookahead,
@@ -1133,6 +1323,10 @@ def run_all_verifications():
         verify_spread_applied_on_exit,
         verify_seed_in_strategy,
         verify_min_expectancy_adequate,
+        # V2.4 verificacoes adicionais
+        verify_mfg_uses_historical_prices,
+        verify_signal_cooldown_from_config,
+        verify_indicator_has_reset_method,
     ]
 
     results = []
@@ -1156,7 +1350,7 @@ def run_all_verifications():
 
     if passed_count == total_count:
         print("\n  +++ SISTEMA ODMN PRONTO PARA DINHEIRO REAL +++")
-        print("\n  O indicador ODMN passou em TODAS as 17 verificacoes criticas:")
+        print("\n  O indicador ODMN passou em TODAS as 20 verificacoes criticas:")
         print("    1. Calibracao Heston usa apenas dados passados")
         print("    2. Malliavin Monte Carlo e causal (forward simulation)")
         print("    3. Mean Field Games resolve PDEs sem dados futuros")
@@ -1174,6 +1368,9 @@ def run_all_verifications():
         print("   15. V2.3: Spread aplicado na SAIDA do optimizer")
         print("   16. V2.3: Seed passado na estrategia ODMN")
         print("   17. V2.3: MIN_EXPECTANCY >= 3.0 pips")
+        print("   18. V2.4: MFG usa historical_prices (bug critico corrigido)")
+        print("   19. V2.4: SIGNAL_COOLDOWN do config centralizado")
+        print("   20. V2.4: Indicador tem metodo reset() publico")
         print("\n  Proximos passos:")
         print("    1. Execute o optimizer: python -m backtesting.odmn.optimizer")
         print("    2. Valide os resultados no periodo de teste")
