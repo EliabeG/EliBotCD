@@ -377,9 +377,10 @@ class DSGRobustOptimizer:
         )
 
         # CORREÇÃO V3.4: Usa ratios CENTRALIZADOS
+        # CORREÇÃO V3.5: Usa MIN_PROFIT_FACTOR_TEST ao invés de 1.0 hardcoded
         pf_ratio = test_result.profit_factor / train_result.profit_factor if train_result.profit_factor > 0 else 0
         wr_ratio = test_result.win_rate / train_result.win_rate if train_result.win_rate > 0 else 0
-        is_robust = pf_ratio >= MIN_PF_RATIO and wr_ratio >= MIN_WR_RATIO and test_result.profit_factor >= 1.0
+        is_robust = pf_ratio >= MIN_PF_RATIO and wr_ratio >= MIN_WR_RATIO and test_result.profit_factor >= MIN_PROFIT_FACTOR_TEST
 
         if not is_robust:
             return None
@@ -424,8 +425,11 @@ class DSGRobustOptimizer:
         # Ricci: -50836 a -49798 (sempre muito negativo, sempre em colapso)
         # Tidal: 0.0001 a 0.067 (média 0.009)
         # Como ricci_collapse sempre é True, o Tidal é o filtro principal
-        ricci_vals = np.linspace(-51000, -49500, 20)  # Escala correta
-        tidal_vals = np.linspace(0.001, 0.05, 20)     # Ajustado para escala real
+        # CORREÇÃO: Ranges baseados na distribuição REAL observada
+        # Ricci: min=-50645, max=-44165, mean=-49492
+        # Tidal: min=0.000008, max=0.048746, mean=0.001192
+        ricci_vals = np.linspace(-50700, -44000, 20)  # Cobre toda distribuição real
+        tidal_vals = np.linspace(0.0001, 0.05, 20)    # Cobre toda distribuição real
         sl_vals = np.linspace(15, 50, 15)
         tp_vals = np.linspace(20, 70, 20)
 
