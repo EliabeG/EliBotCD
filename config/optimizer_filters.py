@@ -11,7 +11,7 @@ NUNCA modifique estes valores em arquivos individuais!
 Se precisar ajustar, modifique APENAS aqui.
 
 Última Atualização: Dezembro 2025
-Versão: 1.0 (Criado para correção de auditoria V3.4)
+Versão: 1.1 (V2.3 - MIN_EXPECTANCY aumentado para 3.0)
 """
 
 # =============================================================================
@@ -83,7 +83,8 @@ MIN_WR_RATIO: float = 0.70
 MIN_WINDOWS_PASSED: int = 3
 
 # Expectancy mínima por trade (em pips)
-MIN_EXPECTANCY_PIPS: float = 1.5
+# V2.3: Aumentado de 1.5 para 3.0 para cobrir custos de 4.6 pips + margem
+MIN_EXPECTANCY_PIPS: float = 3.0
 
 
 # =============================================================================
