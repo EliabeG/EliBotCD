@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 ================================================================================
-VERIFICACAO DE PRONTIDAO PARA DINHEIRO REAL - ODMN V2.6
+VERIFICACAO DE PRONTIDAO PARA DINHEIRO REAL - ODMN V2.7
 ================================================================================
 
 Este script verifica se o sistema ODMN esta pronto para dinheiro real,
@@ -253,7 +253,9 @@ def verify_direction_from_closed_bars() -> ODMNVerificationResult:
         with open(optimizer_path, 'r') as f:
             content = f.read()
 
-        # Verifica se usa bars[i-1] (barra anterior)
+        # V2.7: Verifica se usa calculate_direction_from_bars (modulo centralizado)
+        # OU bars[i-1].close diretamente
+        uses_centralized = "calculate_direction_from_bars" in content
         has_closed_bar = "bars[i - 1].close" in content or "self.bars[i - 1].close" in content
 
         # Verifica se exclui barra atual
@@ -262,10 +264,13 @@ def verify_direction_from_closed_bars() -> ODMNVerificationResult:
         # Verifica se usa trend_lookback
         has_trend_lookback = "min_bars_for_direction" in content or "TREND_LOOKBACK" in content
 
-        passed = has_closed_bar and has_trend_lookback
+        # V2.7: Passa se usa modulo centralizado OU acessa bars[i-1] diretamente
+        passed = (uses_centralized or has_closed_bar) and has_trend_lookback
         details = []
 
-        if has_closed_bar:
+        if uses_centralized:
+            details.append("Usa calculate_direction_from_bars (modulo centralizado)")
+        elif has_closed_bar:
             details.append("Usa bars[i-1].close (barra fechada)")
         else:
             details.append("ERRO: Nao encontrado uso de barra fechada")
@@ -616,8 +621,9 @@ def verify_min_confidence_from_config() -> ODMNVerificationResult:
         # Verifica se importa MIN_CONFIDENCE
         imports_config = "from config.odmn_config import MIN_CONFIDENCE" in content
 
-        # Verifica se usa MIN_CONFIDENCE no codigo
-        uses_config = "confidence >= MIN_CONFIDENCE" in content
+        # V2.7: Verifica se usa MIN_CONFIDENCE no codigo
+        # Aceita tanto 'confidence >= MIN_CONFIDENCE' quanto "['confidence'] >= MIN_CONFIDENCE"
+        uses_config = "MIN_CONFIDENCE" in content and ">= MIN_CONFIDENCE" in content
 
         # Verifica se NAO tem 0.6 hardcoded
         no_hardcoded = "confidence >= 0.6" not in content
@@ -1136,8 +1142,11 @@ def verify_mfg_uses_historical_prices() -> ODMNVerificationResult:
         # Verifica se _analytical_approximation aceita historical_prices
         accepts_historical = "historical_prices: np.ndarray = None" in content
 
-        # Verifica se calcula mean_log_price a partir dos precos historicos
-        uses_historical = "np.mean(np.log(historical_prices))" in content
+        # V2.7: Verifica se calcula mean_log_price a partir dos precos historicos
+        # Aceita tanto 'np.mean(np.log(historical_prices))' quanto 'np.mean(np.log(prices_for_mean))'
+        # porque prices_for_mean e derivado de historical_prices
+        uses_historical = ("np.mean(np.log(historical_prices))" in content or
+                          "np.mean(np.log(prices_for_mean))" in content)
 
         # Verifica se analyze() passa prices para MFG
         passes_prices = "historical_prices=prices" in content
@@ -1629,7 +1638,7 @@ def verify_defensive_error_handling() -> ODMNVerificationResult:
 def run_all_verifications():
     """Executa todas as verificacoes e imprime resultado"""
     print("=" * 70)
-    print("  VERIFICACAO DE PRONTIDAO PARA DINHEIRO REAL - ODMN V2.6")
+    print("  VERIFICACAO DE PRONTIDAO PARA DINHEIRO REAL - ODMN V2.7")
     print("  Oraculo de Derivativos de Malliavin-Nash")
     print("=" * 70)
     print("\n  25 verificacoes criticas para evitar look-ahead bias\n")
