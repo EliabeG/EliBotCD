@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 ================================================================================
-VERIFICACAO DE PRONTIDAO PARA DINHEIRO REAL - ODMN V2.4
+VERIFICACAO DE PRONTIDAO PARA DINHEIRO REAL - ODMN V2.5
 ================================================================================
 
 Este script verifica se o sistema ODMN esta pronto para dinheiro real,
@@ -30,6 +30,7 @@ VERIFICACOES REALIZADAS:
 18. V2.4: MFG usa historical_prices para direcao correta
 19. V2.4: SIGNAL_COOLDOWN do config centralizado
 20. V2.4: Indicador tem metodo reset() publico
+21. V2.5: MFG levanta ValueError se historical_prices invalido
 
 FUNDAMENTOS TEORICOS DO ODMN:
 ============================
@@ -37,7 +38,7 @@ FUNDAMENTOS TEORICOS DO ODMN:
 2. Calculo de Malliavin: Derivadas estocasticas para fragilidade
 3. Mean Field Games: Equilibrio Nash para comportamento institucional
 
-SE TODAS AS 20 VERIFICACOES PASSAREM = PRONTO PARA DINHEIRO REAL
+SE TODAS AS 21 VERIFICACOES PASSAREM = PRONTO PARA DINHEIRO REAL
 
 Uso:
     python -m backtesting.odmn.verify_real_money_ready
@@ -1296,13 +1297,75 @@ def verify_indicator_has_reset_method() -> ODMNVerificationResult:
         )
 
 
+def verify_mfg_raises_error_on_invalid_input() -> ODMNVerificationResult:
+    """
+    Verifica 21 (V2.5): MFG levanta ValueError se historical_prices invalido
+
+    V2.5 FIX: _analytical_approximation deve levantar ValueError explicitamente
+    quando historical_prices e None ou tem poucos elementos, ao inves de usar
+    fallback silencioso que retorna valores incorretos.
+    """
+    indicator_path = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+        "strategies", "alta_volatilidade", "odmn_malliavin_nash.py"
+    )
+
+    try:
+        with open(indicator_path, 'r') as f:
+            content = f.read()
+
+        details = []
+
+        # Verifica se levanta ValueError ao inves de fallback
+        raises_error = "raise ValueError" in content and "historical_prices" in content
+
+        # Verifica se NAO tem o fallback silencioso antigo
+        no_silent_fallback = "mean_log_price = log_price - sigma * 0.5" not in content
+
+        # Verifica se tem MIN_PRICES_FOR_MFG definido
+        has_min_check = "MIN_PRICES_FOR_MFG" in content
+
+        # Verifica comentario V2.5
+        has_v25_comment = "V2.5" in content
+
+        if raises_error:
+            details.append("Levanta ValueError se historical_prices invalido")
+        else:
+            details.append("ERRO: Nao levanta ValueError")
+
+        if no_silent_fallback:
+            details.append("Fallback silencioso removido")
+        else:
+            details.append("ERRO CRITICO: Fallback silencioso ainda presente")
+
+        if has_min_check:
+            details.append("MIN_PRICES_FOR_MFG definido")
+
+        if has_v25_comment:
+            details.append("Comentario V2.5 presente")
+
+        passed = raises_error and no_silent_fallback and has_min_check
+        return ODMNVerificationResult(
+            "V2.5: MFG levanta ValueError",
+            passed,
+            "; ".join(details)
+        )
+
+    except Exception as e:
+        return ODMNVerificationResult(
+            "V2.5: MFG levanta ValueError",
+            False,
+            f"Erro ao verificar: {e}"
+        )
+
+
 def run_all_verifications():
     """Executa todas as verificacoes e imprime resultado"""
     print("=" * 70)
-    print("  VERIFICACAO DE PRONTIDAO PARA DINHEIRO REAL - ODMN V2.4")
+    print("  VERIFICACAO DE PRONTIDAO PARA DINHEIRO REAL - ODMN V2.5")
     print("  Oraculo de Derivativos de Malliavin-Nash")
     print("=" * 70)
-    print("\n  20 verificacoes criticas para evitar look-ahead bias\n")
+    print("\n  21 verificacoes criticas para evitar look-ahead bias\n")
 
     verifications = [
         verify_heston_calibration_no_lookahead,
@@ -1327,6 +1390,8 @@ def run_all_verifications():
         verify_mfg_uses_historical_prices,
         verify_signal_cooldown_from_config,
         verify_indicator_has_reset_method,
+        # V2.5 verificacoes adicionais
+        verify_mfg_raises_error_on_invalid_input,
     ]
 
     results = []
@@ -1350,7 +1415,7 @@ def run_all_verifications():
 
     if passed_count == total_count:
         print("\n  +++ SISTEMA ODMN PRONTO PARA DINHEIRO REAL +++")
-        print("\n  O indicador ODMN passou em TODAS as 20 verificacoes criticas:")
+        print("\n  O indicador ODMN passou em TODAS as 21 verificacoes criticas:")
         print("    1. Calibracao Heston usa apenas dados passados")
         print("    2. Malliavin Monte Carlo e causal (forward simulation)")
         print("    3. Mean Field Games resolve PDEs sem dados futuros")
@@ -1371,6 +1436,7 @@ def run_all_verifications():
         print("   18. V2.4: MFG usa historical_prices (bug critico corrigido)")
         print("   19. V2.4: SIGNAL_COOLDOWN do config centralizado")
         print("   20. V2.4: Indicador tem metodo reset() publico")
+        print("   21. V2.5: MFG levanta ValueError (falha explicita)")
         print("\n  Proximos passos:")
         print("    1. Execute o optimizer: python -m backtesting.odmn.optimizer")
         print("    2. Valide os resultados no periodo de teste")

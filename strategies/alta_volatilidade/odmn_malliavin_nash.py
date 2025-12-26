@@ -580,7 +580,19 @@ class DeepGalerkinMFGSolver:
 
         V2.4 FIX: Agora calcula mean_log_price corretamente usando preços históricos,
         ao invés de usar o preço atual (que resultava em optimal_direction = 0 sempre)
+
+        V2.5 FIX: Levanta ValueError se historical_prices não for fornecido,
+        ao invés de usar fallback silencioso que retorna valores incorretos
         """
+        # V2.5: Validação obrigatória - falha explícita ao invés de silenciosa
+        MIN_PRICES_FOR_MFG = 50  # Mínimo de preços para cálculo confiável
+        if historical_prices is None or len(historical_prices) < MIN_PRICES_FOR_MFG:
+            raise ValueError(
+                f"ODMN MFG analítico requer pelo menos {MIN_PRICES_FOR_MFG} preços históricos. "
+                f"Recebido: {len(historical_prices) if historical_prices is not None else 0}. "
+                "Verifique se analyze() está passando prices corretamente."
+            )
+
         # Para MFG LQ, a solução é Gaussiana
         # A função valor é quadrática: V(t, x) = A(t)x² + B(t)x + C(t)
 
@@ -596,15 +608,10 @@ class DeepGalerkinMFGSolver:
         # Direção ótima baseada no gradiente
         log_price = np.log(price_level)
 
-        # V2.4 FIX: Calcula mean_log_price a partir dos preços históricos
-        # Isso corrige o bug onde optimal_direction era sempre 0
-        if historical_prices is not None and len(historical_prices) > 1:
-            # Usa média dos log-preços históricos como referência de equilíbrio
-            mean_log_price = np.mean(np.log(historical_prices))
-        else:
-            # Fallback: usa uma estimativa baseada em volatilidade
-            # Assume que o preço está desviado da média por ~1 desvio padrão
-            mean_log_price = log_price - sigma * 0.5  # Estimativa conservadora
+        # V2.4/V2.5: Calcula mean_log_price a partir dos preços históricos
+        # Usa últimos 100 preços (ou todos se menos disponíveis, mas >= MIN_PRICES_FOR_MFG)
+        prices_for_mean = historical_prices[-100:] if len(historical_prices) > 100 else historical_prices
+        mean_log_price = np.mean(np.log(prices_for_mean))
 
         # Direção ótima: positiva se preço > média (vender), negativa se preço < média (comprar)
         # O sinal é invertido porque no MFG LQ, o controle ótimo é a* = -∇V
