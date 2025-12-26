@@ -65,7 +65,8 @@ def create_odmn_strategy(
     mfg_direction_threshold: float = None,
     use_deep_galerkin: bool = None,
     malliavin_paths: int = None,
-    malliavin_steps: int = None
+    malliavin_steps: int = None,
+    seed: int = None
 ) -> ODMNStrategy:
     """
     Cria instancia da estrategia ODMN com parametros customizados
@@ -80,6 +81,7 @@ def create_odmn_strategy(
         use_deep_galerkin: Se True, usa redes neurais para MFG
         malliavin_paths: Numero de trajetorias Monte Carlo
         malliavin_steps: Passos temporais na simulacao
+        seed: Seed para reprodutibilidade do Monte Carlo (V2.4)
 
     Returns:
         Instancia de ODMNStrategy
@@ -111,7 +113,8 @@ def create_odmn_strategy(
         mfg_direction_threshold=mfg_direction_threshold,
         use_deep_galerkin=use_deep_galerkin,
         malliavin_paths=malliavin_paths,
-        malliavin_steps=malliavin_steps
+        malliavin_steps=malliavin_steps,
+        seed=seed  # V2.4: passa seed para reprodutibilidade
     )
 
 
@@ -123,7 +126,8 @@ def run_odmn_backtest(
     min_prices: int = None,
     stop_loss_pips: float = None,
     take_profit_pips: float = None,
-    verbose: bool = True
+    verbose: bool = True,
+    seed: int = None
 ) -> BacktestResult:
     """
     Executa backtest do ODMN com dados REAIS
@@ -140,6 +144,7 @@ def run_odmn_backtest(
         stop_loss_pips: Stop loss em pips
         take_profit_pips: Take profit em pips
         verbose: Mostrar detalhes
+        seed: Seed para reprodutibilidade do Monte Carlo (V2.4)
 
     Returns:
         BacktestResult com metricas
@@ -159,12 +164,15 @@ def run_odmn_backtest(
     print("=" * 70)
     print(f"  Custos: Spread={SPREAD_PIPS} pips, Slippage={SLIPPAGE_PIPS} pips")
     print(f"  Modelo: Heston + Malliavin + Mean Field Games")
+    if seed is not None:
+        print(f"  Seed: {seed} (reprodutivel)")
 
-    # Cria estrategia com novos parametros
+    # Cria estrategia com novos parametros - V2.4: passa seed
     strategy = create_odmn_strategy(
         min_prices=min_prices,
         stop_loss_pips=stop_loss_pips,
-        take_profit_pips=take_profit_pips
+        take_profit_pips=take_profit_pips,
+        seed=seed
     )
 
     # Usar custos CENTRALIZADOS

@@ -454,7 +454,8 @@ class DeepGalerkinMFGSolver:
                                volatility: float,
                                n_iterations: int = 500,
                                n_samples: int = 256,
-                               seed: int = None) -> dict:
+                               seed: int = None,
+                               historical_prices: np.ndarray = None) -> dict:
         """
         Encontra o equilíbrio de Nash no Mean Field Game
 
@@ -463,9 +464,11 @@ class DeepGalerkinMFGSolver:
         - Antecipam o impacto de mercado da distribuição coletiva
 
         REPRODUTIBILIDADE: Aceita seed para resultados determinísticos
+
+        V2.4: Aceita historical_prices para calcular mean_log_price corretamente
         """
         if not TORCH_AVAILABLE:
-            return self._analytical_approximation(price_level, volatility)
+            return self._analytical_approximation(price_level, volatility, historical_prices)
 
         # Seed para reprodutibilidade
         if seed is not None:
@@ -569,10 +572,14 @@ class DeepGalerkinMFGSolver:
             'is_equilibrium': loss_history[-1] < 0.01 if loss_history else False
         }
 
-    def _analytical_approximation(self, price_level: float, volatility: float) -> dict:
+    def _analytical_approximation(self, price_level: float, volatility: float,
+                                    historical_prices: np.ndarray = None) -> dict:
         """
         Aproximação analítica quando PyTorch não está disponível
         Usa solução de forma fechada para MFG linear-quadrático
+
+        V2.4 FIX: Agora calcula mean_log_price corretamente usando preços históricos,
+        ao invés de usar o preço atual (que resultava em optimal_direction = 0 sempre)
         """
         # Para MFG LQ, a solução é Gaussiana
         # A função valor é quadrática: V(t, x) = A(t)x² + B(t)x + C(t)
@@ -588,8 +595,19 @@ class DeepGalerkinMFGSolver:
 
         # Direção ótima baseada no gradiente
         log_price = np.log(price_level)
-        mean_log_price = log_price  # Assumindo preço atual como média
 
+        # V2.4 FIX: Calcula mean_log_price a partir dos preços históricos
+        # Isso corrige o bug onde optimal_direction era sempre 0
+        if historical_prices is not None and len(historical_prices) > 1:
+            # Usa média dos log-preços históricos como referência de equilíbrio
+            mean_log_price = np.mean(np.log(historical_prices))
+        else:
+            # Fallback: usa uma estimativa baseada em volatilidade
+            # Assume que o preço está desviado da média por ~1 desvio padrão
+            mean_log_price = log_price - sigma * 0.5  # Estimativa conservadora
+
+        # Direção ótima: positiva se preço > média (vender), negativa se preço < média (comprar)
+        # O sinal é invertido porque no MFG LQ, o controle ótimo é a* = -∇V
         optimal_direction = -2 * A_0 * (log_price - mean_log_price)
 
         # Densidade no equilíbrio (Gaussiana)
@@ -696,6 +714,22 @@ class OracloDerivativosMalliavinNash:
         self._seed_counter += 1
         return self.seed + self._seed_counter
 
+    def reset(self):
+        """
+        Reseta o estado interno do indicador.
+
+        V2.4: Método público para reset seguro, evitando acesso direto ao _cache.
+        Deve ser chamado quando a estratégia é resetada.
+        """
+        self._cache = {
+            'heston_params': None,
+            'malliavin_result': None,
+            'mfg_result': None,
+            'fragility_history': deque(maxlen=100),
+            'direction_history': deque(maxlen=100)
+        }
+        self._seed_counter = 0
+
     def analyze(self, prices: np.ndarray) -> dict:
         """
         Análise completa do Oráculo de Derivativos de Malliavin-Nash
@@ -769,11 +803,13 @@ class OracloDerivativosMalliavinNash:
         # =============================
         volatility = np.sqrt(heston_params['v0'])
         # REPRODUTIBILIDADE: Passa seed para MFG solver
+        # V2.4 FIX: Passa historical_prices para calcular mean_log_price corretamente
         mfg_result = self.mfg_solver.solve_mfg_equilibrium(
             price_level=current_price,
             volatility=volatility,
             n_iterations=200 if self.use_deep_galerkin and TORCH_AVAILABLE else 100,
-            seed=self._get_next_seed()
+            seed=self._get_next_seed(),
+            historical_prices=prices  # V2.4: passa preços históricos para MFG analítico
         )
         self._cache['mfg_result'] = mfg_result
 
@@ -952,6 +988,8 @@ class OracloDerivativosMalliavinNash:
         Gera previsão usando o modelo de Heston calibrado
 
         Retorna distribuição esperada de preços futuros
+
+        V2.4 FIX: Agora passa seed para reprodutibilidade
         """
         if self._cache['heston_params'] is None:
             self.analyze(prices)
@@ -962,12 +1000,13 @@ class OracloDerivativosMalliavinNash:
 
         heston = HestonModel(**{k: params[k] for k in ['kappa', 'theta', 'sigma', 'rho', 'mu', 'v0']})
 
-        # Simula trajetórias
+        # Simula trajetórias - V2.4 FIX: passa seed para reprodutibilidade
         result = heston.simulate(
             S0=prices[-1],
             T=horizon/252,  # Dias para fração de ano
             n_steps=horizon,
-            n_paths=1000
+            n_paths=1000,
+            seed=self._get_next_seed()  # V2.4: reprodutibilidade
         )
 
         final_prices = result['prices'][:, -1]
