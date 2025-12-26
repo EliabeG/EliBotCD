@@ -25,6 +25,19 @@ from collections import deque
 import warnings
 warnings.filterwarnings('ignore')
 
+# V2.6: Importar configuracoes de timeframe
+try:
+    from config.odmn_config import (
+        ANNUALIZATION_FACTOR,
+        MALLIAVIN_HORIZON,
+        MIN_WARMUP_BARS
+    )
+except ImportError:
+    # Fallback para D1 se config nao disponivel
+    ANNUALIZATION_FACTOR = 252
+    MALLIAVIN_HORIZON = 1/252
+    MIN_WARMUP_BARS = 100
+
 # Deep Learning para resolver PDEs
 try:
     import torch
@@ -189,8 +202,9 @@ class HestonCalibrator:
             autocorr_rv = 0.5
 
         # Estimativas iniciais baseadas em momentos
-        theta_init = var_r * 252  # Variância média anualizada
-        kappa_init = -np.log(max(autocorr_rv, 0.01)) * 252  # De autocorrelação
+        # V2.6: Usa ANNUALIZATION_FACTOR ao inves de 252 hardcoded
+        theta_init = var_r * ANNUALIZATION_FACTOR  # Variância média anualizada
+        kappa_init = -np.log(max(autocorr_rv, 0.01)) * ANNUALIZATION_FACTOR  # De autocorrelação
 
         # Vol da vol estimada da curtose
         sigma_init = np.sqrt(max(0.01, (kurt_r - 3) * theta_init / 4))
@@ -221,13 +235,14 @@ class HestonCalibrator:
             # Ajusta sigma para satisfazer Feller
             sigma = np.sqrt(2 * kappa * theta * 0.9)
 
+        # V2.6: Usa ANNUALIZATION_FACTOR para anualizacao correta
         params = {
             'kappa': kappa,
             'theta': theta,
             'sigma': sigma,
             'rho': rho,
-            'mu': mean_r * 252,
-            'v0': var_r * 252,
+            'mu': mean_r * ANNUALIZATION_FACTOR,
+            'v0': var_r * ANNUALIZATION_FACTOR,
             'feller_satisfied': 2 * kappa * theta > sigma**2
         }
 
@@ -258,8 +273,8 @@ class HestonCalibrator:
         # Curtose teórica aproximada
         kurt_theo = 3 + 3 * sigma**2 / (kappa * theta)
 
-        # Momentos empíricos
-        var_emp = np.var(returns) * 252
+        # Momentos empíricos - V2.6: usa ANNUALIZATION_FACTOR
+        var_emp = np.var(returns) * ANNUALIZATION_FACTOR
         kurt_emp = stats.kurtosis(returns) + 3
 
         # Erro quadrático dos momentos
@@ -757,9 +772,15 @@ class OracloDerivativosMalliavinNash:
             - analysis_details: detalhes completos
 
         REPRODUTIBILIDADE: Resultados determinísticos quando seed é fornecido
+
+        V2.6: WARMUP - Durante as primeiras MIN_WARMUP_BARS barras, o sistema
+        coleta dados de fragilidade mas retorna HOLD para evitar sinais erraticos.
         """
         if len(prices) < self.lookback_window:
             return self._empty_result()
+
+        # V2.6: Verificar se esta em periodo de warmup
+        is_warmup = len(self._cache['fragility_history']) < MIN_WARMUP_BARS
 
         # Calcula retornos
         returns = np.diff(np.log(prices))
@@ -785,10 +806,11 @@ class OracloDerivativosMalliavinNash:
         # MÓDULO 2: Derivadas de Malliavin
         # =============================
         # REPRODUTIBILIDADE: Passa seed para Monte Carlo
+        # V2.6: Usa MALLIAVIN_HORIZON configuravel ao inves de 1/252 hardcoded
         malliavin_result = self.malliavin_calc.compute_malliavin_weight(
             heston=heston,
             S0=current_price,
-            T=1/252,  # 1 dia
+            T=MALLIAVIN_HORIZON,  # V2.6: horizonte dinamico por timeframe
             seed=self._get_next_seed()
         )
         self._cache['malliavin_result'] = malliavin_result
@@ -841,6 +863,13 @@ class OracloDerivativosMalliavinNash:
             volatility=volatility
         )
 
+        # V2.6: Durante warmup, forcar HOLD para evitar sinais erraticos
+        # Os dados de fragilidade sao coletados, mas nenhum trade e executado
+        if is_warmup:
+            signal = 0
+            confidence = 0.0
+            reasons = [f"WARMUP: coletando dados ({len(self._cache['fragility_history'])}/{MIN_WARMUP_BARS})"]
+
         return {
             'signal': signal,
             'signal_name': {-1: 'SELL', 0: 'HOLD', 1: 'BUY'}[signal],
@@ -857,7 +886,8 @@ class OracloDerivativosMalliavinNash:
             'regime': regime,
             'reasons': reasons,
             'current_price': current_price,
-            'implied_vol': volatility
+            'implied_vol': volatility,
+            'is_warmup': is_warmup  # V2.6: indica se esta em warmup
         }
 
     def _synthesize_signal(self,
@@ -1008,9 +1038,10 @@ class OracloDerivativosMalliavinNash:
         heston = HestonModel(**{k: params[k] for k in ['kappa', 'theta', 'sigma', 'rho', 'mu', 'v0']})
 
         # Simula trajetórias - V2.4 FIX: passa seed para reprodutibilidade
+        # V2.6: Usa ANNUALIZATION_FACTOR para conversao correta
         result = heston.simulate(
             S0=prices[-1],
-            T=horizon/252,  # Dias para fração de ano
+            T=horizon/ANNUALIZATION_FACTOR,  # Barras para fração de ano
             n_steps=horizon,
             n_paths=1000,
             seed=self._get_next_seed()  # V2.4: reprodutibilidade

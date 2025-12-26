@@ -43,6 +43,61 @@ from config.execution_costs import (
 # PARAMETROS DO INDICADOR ODMN
 # =============================================================================
 
+# =============================================================================
+# V2.6: CONFIGURACAO DE TIMEFRAME
+# =============================================================================
+# CRITICO: O modelo de Heston usa anualizacao de variancia.
+# O fator de anualizacao DEVE corresponder ao timeframe dos dados.
+#
+# Timeframes suportados e seus fatores:
+#   D1  (Diario)    -> 252 (dias de trading por ano)
+#   H4  (4 horas)   -> 252 * 6 = 1512
+#   H1  (1 hora)    -> 252 * 24 = 6048
+#   M30 (30 min)    -> 252 * 48 = 12096
+#   M15 (15 min)    -> 252 * 96 = 24192
+#   M5  (5 min)     -> 252 * 288 = 72576
+#
+# IMPORTANTE: Ajuste TIMEFRAME para corresponder aos dados que voce esta usando!
+
+TIMEFRAME: str = "D1"  # Timeframe dos dados de entrada
+
+# Mapeamento de timeframe para fator de anualizacao
+_ANNUALIZATION_FACTORS = {
+    "D1": 252,
+    "H4": 252 * 6,      # 1512
+    "H1": 252 * 24,     # 6048
+    "M30": 252 * 48,    # 12096
+    "M15": 252 * 96,    # 24192
+    "M5": 252 * 288,    # 72576
+    "M1": 252 * 1440,   # 362880
+}
+
+# Fator de anualizacao (calculado automaticamente a partir do TIMEFRAME)
+ANNUALIZATION_FACTOR: int = _ANNUALIZATION_FACTORS.get(TIMEFRAME, 252)
+
+# Horizonte Malliavin em fracao de ano (dinamico por timeframe)
+# Para D1: 1/252 = 1 dia | Para H1: 4/6048 = 4 horas | etc.
+_MALLIAVIN_HORIZONS = {
+    "D1": 1/252,        # 1 dia
+    "H4": 4/1512,       # 4 horas (1 barra)
+    "H1": 4/6048,       # 4 horas (4 barras)
+    "M30": 2/12096,     # 2 horas (4 barras)
+    "M15": 1/24192,     # 1 hora (4 barras)
+    "M5": 0.5/72576,    # 30 min (6 barras)
+    "M1": 0.25/362880,  # 15 min (15 barras)
+}
+
+MALLIAVIN_HORIZON: float = _MALLIAVIN_HORIZONS.get(TIMEFRAME, 1/252)
+
+# =============================================================================
+# V2.6: WARMUP (PROTECAO CONTRA COLD START)
+# =============================================================================
+# Numero minimo de barras antes de gerar sinais reais.
+# Durante warmup, o sistema coleta dados de fragilidade para calcular percentis.
+# Sem warmup, as primeiras barras teriam percentil distorcido (ex: sempre 100%).
+
+MIN_WARMUP_BARS: int = 100  # Barras minimas antes de operar
+
 # Numero minimo de precos necessarios para analise
 # UNIFICADO: Todos os componentes devem usar este valor
 MIN_PRICES: int = 150
@@ -124,6 +179,12 @@ def get_odmn_config() -> dict:
     Util para logging e debugging.
     """
     return {
+        # V2.6: Configuracoes de timeframe
+        "timeframe": TIMEFRAME,
+        "annualization_factor": ANNUALIZATION_FACTOR,
+        "malliavin_horizon": MALLIAVIN_HORIZON,
+        "min_warmup_bars": MIN_WARMUP_BARS,
+        # Parametros principais
         "min_prices": MIN_PRICES,
         "heston_calibration_window": HESTON_CALIBRATION_WINDOW,
         "malliavin_paths": MALLIAVIN_PATHS,
@@ -151,6 +212,11 @@ def validate_config():
     Valida que os parametros estao dentro de ranges razoaveis.
     Chame esta funcao durante inicializacao para verificar configuracao.
     """
+    # V2.6: Validar timeframe
+    assert TIMEFRAME in _ANNUALIZATION_FACTORS, f"TIMEFRAME invalido: {TIMEFRAME}"
+    assert MIN_WARMUP_BARS >= 50, f"MIN_WARMUP_BARS muito baixo: {MIN_WARMUP_BARS}"
+
+    # Validacoes originais
     assert MIN_PRICES >= 100, f"MIN_PRICES muito baixo: {MIN_PRICES}"
     assert HESTON_CALIBRATION_WINDOW >= 50, f"HESTON_CALIBRATION_WINDOW muito baixo"
     assert MALLIAVIN_PATHS >= 500, f"MALLIAVIN_PATHS muito baixo para Monte Carlo"
@@ -161,7 +227,11 @@ def validate_config():
     assert DEFAULT_STOP_LOSS_PIPS > 0, f"STOP_LOSS deve ser positivo"
     assert DEFAULT_TAKE_PROFIT_PIPS > 0, f"TAKE_PROFIT deve ser positivo"
 
-    print(f"[CONFIG ODMN] Configuracao validada:")
+    print(f"[CONFIG ODMN] Configuracao validada (V2.6):")
+    print(f"  Timeframe: {TIMEFRAME}")
+    print(f"  Annualization Factor: {ANNUALIZATION_FACTOR}")
+    print(f"  Malliavin Horizon: {MALLIAVIN_HORIZON:.6f}")
+    print(f"  Min Warmup Bars: {MIN_WARMUP_BARS}")
     print(f"  Min Prices: {MIN_PRICES}")
     print(f"  Heston Calibration Window: {HESTON_CALIBRATION_WINDOW}")
     print(f"  Malliavin Paths: {MALLIAVIN_PATHS}")
