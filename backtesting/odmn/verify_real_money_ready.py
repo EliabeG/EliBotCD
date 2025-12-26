@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 ================================================================================
-VERIFICACAO DE PRONTIDAO PARA DINHEIRO REAL - ODMN V2.2
+VERIFICACAO DE PRONTIDAO PARA DINHEIRO REAL - ODMN V2.3
 ================================================================================
 
 Este script verifica se o sistema ODMN esta pronto para dinheiro real,
@@ -24,6 +24,9 @@ VERIFICACOES REALIZADAS:
 12. Suporte a seed para reprodutibilidade
 13. Consistencia de parametros (config vs componentes)
 14. Teste de reprodutibilidade (mesmos resultados com mesmo seed)
+15. V2.3: Spread aplicado na SAIDA do optimizer
+16. V2.3: Seed passado na estrategia ODMN
+17. V2.3: MIN_EXPECTANCY >= 3.0 pips
 
 FUNDAMENTOS TEORICOS DO ODMN:
 ============================
@@ -31,7 +34,7 @@ FUNDAMENTOS TEORICOS DO ODMN:
 2. Calculo de Malliavin: Derivadas estocasticas para fragilidade
 3. Mean Field Games: Equilibrio Nash para comportamento institucional
 
-SE TODAS AS 14 VERIFICACOES PASSAREM = PRONTO PARA DINHEIRO REAL
+SE TODAS AS 17 VERIFICACOES PASSAREM = PRONTO PARA DINHEIRO REAL
 
 Uso:
     python -m backtesting.odmn.verify_real_money_ready
@@ -938,13 +941,178 @@ def verify_reproducibility_test() -> ODMNVerificationResult:
         )
 
 
+def verify_spread_applied_on_exit() -> ODMNVerificationResult:
+    """
+    Verifica 15 (V2.3): Spread aplicado na SAIDA do optimizer
+
+    O optimizer deve aplicar spread/2 + slippage na saida,
+    nao apenas slippage. Correcao critica da auditoria V2.3.
+    """
+    optimizer_path = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+        "backtesting", "odmn", "optimizer.py"
+    )
+
+    try:
+        with open(optimizer_path, 'r') as f:
+            content = f.read()
+
+        details = []
+
+        # Verifica se spread/2 e aplicado na saida
+        has_spread_on_exit = "spread/2 - slippage" in content or "spread/2 + slippage" in content
+
+        # Verifica se e aplicado em gaps, durante barra e timeout
+        has_gap_spread = "bar.open - spread/2 - slippage" in content  # LONG gap
+        has_bar_spread = "stop_price - spread/2 - slippage" in content  # LONG stop
+        has_timeout_spread = "last_bar.close - spread/2 - slippage" in content  # LONG timeout
+
+        if has_spread_on_exit:
+            details.append("Spread aplicado na saida (spread/2 + slippage)")
+        else:
+            details.append("ERRO: Spread NAO aplicado na saida")
+
+        if has_gap_spread:
+            details.append("Spread em gaps verificado")
+
+        if has_bar_spread:
+            details.append("Spread em stops/takes verificado")
+
+        if has_timeout_spread:
+            details.append("Spread em timeout verificado")
+
+        passed = has_spread_on_exit and has_gap_spread and has_bar_spread and has_timeout_spread
+        return ODMNVerificationResult(
+            "V2.3: Spread aplicado na SAIDA",
+            passed,
+            "; ".join(details)
+        )
+
+    except Exception as e:
+        return ODMNVerificationResult(
+            "V2.3: Spread aplicado na SAIDA",
+            False,
+            f"Erro ao verificar: {e}"
+        )
+
+
+def verify_seed_in_strategy() -> ODMNVerificationResult:
+    """
+    Verifica 16 (V2.3): Seed passado na estrategia ODMN
+
+    A estrategia deve aceitar parametro seed e passa-lo
+    para o indicador ODMN para reprodutibilidade.
+    """
+    strategy_path = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+        "strategies", "alta_volatilidade", "odmn_strategy.py"
+    )
+
+    try:
+        with open(strategy_path, 'r') as f:
+            content = f.read()
+
+        details = []
+
+        # Verifica se __init__ aceita seed
+        accepts_seed = "seed: int = None" in content
+
+        # Verifica se passa seed para ODMN
+        passes_seed = "seed=seed" in content
+
+        # Verifica se armazena seed
+        stores_seed = "self.seed = seed" in content
+
+        if accepts_seed:
+            details.append("Strategy aceita parametro seed")
+        else:
+            details.append("ERRO: Strategy NAO aceita seed")
+
+        if passes_seed:
+            details.append("Passa seed para ODMN indicator")
+        else:
+            details.append("ERRO: NAO passa seed para ODMN")
+
+        if stores_seed:
+            details.append("Armazena self.seed")
+
+        passed = accepts_seed and passes_seed
+        return ODMNVerificationResult(
+            "V2.3: Seed passado na estrategia",
+            passed,
+            "; ".join(details)
+        )
+
+    except Exception as e:
+        return ODMNVerificationResult(
+            "V2.3: Seed passado na estrategia",
+            False,
+            f"Erro ao verificar: {e}"
+        )
+
+
+def verify_min_expectancy_adequate() -> ODMNVerificationResult:
+    """
+    Verifica 17 (V2.3): MIN_EXPECTANCY >= 3.0 pips
+
+    Com custos totais de ~4.6 pips (spread 1.5 entrada + 0.75 saida
+    + slippage 0.8 entrada + 0.8 saida), MIN_EXPECTANCY deve ser
+    pelo menos 3.0 pips para garantir margem de seguranca.
+    """
+    filters_path = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+        "config", "optimizer_filters.py"
+    )
+
+    try:
+        with open(filters_path, 'r') as f:
+            content = f.read()
+
+        details = []
+
+        # Extrai valor do MIN_EXPECTANCY_PIPS
+        min_exp_match = re.search(r'MIN_EXPECTANCY_PIPS:\s*float\s*=\s*([\d.]+)', content)
+
+        if min_exp_match:
+            min_exp = float(min_exp_match.group(1))
+            adequate = min_exp >= 3.0
+
+            if adequate:
+                details.append(f"MIN_EXPECTANCY_PIPS = {min_exp} pips (adequado)")
+            else:
+                details.append(f"ERRO: MIN_EXPECTANCY_PIPS = {min_exp} < 3.0 pips")
+
+            # Verifica comentario da V2.3
+            has_v23_comment = "V2.3" in content and "3.0" in content
+            if has_v23_comment:
+                details.append("Comentario V2.3 presente")
+
+            passed = adequate
+        else:
+            details.append("ERRO: MIN_EXPECTANCY_PIPS nao encontrado")
+            passed = False
+
+        return ODMNVerificationResult(
+            "V2.3: MIN_EXPECTANCY >= 3.0 pips",
+            passed,
+            "; ".join(details)
+        )
+
+    except Exception as e:
+        return ODMNVerificationResult(
+            "V2.3: MIN_EXPECTANCY >= 3.0 pips",
+            False,
+            f"Erro ao verificar: {e}"
+        )
+
+
 def run_all_verifications():
     """Executa todas as verificacoes e imprime resultado"""
     print("=" * 70)
-    print("  VERIFICACAO DE PRONTIDAO PARA DINHEIRO REAL - ODMN V2.2")
+    print("  VERIFICACAO DE PRONTIDAO PARA DINHEIRO REAL - ODMN V2.3")
     print("  Oraculo de Derivativos de Malliavin-Nash")
     print("=" * 70)
-    print("\n  14 verificacoes criticas para evitar look-ahead bias\n")
+    print("\n  17 verificacoes criticas para evitar look-ahead bias\n")
 
     verifications = [
         verify_heston_calibration_no_lookahead,
@@ -961,6 +1129,10 @@ def run_all_verifications():
         verify_seed_reproducibility_support,
         verify_parameter_consistency,
         verify_reproducibility_test,
+        # V2.3 verificacoes adicionais
+        verify_spread_applied_on_exit,
+        verify_seed_in_strategy,
+        verify_min_expectancy_adequate,
     ]
 
     results = []
@@ -984,14 +1156,14 @@ def run_all_verifications():
 
     if passed_count == total_count:
         print("\n  +++ SISTEMA ODMN PRONTO PARA DINHEIRO REAL +++")
-        print("\n  O indicador ODMN passou em TODAS as 14 verificacoes criticas:")
+        print("\n  O indicador ODMN passou em TODAS as 17 verificacoes criticas:")
         print("    1. Calibracao Heston usa apenas dados passados")
         print("    2. Malliavin Monte Carlo e causal (forward simulation)")
         print("    3. Mean Field Games resolve PDEs sem dados futuros")
         print("    4. Direcao baseada APENAS em barras fechadas")
         print("    5. Entrada no OPEN da proxima barra")
         print("    6. Custos realistas (spread 1.5 + slippage 0.8 pips)")
-        print("    7. Filtros rigorosos (PF >= 1.3, Exp >= 1.5 pips)")
+        print("    7. Filtros rigorosos (PF >= 1.3, Exp >= 3.0 pips)")
         print("    8. Walk-Forward Validation com 4 janelas")
         print("    9. Signal inclui stop_loss_pips e take_profit_pips")
         print("   10. MIN_CONFIDENCE do config centralizado")
@@ -999,6 +1171,9 @@ def run_all_verifications():
         print("   12. Suporte a seed para reprodutibilidade")
         print("   13. Consistencia de parametros (config vs componentes)")
         print("   14. Teste de reprodutibilidade (np.random.Generator)")
+        print("   15. V2.3: Spread aplicado na SAIDA do optimizer")
+        print("   16. V2.3: Seed passado na estrategia ODMN")
+        print("   17. V2.3: MIN_EXPECTANCY >= 3.0 pips")
         print("\n  Proximos passos:")
         print("    1. Execute o optimizer: python -m backtesting.odmn.optimizer")
         print("    2. Valide os resultados no periodo de teste")

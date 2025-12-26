@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 """
 ================================================================================
-OTIMIZADOR ODMN ROBUSTO V2.0 - PRONTO PARA DINHEIRO REAL
+OTIMIZADOR ODMN ROBUSTO V2.3 - PRONTO PARA DINHEIRO REAL
 ================================================================================
 
 Este otimizador implementa:
 1. Walk-Forward Validation (multiplas janelas train/test)
 2. Filtros rigorosos para dinheiro real (PF > 1.3)
-3. Custos realistas (spread 1.5 pips, slippage 0.8 pips)
+3. Custos realistas (spread 1.5 pips, slippage 0.8 pips) - V2.3: Spread aplicado na SAIDA
 4. Validacao em multiplos periodos de mercado
 
 ODMN (Oraculo de Derivativos de Malliavin-Nash):
@@ -494,53 +494,56 @@ class ODMNRobustOptimizer:
                 bar = bars[bar_idx]
 
                 # Verificar GAPS no OPEN
+                # V2.3: Aplica spread + slippage na saida (correcao auditoria)
                 if direction == 1:  # LONG
                     if bar.open <= stop_price:
-                        exit_price = bar.open - slippage
+                        exit_price = bar.open - spread/2 - slippage
                         exit_bar_idx = bar_idx
                         break
                     if bar.open >= take_price:
-                        exit_price = bar.open - slippage
+                        exit_price = bar.open - spread/2 - slippage
                         exit_bar_idx = bar_idx
                         break
                 else:  # SHORT
                     if bar.open >= stop_price:
-                        exit_price = bar.open + slippage
+                        exit_price = bar.open + spread/2 + slippage
                         exit_bar_idx = bar_idx
                         break
                     if bar.open <= take_price:
-                        exit_price = bar.open + slippage
+                        exit_price = bar.open + spread/2 + slippage
                         exit_bar_idx = bar_idx
                         break
 
                 # Verificar durante a barra (stop tem prioridade)
+                # V2.3: Aplica spread + slippage na saida (correcao auditoria)
                 if direction == 1:  # LONG
                     if bar.low <= stop_price:
-                        exit_price = stop_price - slippage
+                        exit_price = stop_price - spread/2 - slippage
                         exit_bar_idx = bar_idx
                         break
                     if bar.high >= take_price:
-                        exit_price = take_price - slippage
+                        exit_price = take_price - spread/2 - slippage
                         exit_bar_idx = bar_idx
                         break
                 else:  # SHORT
                     if bar.high >= stop_price:
-                        exit_price = stop_price + slippage
+                        exit_price = stop_price + spread/2 + slippage
                         exit_bar_idx = bar_idx
                         break
                     if bar.low <= take_price:
-                        exit_price = take_price + slippage
+                        exit_price = take_price + spread/2 + slippage
                         exit_bar_idx = bar_idx
                         break
 
             # Timeout
+            # V2.3: Aplica spread + slippage na saida (correcao auditoria)
             if exit_price is None:
                 exit_bar_idx = min(entry_idx + max_bars, len(bars) - 1)
                 last_bar = bars[exit_bar_idx]
                 if direction == 1:
-                    exit_price = last_bar.close - slippage
+                    exit_price = last_bar.close - spread/2 - slippage
                 else:
-                    exit_price = last_bar.close + slippage
+                    exit_price = last_bar.close + spread/2 + slippage
 
             # Calcular PnL
             if direction == 1:

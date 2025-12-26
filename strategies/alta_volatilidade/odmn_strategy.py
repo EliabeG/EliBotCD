@@ -35,7 +35,8 @@ class ODMNStrategy(BaseStrategy):
                  mfg_direction_threshold: float = 0.1,
                  use_deep_galerkin: bool = True,
                  malliavin_paths: int = 2000,
-                 malliavin_steps: int = 30):
+                 malliavin_steps: int = 30,
+                 seed: int = None):
         """
         Inicializa a estratégia ODMN
 
@@ -49,24 +50,27 @@ class ODMNStrategy(BaseStrategy):
             use_deep_galerkin: Se True, usa redes neurais para MFG
             malliavin_paths: Número de trajetórias Monte Carlo
             malliavin_steps: Passos temporais na simulação
+            seed: Seed para reprodutibilidade do Monte Carlo (V2.3)
         """
         super().__init__(name="ODMN-MalliavinNash")
 
         self.min_prices = min_prices
         self.stop_loss_pips = stop_loss_pips
         self.take_profit_pips = take_profit_pips
+        self.seed = seed
 
         # Buffer de preços
         self.prices = deque(maxlen=800)
 
-        # Indicador ODMN
+        # Indicador ODMN - V2.3: Passa seed para reprodutibilidade
         self.odmn = OracloDerivativosMalliavinNash(
             lookback_window=lookback_window,
             fragility_threshold=fragility_threshold,
             mfg_direction_threshold=mfg_direction_threshold,
             use_deep_galerkin=use_deep_galerkin,
             malliavin_paths=malliavin_paths,
-            malliavin_steps=malliavin_steps
+            malliavin_steps=malliavin_steps,
+            seed=seed
         )
 
         # Estado
