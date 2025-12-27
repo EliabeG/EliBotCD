@@ -31,7 +31,17 @@ DEFAULT_TOKEN_SECRET = "YdafQEND2Fnrc5JGryX6ZPCJ5pf9rmyHnAk6wTDjWGddcRjWtxw369Yh
 
 @dataclass
 class Bar:
-    """Representa uma barra/candle OHLCV"""
+    """
+    Representa uma barra/candle OHLCV com dados de BID e ASK
+
+    Campos principais (BID por padrão para compatibilidade):
+        open, high, low, close, volume
+
+    Campos de spread real (opcionais):
+        bid_open, bid_high, bid_low, bid_close
+        ask_open, ask_high, ask_low, ask_close
+        spread_open, spread_close (em pips)
+    """
     timestamp: datetime
     open: float
     high: float
@@ -39,12 +49,49 @@ class Bar:
     close: float
     volume: float
 
+    # Dados de BID (opcionais - para spread real)
+    bid_open: Optional[float] = None
+    bid_high: Optional[float] = None
+    bid_low: Optional[float] = None
+    bid_close: Optional[float] = None
+
+    # Dados de ASK (opcionais - para spread real)
+    ask_open: Optional[float] = None
+    ask_high: Optional[float] = None
+    ask_low: Optional[float] = None
+    ask_close: Optional[float] = None
+
+    @property
+    def has_spread_data(self) -> bool:
+        """Verifica se tem dados de spread real"""
+        return self.bid_close is not None and self.ask_close is not None
+
+    @property
+    def spread_pips(self) -> float:
+        """Retorna o spread real em pips (baseado no close)"""
+        if self.has_spread_data:
+            return (self.ask_close - self.bid_close) * 10000
+        return 0.0
+
+    @property
+    def spread_open_pips(self) -> float:
+        """Retorna o spread real no open em pips"""
+        if self.bid_open is not None and self.ask_open is not None:
+            return (self.ask_open - self.bid_open) * 10000
+        return 0.0
+
     @property
     def mid_open(self) -> float:
+        """Preço médio no open"""
+        if self.bid_open is not None and self.ask_open is not None:
+            return (self.bid_open + self.ask_open) / 2
         return self.open
 
     @property
     def mid_close(self) -> float:
+        """Preço médio no close"""
+        if self.bid_close is not None and self.ask_close is not None:
+            return (self.bid_close + self.ask_close) / 2
         return self.close
 
     @property
@@ -64,8 +111,9 @@ class Bar:
         return self.close < self.open
 
     def __str__(self) -> str:
+        spread_str = f" Spread:{self.spread_pips:.1f}p" if self.has_spread_data else ""
         return (f"{self.timestamp.strftime('%Y-%m-%d %H:%M')} | "
-                f"O:{self.open:.5f} H:{self.high:.5f} L:{self.low:.5f} C:{self.close:.5f} V:{self.volume:.0f}")
+                f"O:{self.open:.5f} H:{self.high:.5f} L:{self.low:.5f} C:{self.close:.5f} V:{self.volume:.0f}{spread_str}")
 
 
 class FXOpenHistoricalClient:
@@ -411,6 +459,160 @@ def get_historical_data_sync(
         start_time=start_time,
         end_time=end_time,
         price_type=price_type
+    ))
+
+
+# ==============================================================================
+# DOWNLOAD COM SPREAD REAL (BID + ASK)
+# ==============================================================================
+
+async def download_historical_data_with_spread(
+    symbol: str,
+    periodicity: str,
+    start_time: datetime,
+    end_time: datetime = None
+) -> List[Bar]:
+    """
+    Baixa dados historicos com SPREAD REAL (BID e ASK separados)
+
+    Esta funcao baixa tanto dados BID quanto ASK e mescla em barras
+    que contem o spread real para cada momento.
+
+    IMPORTANTE: Demora aproximadamente 2x mais que download normal.
+
+    Args:
+        symbol: Simbolo (ex: 'EURUSD')
+        periodicity: Periodicidade (M1, H1, D1, etc)
+        start_time: Data/hora de inicio
+        end_time: Data/hora de fim (default: agora)
+
+    Returns:
+        Lista de barras com spread real (bid_*, ask_*, spread_pips)
+    """
+    if end_time is None:
+        end_time = datetime.now(timezone.utc)
+
+    print(f"\n{'='*70}")
+    print(f"  DOWNLOAD COM SPREAD REAL (BID + ASK)")
+    print(f"{'='*70}")
+    print(f"  Simbolo: {symbol}")
+    print(f"  Periodicidade: {periodicity}")
+    print(f"  Periodo: {start_time.strftime('%Y-%m-%d %H:%M')} a {end_time.strftime('%Y-%m-%d %H:%M')}")
+    print(f"{'='*70}\n")
+
+    client = FXOpenHistoricalClient()
+
+    try:
+        connected = await client.connect()
+        if not connected:
+            print("  ERRO: Falha na conexao")
+            return []
+
+        # Baixa dados BID
+        print("  [1/2] Baixando dados BID...")
+        bid_bars = await client.download_range(
+            symbol=symbol,
+            periodicity=periodicity,
+            start_date=start_time,
+            end_date=end_time,
+            price_type="bid"
+        )
+        print(f"        Barras BID: {len(bid_bars)}")
+
+        # Baixa dados ASK
+        print("  [2/2] Baixando dados ASK...")
+        ask_bars = await client.download_range(
+            symbol=symbol,
+            periodicity=periodicity,
+            start_date=start_time,
+            end_date=end_time,
+            price_type="ask"
+        )
+        print(f"        Barras ASK: {len(ask_bars)}")
+
+        if not bid_bars or not ask_bars:
+            print("  ERRO: Falha ao baixar dados")
+            return []
+
+        # Mescla BID e ASK por timestamp
+        print("  Mesclando dados BID/ASK...")
+        bid_dict = {int(b.timestamp.timestamp()): b for b in bid_bars}
+        ask_dict = {int(a.timestamp.timestamp()): a for a in ask_bars}
+
+        # Encontra timestamps comuns
+        common_timestamps = sorted(set(bid_dict.keys()) & set(ask_dict.keys()))
+
+        merged_bars = []
+        spreads = []
+
+        for ts in common_timestamps:
+            bid = bid_dict[ts]
+            ask = ask_dict[ts]
+
+            # Cria barra com spread real
+            bar = Bar(
+                timestamp=bid.timestamp,
+                # Campos principais = BID (padrao)
+                open=bid.open,
+                high=bid.high,
+                low=bid.low,
+                close=bid.close,
+                volume=bid.volume,
+                # Dados BID
+                bid_open=bid.open,
+                bid_high=bid.high,
+                bid_low=bid.low,
+                bid_close=bid.close,
+                # Dados ASK
+                ask_open=ask.open,
+                ask_high=ask.high,
+                ask_low=ask.low,
+                ask_close=ask.close
+            )
+
+            merged_bars.append(bar)
+            spreads.append(bar.spread_pips)
+
+        print(f"\n  Barras mescladas: {len(merged_bars)}")
+
+        if spreads:
+            import numpy as np
+            spreads_arr = np.array(spreads)
+            print(f"\n  ESTATISTICAS DO SPREAD:")
+            print(f"    Minimo:  {spreads_arr.min():.2f} pips")
+            print(f"    Maximo:  {spreads_arr.max():.2f} pips")
+            print(f"    Media:   {spreads_arr.mean():.2f} pips")
+            print(f"    Mediana: {np.median(spreads_arr):.2f} pips")
+
+        return merged_bars
+
+    finally:
+        await client.disconnect()
+
+
+def get_historical_data_with_spread_sync(
+    symbol: str,
+    periodicity: str,
+    start_time: datetime,
+    end_time: datetime = None
+) -> List[Bar]:
+    """
+    Versao sincrona do download com spread real
+
+    Args:
+        symbol: Simbolo (ex: 'EURUSD')
+        periodicity: Periodicidade (M1, H1, D1, etc)
+        start_time: Data/hora de inicio
+        end_time: Data/hora de fim
+
+    Returns:
+        Lista de barras com spread real
+    """
+    return asyncio.run(download_historical_data_with_spread(
+        symbol=symbol,
+        periodicity=periodicity,
+        start_time=start_time,
+        end_time=end_time
     ))
 
 

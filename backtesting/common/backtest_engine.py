@@ -35,7 +35,11 @@ from dataclasses import dataclass, field
 from enum import Enum
 from collections import deque
 
-from api.fxopen_historical_ws import Bar, get_historical_data_sync as get_historical_data
+from api.fxopen_historical_ws import (
+    Bar,
+    get_historical_data_sync as get_historical_data,
+    get_historical_data_with_spread_sync as get_historical_data_with_spread
+)
 from strategies.base import BaseStrategy, Signal, SignalType
 
 # CORREÇÃO C4: Importar custos centralizados
@@ -165,11 +169,12 @@ class BacktestEngine:
                  spread_pips: float = None,    # CORREÇÃO C4: será obtido do config
                  commission_per_lot: float = None,  # CORREÇÃO C4: será obtido do config
                  slippage_pips: float = None,  # CORREÇÃO C4: será obtido do config
-                 symbol: str = "EURUSD"):      # CORREÇÃO M2: símbolo para cálculo correto
+                 symbol: str = "EURUSD",       # CORREÇÃO M2: símbolo para cálculo correto
+                 use_real_spread: bool = False):  # NOVO: usar spread real de cada barra
         """
         Inicializa o motor de backtest
 
-        V2.1: Custos centralizados e correção de PnL por par
+        V2.2: Spread dinâmico real por barra
 
         CORREÇÃO C4: Os custos agora vêm do config/execution_costs.py por padrão.
         Valores passados como parâmetro sobrescrevem os do config.
@@ -182,10 +187,12 @@ class BacktestEngine:
             commission_per_lot: Comissao por lote (None = usa config)
             slippage_pips: Slippage medio em pips (None = usa config)
             symbol: Par de moedas para cálculo correto de PnL
+            use_real_spread: Se True, baixa BID+ASK e usa spread real de cada barra
         """
         self.initial_capital = initial_capital
         self.position_size = position_size
         self.symbol = symbol.upper()
+        self.use_real_spread = use_real_spread
 
         # CORREÇÃO C4: Usar custos centralizados se não especificados
         self.pip_value = pip_value if pip_value is not None else get_pip_value(self.symbol)
@@ -205,6 +212,9 @@ class BacktestEngine:
 
         # CORREÇÃO #1: Fechamento pendente para executar no OPEN da próxima barra
         self.pending_close_signal: bool = False
+
+        # Estatísticas de spread (para modo real)
+        self.spread_stats: Dict[str, float] = {}
 
     def _get_usd_per_pip(self) -> float:
         """
@@ -249,15 +259,19 @@ class BacktestEngine:
         if verbose:
             print("\n" + "=" * 70)
             print("  BACKTEST - DADOS REAIS DO MERCADO")
-            print("  Versão V2.1 Corrigida - Execução Realista")
+            print("  Versão V2.2 - Spread Dinâmico Real" if self.use_real_spread else "  Versão V2.1 Corrigida - Execução Realista")
             print("=" * 70)
             print(f"  Estrategia: {strategy.name}")
             print(f"  Simbolo: {symbol}")
             print(f"  Periodicidade: {periodicity}")
             print(f"  Capital inicial: ${self.initial_capital:,.2f}")
             print(f"  Tamanho posicao: {self.position_size} lotes")
-            print(f"  Spread: {self.spread_pips} pips (centralizado)")
-            print(f"  Slippage: {self.slippage_pips} pips (centralizado)")
+            if self.use_real_spread:
+                print(f"  Spread: DINAMICO (BID/ASK real de cada barra)")
+            else:
+                print(f"  Spread: {self.spread_pips} pips (fixo)")
+            print(f"  Slippage: {self.slippage_pips} pips")
+            print(f"  Comissao: ${self.commission_per_lot}/lote (${self.commission_per_lot * self.position_size:.2f} por trade)")
             print(f"  USD/pip/lote: ${self._get_usd_per_pip():.2f}")
             print("=" * 70 + "\n")
 
@@ -266,7 +280,12 @@ class BacktestEngine:
         strategy.reset()
 
         # Baixa dados REAIS
-        bars = get_historical_data(symbol, periodicity, start_time, end_time)
+        if self.use_real_spread:
+            # Baixa BID + ASK para spread real
+            bars = get_historical_data_with_spread(symbol, periodicity, start_time, end_time)
+        else:
+            # Baixa apenas BID (modo tradicional)
+            bars = get_historical_data(symbol, periodicity, start_time, end_time)
 
         if not bars:
             print("ERRO: Nenhum dado historico disponivel!")
@@ -402,6 +421,26 @@ class BacktestEngine:
 
         self.equity_curve.append(equity)
 
+    def _get_bar_spread(self, bar: Bar) -> float:
+        """
+        Retorna o spread da barra em unidades de preço.
+
+        Se use_real_spread=True e a barra tem dados BID/ASK, usa o spread real.
+        Caso contrário, usa o spread fixo configurado.
+
+        Args:
+            bar: Barra atual
+
+        Returns:
+            Spread em unidades de preço (não pips)
+        """
+        if self.use_real_spread and bar.has_spread_data:
+            # Usar spread real da barra (já está em pips, converter para preço)
+            return bar.spread_open_pips * self.pip_value
+        else:
+            # Usar spread fixo
+            return self.spread_pips * self.pip_value
+
     def _execute_pending_signal(self, signal: Signal, bar: Bar):
         """
         NOVO: Executa um sinal pendente no OPEN da barra atual
@@ -411,6 +450,7 @@ class BacktestEngine:
         - A execução acontece no OPEN desta barra
         - Isso reflete a realidade do trading
 
+        V2.2: Usa spread real da barra quando disponível
         CORREÇÃO #5: Stop/Take são recalculados baseados no entry_price REAL
         """
         if self.current_position:
@@ -419,16 +459,29 @@ class BacktestEngine:
 
         # Aplicar spread e slippage ao OPEN
         slippage = self.slippage_pips * self.pip_value
-        spread = self.spread_pips * self.pip_value
 
-        if signal.type == SignalType.BUY:
-            # Compra no Ask (Open + spread/2) + slippage
-            entry_price = bar.open + spread / 2 + slippage
-            pos_type = PositionType.LONG
+        # V2.2: Usar spread real da barra ou spread fixo
+        if self.use_real_spread and bar.has_spread_data:
+            # Spread REAL: usar preços BID/ASK diretamente
+            if signal.type == SignalType.BUY:
+                # Compra no ASK real + slippage
+                entry_price = bar.ask_open + slippage
+                pos_type = PositionType.LONG
+            else:
+                # Venda no BID real - slippage
+                entry_price = bar.bid_open - slippage
+                pos_type = PositionType.SHORT
         else:
-            # Venda no Bid (Open - spread/2) - slippage
-            entry_price = bar.open - spread / 2 - slippage
-            pos_type = PositionType.SHORT
+            # Spread FIXO: calcular a partir do mid price
+            spread = self.spread_pips * self.pip_value
+            if signal.type == SignalType.BUY:
+                # Compra no Ask (Open + spread/2) + slippage
+                entry_price = bar.open + spread / 2 + slippage
+                pos_type = PositionType.LONG
+            else:
+                # Venda no Bid (Open - spread/2) - slippage
+                entry_price = bar.open - spread / 2 - slippage
+                pos_type = PositionType.SHORT
 
         # CORREÇÃO #5: Recalcular stop/take baseado no entry_price REAL
         # Se o sinal tem stop_loss_pips/take_profit_pips, usar esses valores
@@ -498,11 +551,11 @@ class BacktestEngine:
                 # Executa no OPEN (pior que o stop)
                 exit_price = bar.open
                 self._close_position_with_details(
-                    exit_price, bar.timestamp, "stop_loss", 
-                    had_gap=True, intended_price=intended_price
+                    exit_price, bar.timestamp, "stop_loss",
+                    had_gap=True, intended_price=intended_price, bar=bar
                 )
                 return
-                
+
             # Gap Up - Take Profit atingido no OPEN
             if pos.take_profit and bar.open >= pos.take_profit:
                 had_gap = True
@@ -511,13 +564,13 @@ class BacktestEngine:
                 exit_price = bar.open
                 self._close_position_with_details(
                     exit_price, bar.timestamp, "take_profit",
-                    had_gap=True, intended_price=intended_price
+                    had_gap=True, intended_price=intended_price, bar=bar
                 )
                 return
-                
+
         else:  # SHORT
             # SHORT: Stop se preço SOBE, Take se preço CAI
-            
+
             # Gap Up - Stop Loss atingido no OPEN
             if pos.stop_loss and bar.open >= pos.stop_loss:
                 had_gap = True
@@ -526,10 +579,10 @@ class BacktestEngine:
                 exit_price = bar.open
                 self._close_position_with_details(
                     exit_price, bar.timestamp, "stop_loss",
-                    had_gap=True, intended_price=intended_price
+                    had_gap=True, intended_price=intended_price, bar=bar
                 )
                 return
-                
+
             # Gap Down - Take Profit atingido no OPEN
             if pos.take_profit and bar.open <= pos.take_profit:
                 had_gap = True
@@ -538,7 +591,7 @@ class BacktestEngine:
                 exit_price = bar.open
                 self._close_position_with_details(
                     exit_price, bar.timestamp, "take_profit",
-                    had_gap=True, intended_price=intended_price
+                    had_gap=True, intended_price=intended_price, bar=bar
                 )
                 return
 
@@ -546,70 +599,81 @@ class BacktestEngine:
         # VERIFICAÇÃO DURANTE A BARRA (HIGH/LOW)
         # Usando lógica CONSERVADORA: Stop tem prioridade
         # ====================================================================
-        
+
         if pos.type == PositionType.LONG:
             # Verificar Stop Loss primeiro (conservador)
             if pos.stop_loss and bar.low <= pos.stop_loss:
                 self._close_position_with_details(
                     pos.stop_loss, bar.timestamp, "stop_loss",
-                    had_gap=False, intended_price=pos.stop_loss
+                    had_gap=False, intended_price=pos.stop_loss, bar=bar
                 )
                 return
-                
+
             # Verificar Take Profit
             if pos.take_profit and bar.high >= pos.take_profit:
                 self._close_position_with_details(
                     pos.take_profit, bar.timestamp, "take_profit",
-                    had_gap=False, intended_price=pos.take_profit
+                    had_gap=False, intended_price=pos.take_profit, bar=bar
                 )
                 return
-                
+
         else:  # SHORT
             # Verificar Stop Loss primeiro (conservador)
             if pos.stop_loss and bar.high >= pos.stop_loss:
                 self._close_position_with_details(
                     pos.stop_loss, bar.timestamp, "stop_loss",
-                    had_gap=False, intended_price=pos.stop_loss
+                    had_gap=False, intended_price=pos.stop_loss, bar=bar
                 )
                 return
-                
+
             # Verificar Take Profit
             if pos.take_profit and bar.low <= pos.take_profit:
                 self._close_position_with_details(
                     pos.take_profit, bar.timestamp, "take_profit",
-                    had_gap=False, intended_price=pos.take_profit
+                    had_gap=False, intended_price=pos.take_profit, bar=bar
                 )
                 return
 
     def _close_position_with_details(self, exit_price: float, exit_time: datetime,
                                       reason: str, had_gap: bool = False,
-                                      intended_price: float = 0.0):
+                                      intended_price: float = 0.0,
+                                      bar: Bar = None):
         """
         NOVO: Fecha posição com detalhes adicionais sobre execução
 
+        V2.2: Usa spread real da barra quando disponível
         CORREÇÃO C3: Aplica spread E slippage na saída
-        ANTES: Apenas slippage era aplicado
-        DEPOIS: Spread/2 + slippage são aplicados corretamente
         """
         if not self.current_position:
             return
 
         pos = self.current_position
 
-        # CORREÇÃO C3: Aplica spread E slippage na saída (sempre desfavorável)
+        # Aplica spread E slippage na saída (sempre desfavorável)
         slippage = self.slippage_pips * self.pip_value
-        spread = self.spread_pips * self.pip_value
 
-        if pos.type == PositionType.LONG:
-            # CORREÇÃO C3: LONG vende no Bid: preço - spread/2 - slippage
-            # ANTES: actual_exit = exit_price - slippage (faltava spread)
-            actual_exit = exit_price - spread / 2 - slippage
-            pnl_pips = (actual_exit - pos.entry_price) / self.pip_value
+        # V2.2: Usar spread real da barra ou spread fixo
+        if self.use_real_spread and bar is not None and bar.has_spread_data:
+            # Spread REAL: usar preços BID/ASK diretamente
+            if pos.type == PositionType.LONG:
+                # LONG vende no BID real - slippage
+                actual_exit = bar.bid_close - slippage
+                pnl_pips = (actual_exit - pos.entry_price) / self.pip_value
+            else:
+                # SHORT compra no ASK real + slippage
+                actual_exit = bar.ask_close + slippage
+                pnl_pips = (pos.entry_price - actual_exit) / self.pip_value
         else:
-            # CORREÇÃO C3: SHORT compra no Ask: preço + spread/2 + slippage
-            # ANTES: actual_exit = exit_price + slippage (faltava spread)
-            actual_exit = exit_price + spread / 2 + slippage
-            pnl_pips = (pos.entry_price - actual_exit) / self.pip_value
+            # Spread FIXO
+            spread = self.spread_pips * self.pip_value
+            if pos.type == PositionType.LONG:
+                # LONG vende no Bid: preço - spread/2 - slippage
+                actual_exit = exit_price - spread / 2 - slippage
+                pnl_pips = (actual_exit - pos.entry_price) / self.pip_value
+            else:
+                # SHORT compra no Ask: preço + spread/2 + slippage
+                actual_exit = exit_price + spread / 2 + slippage
+                pnl_pips = (pos.entry_price - actual_exit) / self.pip_value
 
         # CORREÇÃO M2: Calcula PnL em USD usando função centralizada
         # ANTES: pnl_usd = pnl_pips * pos.size * 10 (fixo para EURUSD)

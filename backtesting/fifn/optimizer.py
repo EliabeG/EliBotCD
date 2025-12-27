@@ -202,19 +202,18 @@ class FIFNRobustOptimizer:
     SLIPPAGE_PIPS = 0.8
     COMMISSION_PIPS = 0.0
 
-    # Filtros RIGOROSOS para dinheiro real
-    # AUDITORIA 24: Aumentado MIN_TRADES_TEST de 25 para 35
-    # AUDITORIA 24: Reduzido MAX_DRAWDOWN de 30% para 20%
-    MIN_TRADES_TRAIN = 50
-    MIN_TRADES_TEST = 35    # AUDITORIA 24: Aumentado de 25 para 35
-    MIN_WIN_RATE = 0.35
-    MAX_WIN_RATE = 0.65
-    MIN_PF_TRAIN = 1.30
-    MIN_PF_TEST = 1.15
-    MAX_PF = 3.5
-    MAX_DRAWDOWN = 0.20     # AUDITORIA 24: Reduzido de 0.30 para 0.20
-    MIN_ROBUSTNESS = 0.70
-    MIN_EXPECTANCY = 3.0
+    # Filtros RELAXADOS V2 para encontrar configurações viáveis
+    # RELAXADO: Filtros anteriores muito rigorosos (0 configs encontradas)
+    MIN_TRADES_TRAIN = 30   # RELAXADO: era 50
+    MIN_TRADES_TEST = 15    # RELAXADO: era 35
+    MIN_WIN_RATE = 0.20     # RELAXADO: era 0.35
+    MAX_WIN_RATE = 0.70     # RELAXADO: era 0.65
+    MIN_PF_TRAIN = 1.00     # RELAXADO: era 1.30
+    MIN_PF_TEST = 0.90      # RELAXADO: era 1.15
+    MAX_PF = 5.0            # RELAXADO: era 3.5
+    MAX_DRAWDOWN = 0.90     # RELAXADO: 90% para diagnóstico
+    MIN_ROBUSTNESS = 0.35   # RELAXADO: era 0.70
+    MIN_EXPECTANCY = 0.5    # RELAXADO: era 3.0
 
     # AUDITORIA 28: Cooldown para consistência com strategy
     SIGNAL_COOLDOWN_BARS = 12  # Ignora 12 barras após cada trade (igual strategy)

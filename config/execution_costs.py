@@ -21,16 +21,17 @@ from typing import Dict
 # =============================================================================
 
 # Spread médio realista em pips
-# Baseado em condições normais de mercado para corretoras ECN/STP
-SPREAD_PIPS: float = 1.5
+# Baseado em análise real: média 0.15 pips, P75 = 0.20 pips
+# 53% do tempo spread <= 0.1 pips, 96% do tempo <= 0.3 pips
+SPREAD_PIPS: float = 0.2  # Usando P75 para ser conservador
 
-# Slippage médio realista em pips
-# Considera latência e liquidez típica
-SLIPPAGE_PIPS: float = 0.8
+# Slippage médio em pips
+# Para corretora com boa execução, praticamente zero
+SLIPPAGE_PIPS: float = 0.0
 
-# Comissão por lote (se aplicável)
-# Para corretoras com spread puro, usar 0.0
-COMMISSION_PER_LOT: float = 0.0
+# Comissão por lote padrão (1.0 lote)
+# $0.03 por 0.01 lote = $3.00 por 1.0 lote
+COMMISSION_PER_LOT: float = 3.0
 
 
 # =============================================================================
@@ -186,14 +187,14 @@ def validate_costs():
     Valida que os custos estão dentro de ranges razoáveis.
     Chame esta função durante inicialização para verificar configuração.
     """
-    assert 0.5 <= SPREAD_PIPS <= 5.0, f"Spread fora do range: {SPREAD_PIPS}"
+    assert 0.0 <= SPREAD_PIPS <= 5.0, f"Spread fora do range: {SPREAD_PIPS}"
     assert 0.0 <= SLIPPAGE_PIPS <= 3.0, f"Slippage fora do range: {SLIPPAGE_PIPS}"
     assert COMMISSION_PER_LOT >= 0, f"Comissão negativa: {COMMISSION_PER_LOT}"
 
     print(f"[CONFIG] Custos de execução validados:")
     print(f"         Spread: {SPREAD_PIPS} pips")
     print(f"         Slippage: {SLIPPAGE_PIPS} pips")
-    print(f"         Comissão: ${COMMISSION_PER_LOT}/lote")
+    print(f"         Comissão: ${COMMISSION_PER_LOT}/lote (${COMMISSION_PER_LOT/100:.2f} por 0.01 lote)")
 
 
 if __name__ == "__main__":
