@@ -1,0 +1,29 @@
+{
+  "strategy": "ODMN-MalliavinNash-H1",
+  "symbol": "EURUSD",
+  "periodicity": "H1",
+  "optimized_at": "2025-12-28T17:10:14.066227+00:00",
+  "mode": "LONG_ONLY",
+  "parameters": {
+    "fragility_percentile_threshold": 0.85,
+    "confidence_threshold": 0.65,
+    "mfg_direction_threshold": 0.08,
+    "stop_loss_pips": 25,
+    "take_profit_pips": 50,
+    "cooldown_bars": 3
+  },
+  "performance": {
+    "trades": 44,
+    "win_rate": 50.0,
+    "edge": 16.66666666666667,
+    "profit_factor": 6.932584269662924,
+    "total_pnl_pips": 475.20000000000016,
+    "max_drawdown_pips": 160.20000000000027
+  },
+  "walk_forward": {
+    "folds_positive": 3,
+    "total_folds": 4
+  },
+  "criteria_passed": "5/5",
+  "verdict": "APROVADO"
+}

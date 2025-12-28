@@ -1,0 +1,24 @@
+{
+  "strategy": "ODMN-MalliavinNash-M30",
+  "symbol": "EURUSD",
+  "periodicity": "M30",
+  "optimized_at": "2025-12-28T16:30:28.594489+00:00",
+  "mode": "LONG_ONLY",
+  "parameters": {
+    "stop_loss_pips": 20,
+    "take_profit_pips": 40,
+    "cooldown_bars": 3
+  },
+  "performance": {
+    "trades": 186,
+    "win_rate": 32.25806451612903,
+    "edge": -1.0752688172042966,
+    "profit_factor": 0.3574900574458694,
+    "total_pnl_pips": -436.19999999999914,
+    "max_drawdown_pips": 1007.0
+  },
+  "walk_forward": {
+    "folds_positive": 1
+  },
+  "criteria_passed": "1/5"
+}

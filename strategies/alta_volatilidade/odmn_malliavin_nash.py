@@ -628,9 +628,22 @@ class DeepGalerkinMFGSolver:
         prices_for_mean = historical_prices[-100:] if len(historical_prices) > 100 else historical_prices
         mean_log_price = np.mean(np.log(prices_for_mean))
 
-        # Direção ótima: positiva se preço > média (vender), negativa se preço < média (comprar)
-        # O sinal é invertido porque no MFG LQ, o controle ótimo é a* = -∇V
-        optimal_direction = -2 * A_0 * (log_price - mean_log_price)
+        # V2.7 FIX: Direção ótima com escala apropriada para Forex
+        # O cálculo original produzia valores muito pequenos (~10^-6)
+        # Usamos desvio percentual normalizado pelo desvio padrão dos retornos
+        log_diff = log_price - mean_log_price
+
+        # Calcular desvio padrão dos log-retornos para normalização
+        log_returns = np.diff(np.log(prices_for_mean))
+        std_log_returns = np.std(log_returns) if len(log_returns) > 0 else 0.001
+
+        # Direção normalizada: quantos desvios padrão do preço atual em relação à média
+        # Positivo = preço acima da média = pressão vendedora institucional
+        # Negativo = preço abaixo da média = pressão compradora institucional
+        z_score = log_diff / (std_log_returns * np.sqrt(len(prices_for_mean)) + 1e-8)
+
+        # Escalar para range típico [-0.5, 0.5] com saturação
+        optimal_direction = np.clip(z_score * 0.1, -0.5, 0.5)
 
         # Densidade no equilíbrio (Gaussiana)
         density = stats.norm.pdf(log_price, mean_log_price, sigma)
