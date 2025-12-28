@@ -1,0 +1,31 @@
+{
+  "strategy": "RHHF-HilbertHuangFractal-H4",
+  "symbol": "EURUSD",
+  "periodicity": "H4",
+  "optimized_at": "2025-12-28T20:45:40.404671+00:00",
+  "mode": "LONG_ONLY",
+  "parameters": {
+    "n_ensembles": 15,
+    "fractal_threshold": 1.1,
+    "min_conditions": 2,
+    "noise_amplitude": 0.2,
+    "mirror_extension": 30,
+    "stop_loss_pips": 40,
+    "take_profit_pips": 80,
+    "cooldown_bars": 3
+  },
+  "performance": {
+    "trades": 94,
+    "win_rate": 35.1063829787234,
+    "edge": 1.7730496453900741,
+    "profit_factor": 1.1458106637649612,
+    "total_pnl_pips": 40.199999999999804,
+    "max_drawdown_pips": 919.8000000000015
+  },
+  "walk_forward": {
+    "folds_positive": 3,
+    "total_folds": 4
+  },
+  "criteria_passed": "4/5",
+  "verdict": "APROVADO"
+}

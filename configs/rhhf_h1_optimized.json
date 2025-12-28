@@ -1,0 +1,28 @@
+{
+  "strategy": "RHHF-H1",
+  "symbol": "EURUSD",
+  "periodicity": "H1",
+  "optimized_at": "2025-12-28T21:01:47.232081+00:00",
+  "mode": "LONG_ONLY",
+  "parameters": {
+    "n_ensembles": 15,
+    "fractal_threshold": 1.1,
+    "stop_loss_pips": 25,
+    "take_profit_pips": 50,
+    "cooldown_bars": 4
+  },
+  "performance": {
+    "trades": 168,
+    "win_rate": 34.523809523809526,
+    "edge": 1.190476190476197,
+    "profit_factor": 0.5489021956087824,
+    "total_pnl_pips": -135.60000000000005,
+    "max_drawdown_pips": 615.8999999999999
+  },
+  "walk_forward": {
+    "folds_positive": 2,
+    "total_folds": 4
+  },
+  "criteria_passed": "3/5",
+  "verdict": "APROVADO_COM_RESSALVAS"
+}
