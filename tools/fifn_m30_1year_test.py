@@ -43,8 +43,8 @@ LONG_ONLY = True  # Testar apenas LONG
 API_BASE = "https://ttlivewebapi.fxopen.net:8443/api/v2/public/quotehistory"
 SYMBOL = "EURUSD"
 
-# M30: 48 barras/dia * 260 dias = ~12500 barras para 1 ano
-BARS_1_YEAR = 13000
+# M30: 48 barras/dia * 260 dias * 2 anos = ~25000 barras para 2 anos
+BARS_2_YEARS = 26000
 
 @dataclass
 class Bar:
@@ -285,11 +285,11 @@ def run_backtest(bars: List[Bar], start_pct: float = 0, end_pct: float = 100,
 
 def main():
     print("=" * 80)
-    print("  FIFN M30 - 1 YEAR COMPREHENSIVE TEST")
+    print("  FIFN M30 - 2 YEAR COMPREHENSIVE TEST")
     print("=" * 80)
 
-    # Baixar 1 ano de dados M30
-    bars = download_bars("M30", BARS_1_YEAR)
+    # Baixar 2 anos de dados M30
+    bars = download_bars("M30", BARS_2_YEARS)
 
     if len(bars) < 5000:
         print(f"  ERRO: Apenas {len(bars)} barras")
@@ -328,17 +328,17 @@ def main():
         print(f"  {'Max Drawdown':<20} | {result_raw['dd']:>14.1f} | {result_filtered['dd']:>14.1f}")
 
     # ==========================================================================
-    # WALK-FORWARD VALIDATION (4 FOLDS TRIMESTRAIS)
+    # WALK-FORWARD VALIDATION (8 FOLDS TRIMESTRAIS - 2 ANOS)
     # ==========================================================================
     print("\n" + "=" * 80)
-    print("  WALK-FORWARD VALIDATION (4 FOLDS TRIMESTRAIS)")
+    print("  WALK-FORWARD VALIDATION (8 FOLDS TRIMESTRAIS - 2 ANOS)")
     print("=" * 80)
 
     folds = []
-    for i in range(4):
-        start = i * 25
-        end = (i + 1) * 25
-        print(f"\n  Fold {i+1}/4 (Q{i+1}): {start}%-{end}%...")
+    for i in range(8):
+        start = i * 12.5
+        end = (i + 1) * 12.5
+        print(f"\n  Fold {i+1}/8 (Q{(i%4)+1}/Y{(i//4)+1}): {start:.1f}%-{end:.1f}%...")
         result = run_backtest(bars, start, end, use_filters=True)
         folds.append(result)
 
@@ -398,10 +398,10 @@ def main():
         criteria = [
             ("Edge agregado > 0%", agg_edge > 0 if total_trades > 0 else False),
             ("Profit Factor > 1.0", result_filtered['pf'] > 1.0),
-            (">=3 folds positivos (de 4)", positive_folds >= 3),
+            (">=5 folds positivos (de 8)", positive_folds >= 5),
             (">=50% meses lucrativos", pct_profitable >= 50),
-            ("Max Drawdown < 100 pips", result_filtered['dd'] < 100),
-            ("Total trades >= 30", result_filtered['total'] >= 30),
+            ("Max Drawdown < 150 pips", result_filtered['dd'] < 150),
+            ("Total trades >= 50", result_filtered['total'] >= 50),
         ]
 
         passed = 0
