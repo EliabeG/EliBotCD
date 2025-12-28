@@ -1,0 +1,30 @@
+{
+  "strategy": "PHM-UltraFast-H4",
+  "symbol": "EURUSD",
+  "periodicity": "H4",
+  "optimized_at": "2025-12-28T19:34:31.416579+00:00",
+  "mode": "LONG_ONLY",
+  "parameters": {
+    "window_size": 48,
+    "bond_dim": 3,
+    "n_layers": 2,
+    "magnetization_threshold": 0.02,
+    "stop_loss_pips": 40,
+    "take_profit_pips": 80,
+    "cooldown_bars": 3
+  },
+  "performance": {
+    "trades": 63,
+    "win_rate": 30.158730158730158,
+    "edge": -3.1746031746031704,
+    "profit_factor": 0.32575757575757597,
+    "total_pnl_pips": -347.0999999999999,
+    "max_drawdown_pips": 598.1999999999998
+  },
+  "walk_forward": {
+    "folds_positive": 1,
+    "total_folds": 4
+  },
+  "criteria_passed": "1/5",
+  "verdict": "REPROVADO"
+}

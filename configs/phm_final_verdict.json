@@ -1,0 +1,42 @@
+{
+  "strategy": "PHM-ProjetorHolografico",
+  "symbol": "EURUSD",
+  "optimized_at": "2025-12-28T18:30:00+00:00",
+  "verdict": "REPROVADO",
+  "criteria_passed": "1/5",
+  "tests_performed": [
+    {
+      "name": "Standard (Ferromagnetic Phase)",
+      "timeframes": ["H1", "H4"],
+      "result": "FAIL",
+      "best_edge": "+2.2%",
+      "walk_forward": "1/4 folds positive"
+    },
+    {
+      "name": "Magnetization-Based",
+      "timeframes": ["H4"],
+      "result": "FAIL",
+      "best_edge": "+2.7%",
+      "walk_forward": "1/4 folds positive"
+    },
+    {
+      "name": "Contrarian (Mean Reversion)",
+      "timeframes": ["H4"],
+      "result": "TIMEOUT",
+      "reason": "Computational complexity too high"
+    }
+  ],
+  "issues_identified": [
+    "Low average confidence (0.374)",
+    "Inconsistent walk-forward results",
+    "Edge-volume trade-off (no optimal point)",
+    "High computational complexity (SVD + MERA)",
+    "Q2 fold had 0% win rate (9 trades, all losses)"
+  ],
+  "recommendation": "Do not use for paper trading or live trading. Focus on approved indicators (FIFN, ODMN).",
+  "comparison": {
+    "FIFN_H1": {"edge": "+9.3%", "pf": 1.31, "verdict": "APPROVED"},
+    "ODMN_H1": {"edge": "+16.7%", "pf": 6.93, "verdict": "APPROVED"},
+    "PHM_H1": {"edge": "-0.5%", "pf": 1.00, "verdict": "REJECTED"}
+  }
+}
