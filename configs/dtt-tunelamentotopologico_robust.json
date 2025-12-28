@@ -2,44 +2,16 @@
   "strategy": "DTT-TunelamentoTopologico",
   "symbol": "EURUSD",
   "periodicity": "H1",
-  "optimized_at": "2025-12-28T12:00:00+00:00",
-  "validation": {
-    "method": "grid_search_live_data",
-    "combinations_tested": 3360,
-    "profitable_found": 164,
-    "data_period": "2025-08-01 to 2025-12-26",
-    "data_bars": 2500,
-    "anti_overfitting": true
-  },
+  "version": "V3.0",
   "parameters": {
     "persistence_entropy_threshold": 0.5,
-    "tunneling_probability_threshold": 0.35,
-    "min_signal_strength": 0.2,
-    "stop_loss_pips": 20.0,
-    "take_profit_pips": 40.0
-  },
-  "performance": {
-    "backtest": {
-      "trades": 22,
-      "wins": 9,
-      "losses": 13,
-      "win_rate": 0.409,
-      "profit_factor": 1.24,
-      "total_pnl_pips": 67,
-      "trades_per_month": 4.5,
-      "breakeven": 0.333,
-      "edge": 0.076
-    }
-  },
-  "filters_applied": {
-    "min_trades": 20,
-    "win_rate_range": [0.3, 0.65],
-    "profit_factor_min": 1.1,
-    "edge_min": 0.0,
-    "trading_hours": "07:00-20:00 UTC"
+    "tunneling_probability_threshold": 0.15,
+    "min_signal_strength": 0.3,
+    "stop_loss_pips": 25.0,
+    "take_profit_pips": 50.0
   },
   "notes": {
-    "previous_config_issue": "tunneling_probability_threshold=0.5 was too restrictive (only 1.2% of signals passed)",
-    "solution": "Lowered to 0.35 which allows more trades while maintaining edge"
+    "status": "Parametros conservadores padrao",
+    "overfitting": "Removido - parametros genericos sem otimizacao em periodo especifico"
   }
 }
