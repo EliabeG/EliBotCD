@@ -1,0 +1,55 @@
+{
+  "strategy": "FIFN-FisherNavier-M30",
+  "symbol": "EURUSD",
+  "periodicity": "M30",
+  "optimized_at": "2025-12-28",
+  "version": "2.0",
+  "parameters": {
+    "window_size": 40,
+    "kl_lookback": 10,
+    "reynolds_sweet_low": 2521.0,
+    "reynolds_sweet_high": 3786.0,
+    "skewness_threshold": 0.3091,
+    "stop_loss_pips": 15.0,
+    "take_profit_pips": 30.0
+  },
+  "filters": {
+    "session_hours": [8, 20],
+    "ema_fast": 12,
+    "ema_slow": 26,
+    "rsi_period": 14,
+    "rsi_long_range": [35, 75],
+    "rsi_short_range": [25, 65],
+    "require_trend_alignment": false,
+    "allow_neutral_trend": true
+  },
+  "performance": {
+    "test_period": "~101 dias",
+    "trades": 23,
+    "win_rate": 0.478,
+    "breakeven_rate": 0.333,
+    "edge": 0.145,
+    "profit_factor": 1.55,
+    "total_pnl_pips": 110.9
+  },
+  "comparison_all_timeframes": {
+    "M5":  {"edge": 0.086, "pf": 1.06, "status": "OK"},
+    "M15": {"edge": -0.155, "pf": 0.35, "status": "FAIL"},
+    "M30": {"edge": 0.145, "pf": 1.55, "status": "BEST"},
+    "H1":  {"edge": 0.054, "pf": 1.08, "status": "OK"},
+    "H4":  {"edge": -0.033, "pf": 0.80, "status": "FAIL"}
+  },
+  "notes": [
+    "M30 e o melhor timeframe para FIFN",
+    "Edge +14.5% com PF 1.55",
+    "SL:TP ratio 1:2 (15:30 pips)",
+    "Session filter essencial (8-20 UTC)",
+    "Filtros tecnicos (EMA/RSI) melhoram consistencia"
+  ],
+  "recommendations": {
+    "mode": "BOTH",
+    "lotage_per_1000": 0.01,
+    "max_daily_trades": 3,
+    "paper_trading_months": 2
+  }
+}
