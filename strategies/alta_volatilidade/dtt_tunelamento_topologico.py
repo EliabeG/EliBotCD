@@ -3,6 +3,12 @@ Detector de Tunelamento Topológico (DTT)
 =========================================
 Nível de Complexidade: Experimental / Deep Quant
 
+VERSÃO V3.3 - M5 ENHANCEMENT 28/12/2025:
+1. Filtros técnicos adicionais: ATR, EMA, RSI, Sessão
+2. Suporte a dados OHLC para cálculos mais precisos
+3. Otimizado para M5 com filtros anti-ruído
+4. Decisão combinada: Topologia + Quântica + Filtros Técnicos
+
 VERSÃO V3.2 - CALIBRAÇÃO NORMALIZADA 25/12/2025:
 1. Parâmetros quânticos com calibração NORMALIZADA (não arbitrária)
 2. Referências empíricas baseadas em análise histórica de Forex H1
@@ -964,14 +970,322 @@ class DetectorTunelamentoTopologico:
         }
 
     # =========================================================================
+    # MÓDULO 3.5: Filtros Técnicos Adicionais (M5 Enhancement)
+    # =========================================================================
+    # Adicionados para aumentar taxa de acerto em M5
+    # Todos calculados com dados passados apenas (sem look-ahead)
+    # =========================================================================
+
+    def calculate_atr(self, highs: np.ndarray, lows: np.ndarray,
+                      closes: np.ndarray, period: int = 14) -> np.ndarray:
+        """
+        Calcula Average True Range (ATR) - Volatilidade.
+
+        IMPORTANTE: Usa apenas dados até o índice atual (sem look-ahead).
+        O ATR[i] usa dados de [i-period:i], não inclui i.
+
+        Retorna array com ATR para cada ponto (NaN nos primeiros period pontos).
+        """
+        n = len(closes)
+        atr = np.full(n, np.nan)
+
+        if n < period + 1:
+            return atr
+
+        # True Range para cada barra (exceto a primeira)
+        tr = np.zeros(n)
+        for i in range(1, n):
+            high_low = highs[i] - lows[i]
+            high_close = abs(highs[i] - closes[i-1])
+            low_close = abs(lows[i] - closes[i-1])
+            tr[i] = max(high_low, high_close, low_close)
+
+        # ATR como média móvel exponencial do TR
+        # Usar dados até i-1 para calcular ATR[i] (anti look-ahead)
+        for i in range(period + 1, n):
+            atr[i] = np.mean(tr[i-period:i])
+
+        return atr
+
+    def calculate_ema(self, prices: np.ndarray, period: int) -> np.ndarray:
+        """
+        Calcula Exponential Moving Average.
+
+        IMPORTANTE: EMA[i] usa dados até prices[i-1] (sem look-ahead).
+        """
+        n = len(prices)
+        ema = np.full(n, np.nan)
+
+        if n < period + 1:
+            return ema
+
+        # Fator de suavização
+        alpha = 2.0 / (period + 1)
+
+        # Primeira EMA = SMA dos primeiros 'period' pontos
+        # Para evitar look-ahead, EMA[period] usa prices[0:period]
+        ema[period] = np.mean(prices[:period])
+
+        # Calcular EMA subsequentes
+        for i in range(period + 1, n):
+            # EMA[i] usa EMA[i-1] e prices[i-1] (não prices[i])
+            ema[i] = alpha * prices[i-1] + (1 - alpha) * ema[i-1]
+
+        return ema
+
+    def calculate_rsi(self, prices: np.ndarray, period: int = 14) -> np.ndarray:
+        """
+        Calcula Relative Strength Index.
+
+        IMPORTANTE: RSI[i] usa dados até prices[i-1] (sem look-ahead).
+        """
+        n = len(prices)
+        rsi = np.full(n, np.nan)
+
+        if n < period + 2:
+            return rsi
+
+        # Variações de preço
+        deltas = np.diff(prices)
+
+        # Separar ganhos e perdas
+        gains = np.where(deltas > 0, deltas, 0)
+        losses = np.where(deltas < 0, -deltas, 0)
+
+        # RSI com Wilder's smoothing
+        for i in range(period + 1, n):
+            # Usar dados até i-1 (índice no array deltas é i-2 pois deltas tem n-1 elementos)
+            idx_end = i - 1  # Último índice de deltas a usar
+            idx_start = idx_end - period
+
+            if idx_start < 0:
+                continue
+
+            avg_gain = np.mean(gains[idx_start:idx_end])
+            avg_loss = np.mean(losses[idx_start:idx_end])
+
+            if avg_loss == 0:
+                rsi[i] = 100.0
+            else:
+                rs = avg_gain / avg_loss
+                rsi[i] = 100.0 - (100.0 / (1.0 + rs))
+
+        return rsi
+
+    def calculate_session_filter(self, hour: int) -> dict:
+        """
+        Filtro de sessão baseado em hora UTC.
+
+        M5 precisa de alta liquidez para evitar falsos sinais.
+        Melhores horários: London/NY overlap (12:00-16:00 UTC)
+
+        Retorna dict com informações da sessão.
+        """
+        # Sessões de trading (horário UTC)
+        sessions = {
+            'asian': (0, 8),        # Tokyo: 00:00-08:00 UTC
+            'london': (7, 16),      # London: 07:00-16:00 UTC
+            'new_york': (12, 21),   # NY: 12:00-21:00 UTC
+            'overlap': (12, 16)     # London/NY overlap: melhor liquidez
+        }
+
+        in_overlap = sessions['overlap'][0] <= hour < sessions['overlap'][1]
+        in_london = sessions['london'][0] <= hour < sessions['london'][1]
+        in_ny = sessions['new_york'][0] <= hour < sessions['new_york'][1]
+
+        # Score de sessão (0.0 a 1.0)
+        session_score = 0.0
+        if in_overlap:
+            session_score = 1.0  # Melhor momento
+        elif in_london or in_ny:
+            session_score = 0.7  # Bom momento
+        elif 8 <= hour < 12:  # London pré-NY
+            session_score = 0.5  # Razoável
+        else:
+            session_score = 0.2  # Evitar (baixa liquidez)
+
+        return {
+            'hour': hour,
+            'in_overlap': in_overlap,
+            'in_london': in_london,
+            'in_ny': in_ny,
+            'session_score': session_score,
+            'trade_allowed': in_overlap or (in_london and hour >= 8)  # Overlap ou London ativa
+        }
+
+    def calculate_all_filters(self,
+                               highs: np.ndarray,
+                               lows: np.ndarray,
+                               closes: np.ndarray,
+                               current_hour: int,
+                               atr_period: int = 14,
+                               ema_fast: int = 12,
+                               ema_slow: int = 26,
+                               rsi_period: int = 14) -> dict:
+        """
+        Calcula todos os filtros técnicos.
+
+        IMPORTANTE: Todos os cálculos usam apenas dados passados.
+        O índice atual (-1) NÃO é usado nos cálculos para evitar look-ahead.
+
+        Retorna dict com todos os filtros e sinais combinados.
+        """
+        n = len(closes)
+
+        # Calcular indicadores
+        atr = self.calculate_atr(highs, lows, closes, atr_period)
+        ema_f = self.calculate_ema(closes, ema_fast)
+        ema_s = self.calculate_ema(closes, ema_slow)
+        rsi = self.calculate_rsi(closes, rsi_period)
+        session = self.calculate_session_filter(current_hour)
+
+        # Valores atuais (usando índice -2 para evitar look-ahead no preço atual)
+        # Quando temos closes[0:n], o closes[-1] é o atual
+        # Indicadores já são calculados com lag, então usamos -1 neles
+        current_atr = atr[-1] if not np.isnan(atr[-1]) else 0.0
+        current_ema_fast = ema_f[-1] if not np.isnan(ema_f[-1]) else closes[-2]
+        current_ema_slow = ema_s[-1] if not np.isnan(ema_s[-1]) else closes[-2]
+        current_rsi = rsi[-1] if not np.isnan(rsi[-1]) else 50.0
+
+        # Preço de referência (penúltimo para evitar look-ahead)
+        ref_price = closes[-2] if n > 1 else closes[-1]
+
+        # ===== FILTRO 1: VOLATILIDADE (ATR) =====
+        # Para M5 EURUSD, ATR ideal: 3-15 pips (0.0003 - 0.0015)
+        # Muito baixo = sem movimento, Muito alto = caótico
+        atr_pips = current_atr / 0.0001  # Converter para pips
+
+        atr_ok = 2.0 <= atr_pips <= 20.0  # Range aceitável
+        atr_ideal = 4.0 <= atr_pips <= 12.0  # Range ideal
+
+        # Score de volatilidade
+        if atr_ideal:
+            vol_score = 1.0
+        elif atr_ok:
+            vol_score = 0.7
+        else:
+            vol_score = 0.3
+
+        # ===== FILTRO 2: TENDÊNCIA (EMA) =====
+        # EMA rápida vs EMA lenta define tendência
+        ema_diff = current_ema_fast - current_ema_slow
+        ema_diff_pct = (ema_diff / current_ema_slow * 100) if current_ema_slow != 0 else 0
+
+        trend_direction = 1 if ema_diff > 0 else -1 if ema_diff < 0 else 0
+        trend_strength = abs(ema_diff_pct)
+
+        # Tendência forte: diferença > 0.015% (mais sensível)
+        trend_strong = trend_strength > 0.015
+
+        # Tendência muito forte: > 0.03% (requerido para SHORT)
+        trend_very_strong = trend_strength > 0.03
+
+        # Score de tendência
+        trend_score = min(trend_strength / 0.05, 1.0)  # Max em 0.05%
+
+        # ===== FILTRO 3: MOMENTUM (RSI) =====
+        # RSI confirma momentum sem estar em extremos
+        rsi_neutral = 40 <= current_rsi <= 60
+        rsi_bullish = current_rsi > 50
+        rsi_bearish = current_rsi < 50
+        rsi_overbought = current_rsi >= 70
+        rsi_oversold = current_rsi <= 30
+
+        # Momentum alinhado com tendência?
+        momentum_aligned = (trend_direction > 0 and rsi_bullish) or \
+                          (trend_direction < 0 and rsi_bearish)
+
+        # Evitar extremos contra-tendência
+        rsi_extreme_against = (trend_direction > 0 and rsi_oversold) or \
+                              (trend_direction < 0 and rsi_overbought)
+
+        # Score de momentum
+        if momentum_aligned and not rsi_overbought and not rsi_oversold:
+            momentum_score = 1.0
+        elif momentum_aligned:
+            momentum_score = 0.6  # Alinhado mas em extremo
+        elif rsi_neutral:
+            momentum_score = 0.5  # Neutro
+        else:
+            momentum_score = 0.3  # Contra tendência
+
+        # ===== DECISÃO COMBINADA =====
+        # Score total (média ponderada)
+        total_score = (
+            0.25 * vol_score +      # 25% volatilidade
+            0.30 * trend_score +     # 30% tendência
+            0.25 * momentum_score +  # 25% momentum
+            0.20 * session['session_score']  # 20% sessão
+        )
+
+        # Condições para trade
+        filters_ok = (
+            atr_ok and                    # Volatilidade aceitável
+            session['trade_allowed'] and  # Sessão válida
+            not rsi_extreme_against       # RSI não contra tendência
+        )
+
+        # Direção recomendada pelos filtros
+        # LONG: requer tendência forte + RSI bullish
+        # SHORT: requer tendência MUITO forte (mais restritivo)
+        filter_direction = 0
+        if filters_ok:
+            # LONG: tendência forte, RSI > 50, não overbought
+            if trend_direction > 0 and trend_strong and rsi_bullish and not rsi_overbought:
+                # Bonus: tendência muito forte = maior confiança
+                if trend_very_strong or (momentum_aligned and total_score >= 0.6):
+                    filter_direction = 1  # LONG
+            # SHORT: requer condições mais estritas
+            elif trend_direction < 0 and trend_very_strong and rsi_bearish and current_rsi < 45:
+                filter_direction = -1  # SHORT
+
+        return {
+            # Indicadores brutos
+            'atr_pips': atr_pips,
+            'ema_fast': current_ema_fast,
+            'ema_slow': current_ema_slow,
+            'ema_diff_pct': ema_diff_pct,
+            'rsi': current_rsi,
+
+            # Análises
+            'atr_ok': atr_ok,
+            'atr_ideal': atr_ideal,
+            'trend_direction': trend_direction,
+            'trend_strong': trend_strong,
+            'trend_very_strong': trend_very_strong,
+            'momentum_aligned': momentum_aligned,
+            'rsi_extreme_against': rsi_extreme_against,
+
+            # Sessão
+            'session': session,
+
+            # Scores
+            'vol_score': vol_score,
+            'trend_score': trend_score,
+            'momentum_score': momentum_score,
+            'session_score': session['session_score'],
+            'total_score': total_score,
+
+            # Decisão
+            'filters_ok': filters_ok,
+            'filter_direction': filter_direction,
+            'filter_direction_str': 'LONG' if filter_direction > 0 else 'SHORT' if filter_direction < 0 else 'NEUTRAL'
+        }
+
+    # =========================================================================
     # MÓDULO 4: O Sintetizador de Decisão (Gatilho Lógico)
     # =========================================================================
 
     def synthesize_decision(self, topology_result: dict,
                            entropy_result: dict,
-                           tunneling_result: dict) -> dict:
+                           tunneling_result: dict,
+                           prices: np.ndarray = None,
+                           highs: np.ndarray = None,
+                           lows: np.ndarray = None,
+                           current_hour: int = 12,
+                           use_filters: bool = True) -> dict:
         """
-        Combinando Topologia e Quântica:
+        Combinando Topologia, Quântica e Filtros Técnicos (V3.3):
 
         1. Verificação de Regime (Topologia): A Entropia de Persistência (B1) está subindo?
            (O mercado está se organizando geometricamente, saindo do caos aleatório).
@@ -979,7 +1293,13 @@ class DetectorTunelamentoTopologico:
         2. Verificação de Energia (Quântica): O nível de energia do autoestado atual (E_n)
            é superior à barreira de potencial local?
 
-        3. Direção: Dada pelo gradiente do momento da função de onda (fluxo de probabilidade).
+        3. Filtros Técnicos (M5 Enhancement):
+           - ATR: Volatilidade dentro do range ideal
+           - EMA: Tendência definida
+           - RSI: Momentum confirmado
+           - Sessão: Horário de alta liquidez
+
+        4. Direção: Combina momentum simples com direção dos filtros.
         """
         # 1. Verificação de Regime (Topologia)
         persistence_entropy = entropy_result['persistence_entropy']
@@ -997,33 +1317,91 @@ class DetectorTunelamentoTopologico:
         # Energia suficiente para atravessar barreira
         energy_valid = tunneling_signal or energy_ratio > 0.5
 
-        # 3. Direção
-        direction = tunneling_result['momentum_direction']
+        # 3. Filtros Técnicos (se OHLC disponível)
+        filters_result = None
+        filters_ok = True
+        filter_direction = 0
+
+        if use_filters and prices is not None and highs is not None and lows is not None:
+            if len(prices) > 30 and len(highs) == len(prices) and len(lows) == len(prices):
+                filters_result = self.calculate_all_filters(
+                    highs=highs,
+                    lows=lows,
+                    closes=prices,
+                    current_hour=current_hour,
+                    atr_period=14,
+                    ema_fast=12,
+                    ema_slow=26,
+                    rsi_period=14
+                )
+                filters_ok = filters_result['filters_ok']
+                filter_direction = filters_result['filter_direction']
+
+        # 4. Direção - Combinar momentum com filtros
+        momentum_direction = 0
+        if prices is not None and len(prices) > 12:
+            # Momentum simples de preços
+            recent = prices[-2]
+            past = prices[-12]
+            momentum = recent - past
+            momentum_direction = 1 if momentum > 0 else -1 if momentum < 0 else 0
+
+        # Direção final: REQUER filtros quando ativos
+        if use_filters and filters_result is not None:
+            # Com filtros: SÓ usa filter_direction (mais restritivo)
+            # Se filtros não definem direção, NÃO operar
+            direction = filter_direction
+        else:
+            # Sem filtros: usar momentum simples
+            direction = momentum_direction
+
+        # Verificar concordância entre momentum e filtros
+        direction_aligned = (momentum_direction == filter_direction)
+
         direction_str = 'LONG' if direction > 0 else 'SHORT' if direction < 0 else 'NEUTRAL'
 
-        # Decisão final: TRADE ON apenas se ambas condições forem satisfeitas
-        # Muitas linhas longas = Alta complexidade/Volatilidade estruturada = TRADE ON
-        # Apenas linhas curtas = Ruído branco = SYSTEM OFF
+        # 5. Decisão final: TRADE ON com filtros
+        # Requer: topologia + energia + filtros + direção definida pelos filtros
+        base_signal = topology_valid and energy_valid
 
-        trade_on = topology_valid and energy_valid
+        if use_filters and filters_result is not None:
+            # Com filtros: REQUER que filtros definam direção
+            trade_on = (
+                base_signal and
+                filters_ok and
+                filter_direction != 0 and  # Filtros DEVEM definir direção
+                direction_aligned  # Momentum concorda com filtros
+            )
+        else:
+            # Sem filtros: comportamento original
+            trade_on = base_signal and direction != 0
 
-        # Força do sinal (0 a 1)
-        signal_strength = (
-            0.4 * min(persistence_entropy, 1.0) +
-            0.4 * min(tunneling_prob * 2 if not np.isnan(tunneling_prob) else 0, 1.0) +
-            0.2 * min(n_significant_cycles / 5, 1.0)
+        # 6. Força do sinal (0 a 1)
+        base_strength = (
+            0.3 * min(persistence_entropy, 1.0) +
+            0.3 * min(tunneling_prob * 2 if not np.isnan(tunneling_prob) else 0, 1.0) +
+            0.1 * min(n_significant_cycles / 5, 1.0)
         )
+
+        # Adicionar score dos filtros se disponível
+        if filters_result is not None:
+            signal_strength = base_strength + 0.3 * filters_result['total_score']
+        else:
+            signal_strength = base_strength + 0.3 * 0.5  # Neutro
 
         # Garantir valor válido
         if np.isnan(signal_strength):
             signal_strength = 0.0
+        signal_strength = min(max(signal_strength, 0.0), 1.0)
 
-        return {
+        result = {
             # Verificações individuais
             'topology_valid': topology_valid,
             'energy_valid': energy_valid,
+            'filters_ok': filters_ok,
+            'direction_aligned': direction_aligned,
 
-            # Métricas
+            # Métricas DTT
             'persistence_entropy': persistence_entropy,
             'tunneling_probability': tunneling_prob,
             'energy_ratio': energy_ratio,
@@ -1033,23 +1411,53 @@ class DetectorTunelamentoTopologico:
             'trade_on': trade_on,
             'direction': direction_str,
             'direction_numeric': direction,
+            'momentum_direction': momentum_direction,
+            'filter_direction': filter_direction,
             'signal_strength': signal_strength,
 
             # Status do sistema
             'system_status': 'TRADE ON' if trade_on else 'SYSTEM OFF'
         }
 
+        # Adicionar detalhes dos filtros se disponíveis
+        if filters_result is not None:
+            result['filters'] = filters_result
+
+        return result
+
     # =========================================================================
     # MÓDULO 5: Output e Visualização
     # =========================================================================
 
-    def analyze(self, prices: np.ndarray) -> dict:
+    def analyze(self, prices: np.ndarray,
+                highs: np.ndarray = None,
+                lows: np.ndarray = None,
+                current_hour: int = 12,
+                use_filters: bool = True) -> dict:
         """
-        Execução completa do Detector de Tunelamento Topológico V3.0.
+        Execução completa do Detector de Tunelamento Topológico V3.3.
 
-        VERSÃO V3.0:
+        VERSÃO V3.3 (M5 Enhancement):
+        - Filtros técnicos adicionais (ATR, EMA, RSI, Sessão)
+        - Suporte a dados OHLC para cálculos mais precisos
+        - Otimizado para M5 com filtros anti-ruído
+
+        VERSÃO V3.0 (herdado):
         - Calibra parâmetros quânticos automaticamente (se auto_calibrate=True)
         - Retorna informações de calibração no resultado
+
+        Parâmetros:
+        -----------
+        prices : np.ndarray
+            Array de preços de fechamento (Close)
+        highs : np.ndarray, opcional
+            Array de preços máximos (High) - necessário para filtros
+        lows : np.ndarray, opcional
+            Array de preços mínimos (Low) - necessário para filtros
+        current_hour : int
+            Hora atual (UTC) para filtro de sessão
+        use_filters : bool
+            Se True, aplica filtros técnicos adicionais
 
         Retorna análise completa com todos os subsistemas.
         """
@@ -1057,6 +1465,12 @@ class DetectorTunelamentoTopologico:
 
         if len(prices) < 100:
             raise ValueError("Dados insuficientes. Necessário mínimo de 100 pontos de preço.")
+
+        # Processar OHLC se disponível
+        if highs is not None:
+            highs = np.array(highs, dtype=float)
+        if lows is not None:
+            lows = np.array(lows, dtype=float)
 
         # 1. Embedding de Takens
         embedding_result = self.get_takens_embedding(prices)
@@ -1087,12 +1501,19 @@ class DetectorTunelamentoTopologico:
             schrodinger_result, potential_result
         )
 
-        # 7. Sintetizar Decisão
+        # 7. Sintetizar Decisão (V3.3: com filtros técnicos)
         decision = self.synthesize_decision(
-            topology_result, entropy_result, tunneling_result
+            topology_result=topology_result,
+            entropy_result=entropy_result,
+            tunneling_result=tunneling_result,
+            prices=prices,
+            highs=highs,
+            lows=lows,
+            current_hour=current_hour,
+            use_filters=use_filters
         )
 
-        return {
+        result = {
             # Decisão principal
             'trade_on': decision['trade_on'],
             'system_status': decision['system_status'],
@@ -1116,6 +1537,12 @@ class DetectorTunelamentoTopologico:
             # V3.0: Informações de calibração quântica
             'quantum_calibration': self.quantum_params.get_params()
         }
+
+        # V3.3: Adicionar info de filtros se disponível
+        if 'filters' in decision:
+            result['filters'] = decision['filters']
+
+        return result
 
     def get_signal(self, prices: np.ndarray) -> int:
         """
