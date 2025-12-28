@@ -3,6 +3,12 @@
 Adaptador de Estratégia para o Detector de Tunelamento Topológico
 ================================================================================
 
+VERSÃO V3.1 - PARAMETROS REOTIMIZADOS 28/12/2025:
+- Grid Search com 3360 combinacoes em dados reais (Aug-Dec 2025)
+- Parametros otimizados: entropy>=0.5, tunneling>=0.35, strength>=0.2
+- SL/TP: 20/40 pips (Breakeven 33.3%)
+- Backtest: 22 trades, WR 40.9%, Edge +7.6%, PF 1.24
+
 VERSÃO V3.0 - CORREÇÕES DE FUNDAMENTOS TEÓRICOS 24/12/2025:
 1. Múltiplos modos de direção (momentum, quantum, topology, hybrid)
 2. Opção de exigir consenso entre métodos
@@ -77,11 +83,13 @@ class DTTStrategy(BaseStrategy):
 
     def __init__(self,
                  min_prices: int = 150,
-                 stop_loss_pips: float = 25.0,
-                 take_profit_pips: float = 50.0,
+                 # V3.1: Parametros REOTIMIZADOS (Grid Search 28/12/2025)
+                 # Backtest: 22 trades, WR 40.9%, Edge +7.6%, PF 1.24
+                 stop_loss_pips: float = 20.0,
+                 take_profit_pips: float = 40.0,
                  persistence_entropy_threshold: float = 0.5,
-                 tunneling_probability_threshold: float = 0.15,
-                 min_signal_strength: float = 0.3,
+                 tunneling_probability_threshold: float = 0.35,
+                 min_signal_strength: float = 0.2,
                  direction_lookback: int = DEFAULT_DIRECTION_LOOKBACK,
                  # V3.0: Novos parâmetros de direção
                  direction_mode: str = "hybrid",
@@ -113,7 +121,7 @@ class DTTStrategy(BaseStrategy):
             particle_mass: Massa da partícula quântica (None = auto calibrar)
             kT: Temperatura do mercado (None = auto calibrar)
         """
-        super().__init__(name="DTT-V3.0")
+        super().__init__(name="DTT-V3.1")
 
         self.min_prices = min_prices
         self.stop_loss_pips = stop_loss_pips
