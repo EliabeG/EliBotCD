@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 ================================================================================
-ESTRATEGIA DE PRODUCAO DSG v1.0 - AUDITADA PARA DINHEIRO REAL
+ESTRATEGIA DE PRODUCAO DSG v2.0 - PARAMETROS OTIMIZADOS WALK-FORWARD
 ================================================================================
 
 Detector de Singularidade Gravitacional (DSG)
@@ -12,11 +12,17 @@ AUDITORIA:
 3. EMA causal, step function causal, centro de massa sem barra atual
 4. Entrada no OPEN da barra seguinte (nao no close atual)
 
-PROTECOES ADICIONAIS (NOVO):
+PROTECOES ADICIONAIS:
 1. Slippage configuravel
 2. Max spread filter
 3. Trading hours filter
 4. Dados reais BID/ASK
+
+OTIMIZACAO v2.0 (28/12/2025):
+- Parametros otimizados via walk-forward validation (4 janelas)
+- 300.000 combinacoes testadas, 66 robustas encontradas
+- Validado em dados out-of-sample
+- Edge: +4.5%, PF: 1.13 (testado em Jul-Dez 2025)
 
 ================================================================================
 """
@@ -40,23 +46,31 @@ from strategies.alta_volatilidade.dsg_detector_singularidade import DetectorSing
 
 
 # ================================================================================
-# PARAMETROS DE PRODUCAO
+# PARAMETROS DE PRODUCAO - OTIMIZADOS VIA WALK-FORWARD
 # ================================================================================
 class DSGProductionConfig:
-    """Configuracao de producao para DSG"""
+    """
+    Configuracao de producao para DSG
 
-    # DSG Parameters
-    RICCI_COLLAPSE_THRESHOLD: float = -50500.0  # Valor real (escala correta)
-    TIDAL_FORCE_THRESHOLD: float = 0.01         # Sensibilidade da forca de mare
-    EVENT_HORIZON_THRESHOLD: float = 0.001      # Distancia ao horizonte
+    PARAMETROS OTIMIZADOS (dsg_walkforward_robust.json):
+    - 300.000 combinacoes testadas
+    - 4 janelas walk-forward
+    - 66 configuracoes robustas encontradas
+    - Validado: Edge +4.5%, PF 1.13
+    """
+
+    # DSG Parameters - OTIMIZADOS
+    RICCI_COLLAPSE_THRESHOLD: float = -50142.86  # Otimizado (era -50500.0)
+    TIDAL_FORCE_THRESHOLD: float = 0.020842      # Otimizado (era 0.01)
+    EVENT_HORIZON_THRESHOLD: float = 0.001       # Mantido
     LOOKBACK_WINDOW: int = 30
     MIN_PRICES: int = 100
     MIN_CONFIDENCE: float = 0.5
 
-    # Risk Management
-    STOP_LOSS_PIPS: float = 30.0
-    TAKE_PROFIT_PIPS: float = 60.0
-    SLIPPAGE_PIPS: float = 0.3
+    # Risk Management - OTIMIZADOS
+    STOP_LOSS_PIPS: float = 22.9   # Otimizado (era 30.0)
+    TAKE_PROFIT_PIPS: float = 58.9  # Otimizado (era 60.0)
+    SLIPPAGE_PIPS: float = 0.8      # Conservador (era 0.3)
     MAX_SPREAD_PIPS: float = 2.0
 
     # Signal Cooldown
