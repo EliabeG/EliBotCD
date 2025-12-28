@@ -793,11 +793,136 @@ class FluxoInformacaoFisherNavier:
         }
 
     # =========================================================================
+    # MÓDULO 4.5: Filtros Técnicos Adicionais (M5/H1 Enhancement)
+    # =========================================================================
+    # Adicionados para aumentar taxa de acerto
+    # Todos calculados com dados passados apenas (sem look-ahead)
+    # =========================================================================
+
+    def calculate_atr(self, highs: np.ndarray, lows: np.ndarray,
+                      closes: np.ndarray, period: int = 14) -> float:
+        """Calcula ATR atual (último valor)."""
+        n = len(closes)
+        if n < period + 1:
+            return 0.0
+
+        tr = np.zeros(n)
+        for i in range(1, n):
+            tr[i] = max(highs[i] - lows[i],
+                       abs(highs[i] - closes[i-1]),
+                       abs(lows[i] - closes[i-1]))
+
+        atr = np.mean(tr[-period:])
+        return atr
+
+    def calculate_ema(self, prices: np.ndarray, period: int) -> float:
+        """Calcula EMA atual (último valor)."""
+        if len(prices) < period + 1:
+            return prices[-1] if len(prices) > 0 else 0.0
+
+        alpha = 2.0 / (period + 1)
+        ema = np.mean(prices[:period])
+        for i in range(period, len(prices)):
+            ema = alpha * prices[i-1] + (1 - alpha) * ema
+        return ema
+
+    def calculate_rsi(self, prices: np.ndarray, period: int = 14) -> float:
+        """Calcula RSI atual."""
+        if len(prices) < period + 2:
+            return 50.0
+
+        deltas = np.diff(prices)
+        gains = np.where(deltas > 0, deltas, 0)
+        losses = np.where(deltas < 0, -deltas, 0)
+
+        avg_gain = np.mean(gains[-period:])
+        avg_loss = np.mean(losses[-period:])
+
+        if avg_loss == 0:
+            return 100.0
+        rs = avg_gain / avg_loss
+        return 100.0 - (100.0 / (1.0 + rs))
+
+    def calculate_technical_filters(self, closes: np.ndarray,
+                                     highs: np.ndarray = None,
+                                     lows: np.ndarray = None,
+                                     current_hour: int = 12) -> dict:
+        """
+        Calcula filtros técnicos para aumentar qualidade dos sinais.
+        Retorna dict com filtros e decisão combinada.
+        """
+        n = len(closes)
+
+        # ATR (volatilidade)
+        if highs is not None and lows is not None:
+            atr = self.calculate_atr(highs, lows, closes, 14)
+            atr_pips = atr / 0.0001
+        else:
+            atr_pips = 10.0  # Default
+
+        # EMA 12/26 (tendência)
+        ema_fast = self.calculate_ema(closes, 12)
+        ema_slow = self.calculate_ema(closes, 26)
+        ema_diff = ema_fast - ema_slow
+        ema_diff_pct = (ema_diff / ema_slow * 100) if ema_slow != 0 else 0
+
+        trend_direction = 1 if ema_diff > 0 else -1 if ema_diff < 0 else 0
+        trend_strong = abs(ema_diff_pct) > 0.02
+
+        # RSI (momentum)
+        rsi = self.calculate_rsi(closes, 14)
+        rsi_bullish = rsi > 50
+        rsi_bearish = rsi < 50
+        rsi_overbought = rsi >= 70
+        rsi_oversold = rsi <= 30
+
+        # Sessão (horário UTC)
+        in_london = 7 <= current_hour < 16
+        in_ny = 12 <= current_hour < 21
+        in_overlap = 12 <= current_hour < 16
+        session_ok = in_overlap or (in_london and current_hour >= 8)
+
+        # Volatilidade ok
+        atr_ok = 3.0 <= atr_pips <= 30.0  # Range para H1
+
+        # Direção dos filtros
+        filter_direction = 0
+        if session_ok and atr_ok:
+            if trend_direction > 0 and trend_strong and rsi_bullish and not rsi_overbought:
+                filter_direction = 1
+            elif trend_direction < 0 and trend_strong and rsi_bearish and not rsi_oversold:
+                filter_direction = -1
+
+        # Score total
+        score = 0.0
+        if atr_ok: score += 0.25
+        if trend_strong: score += 0.25
+        if session_ok: score += 0.25
+        if (trend_direction > 0 and rsi_bullish) or (trend_direction < 0 and rsi_bearish):
+            score += 0.25
+
+        return {
+            'atr_pips': atr_pips,
+            'atr_ok': atr_ok,
+            'ema_fast': ema_fast,
+            'ema_slow': ema_slow,
+            'trend_direction': trend_direction,
+            'trend_strong': trend_strong,
+            'rsi': rsi,
+            'session_ok': session_ok,
+            'filter_direction': filter_direction,
+            'filters_ok': atr_ok and session_ok,
+            'total_score': score
+        }
+
+    # =========================================================================
     # MÓDULO 5: Output e Visualização
     # =========================================================================
 
     def analyze(self, prices: np.ndarray, volume: np.ndarray = None,
-                current_bar_excluded: bool = True) -> dict:
+                current_bar_excluded: bool = True,
+                highs: np.ndarray = None, lows: np.ndarray = None,
+                current_hour: int = 12, use_filters: bool = False) -> dict:
         """
         Execução completa do Fluxo de Informação Fisher-Navier.
 
@@ -872,6 +997,46 @@ class FluxoInformacaoFisherNavier:
             prices, current_reynolds, current_pressure_gradient
         )
 
+        # 6. Calcular filtros técnicos (se disponíveis)
+        filters = None
+        final_signal = directional['signal']
+        final_signal_name = directional['signal_name']
+        trade_on = False
+
+        if use_filters and highs is not None and lows is not None:
+            filters = self.calculate_technical_filters(prices, highs, lows, current_hour)
+
+            # Lógica de combinação: sinal FIFN + filtros técnicos
+            fifn_signal = directional['signal']
+            filter_dir = filters['filter_direction']
+
+            # Trade ON apenas quando FIFN e filtros concordam E filtros OK
+            if filters['filters_ok'] and filters['total_score'] >= 0.5:
+                if fifn_signal == 1 and filter_dir == 1:
+                    # LONG: FIFN compra + filtros bullish
+                    trade_on = True
+                    final_signal = 1
+                    final_signal_name = "LONG"
+                elif fifn_signal == -1 and filter_dir == -1:
+                    # SHORT: FIFN venda + filtros bearish
+                    trade_on = True
+                    final_signal = -1
+                    final_signal_name = "SHORT"
+                elif fifn_signal != 0 and filter_dir == 0:
+                    # FIFN tem sinal mas filtros neutros - usar só filtro de tendência
+                    if fifn_signal == 1 and filters['trend_direction'] > 0 and filters['rsi'] > 45:
+                        trade_on = True
+                        final_signal = 1
+                        final_signal_name = "LONG"
+                    elif fifn_signal == -1 and filters['trend_direction'] < 0 and filters['rsi'] < 55:
+                        trade_on = True
+                        final_signal = -1
+                        final_signal_name = "SHORT"
+        else:
+            # Sem filtros - usar apenas sinal FIFN puro
+            if directional['signal'] != 0 and reynolds_class['in_sweet_spot']:
+                trade_on = True
+
         # Vetor de saída: [Reynolds_Number, KL_Divergence, Pressure_Gradient]
         output_vector = [
             current_reynolds,
@@ -898,10 +1063,19 @@ class FluxoInformacaoFisherNavier:
             # Classificação
             'reynolds_classification': reynolds_class,
 
-            # Sinal direcional
+            # Sinal direcional (FIFN puro)
             'directional_signal': directional,
-            'signal': directional['signal'],
-            'signal_name': directional['signal_name'],
+            'fifn_signal': directional['signal'],
+            'fifn_signal_name': directional['signal_name'],
+
+            # Sinal final (combinado com filtros)
+            'signal': final_signal,
+            'signal_name': final_signal_name,
+            'trade_on': trade_on,
+            'direction': final_signal_name if trade_on else None,
+
+            # Filtros técnicos
+            'filters': filters,
 
             # Metadados
             'n_observations': len(prices),

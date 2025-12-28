@@ -1,0 +1,55 @@
+{
+  "strategy": "FIFN-FisherNavier-Filtered",
+  "symbol": "EURUSD",
+  "periodicity": "H1",
+  "optimized_at": "2025-12-28",
+  "version": "2.0",
+  "parameters": {
+    "window_size": 50,
+    "kl_lookback": 10,
+    "reynolds_sweet_low": 2521.0,
+    "reynolds_sweet_high": 3786.0,
+    "skewness_threshold": 0.3091,
+    "stop_loss_pips": 22.5,
+    "take_profit_pips": 27.9
+  },
+  "filters": {
+    "session_hours": [8, 20],
+    "ema_fast": 12,
+    "ema_slow": 26,
+    "rsi_period": 14,
+    "rsi_long_range": [35, 75],
+    "rsi_short_range": [25, 65],
+    "require_trend_alignment": false,
+    "allow_neutral_trend": true
+  },
+  "performance": {
+    "test_period": "2025-07 to 2025-12",
+    "trades": 16,
+    "win_rate": 0.50,
+    "breakeven_rate": 0.446,
+    "edge": 0.054,
+    "profit_factor": 1.08,
+    "total_pnl_pips": 16.0
+  },
+  "comparison_without_filters": {
+    "trades": 65,
+    "win_rate": 0.462,
+    "edge": 0.015,
+    "profit_factor": 0.93,
+    "total_pnl_pips": -61.0
+  },
+  "notes": [
+    "Filtros tecnicos melhoraram PF de 0.93 para 1.08",
+    "Edge aumentou de +1.5% para +5.4%",
+    "Session filter (8-20 UTC) e essencial",
+    "RSI filtra condicoes extremas",
+    "LONG-only parece mais lucrativo nos testes"
+  ],
+  "recommendations": {
+    "mode": "LONG_ONLY",
+    "lotage_per_1000": 0.01,
+    "max_daily_trades": 2,
+    "paper_trading_months": 2
+  }
+}
