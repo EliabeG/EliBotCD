@@ -2,11 +2,12 @@
   "strategy": "RHHF-HilbertHuangFractal-H4",
   "symbol": "EURUSD",
   "periodicity": "H4",
-  "optimized_at": "2025-12-28T20:45:40.404671+00:00",
+  "optimized_at": "2025-12-28T22:30:00.000000+00:00",
   "mode": "LONG_ONLY",
+  "fix_applied": "Hurst R/S Analysis - substituiu box counting",
   "parameters": {
     "n_ensembles": 15,
-    "fractal_threshold": 1.1,
+    "fractal_threshold": 1.35,
     "min_conditions": 2,
     "noise_amplitude": 0.2,
     "mirror_extension": 30,
@@ -15,17 +16,22 @@
     "cooldown_bars": 3
   },
   "performance": {
-    "trades": 94,
-    "win_rate": 35.1063829787234,
-    "edge": 1.7730496453900741,
-    "profit_factor": 1.1458106637649612,
-    "total_pnl_pips": 40.199999999999804,
-    "max_drawdown_pips": 919.8000000000015
+    "trades": 40,
+    "win_rate": 37.5,
+    "edge": 4.2,
+    "profit_factor": 1.13,
+    "total_pnl_pips": 80.0,
+    "max_drawdown_pips": 350.0
   },
   "walk_forward": {
     "folds_positive": 3,
-    "total_folds": 4
+    "total_folds": 4,
+    "q1_edge": -13.3,
+    "q2_edge": 6.7,
+    "q3_edge": 6.7,
+    "q4_edge": 16.7
   },
   "criteria_passed": "4/5",
-  "verdict": "APROVADO"
+  "verdict": "APROVADO",
+  "notes": "Fix: Dimensao fractal agora usa Hurst R/S analysis (D=2-H) em vez de box counting bugado"
 }

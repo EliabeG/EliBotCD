@@ -49,7 +49,7 @@ class RessonadorHilbertHuangFractal:
                  use_predictive_extension: bool = True,
                  ar_order: int = 20,
                  chirp_threshold: float = 0.0,
-                 fractal_threshold: float = 1.2,
+                 fractal_threshold: float = 1.35,
                  energy_percentile: float = 70,
                  smoothing_sigma: float = 3):
         """
@@ -544,13 +544,107 @@ class RessonadorHilbertHuangFractal:
     # MÓDULO 4: Análise Fractal da Frequência (Meta-Hurst)
     # =========================================================================
 
+    def calculate_hurst_exponent(self, series: np.ndarray, min_window: int = 10) -> float:
+        """
+        Calcula o Expoente de Hurst usando R/S Analysis (Rescaled Range).
+
+        Este método usa os RETORNOS (diferenças) da série para calcular R/S,
+        que é o método correto para séries temporais financeiras.
+
+        Relação com Dimensão Fractal: D = 2 - H
+        - H ≈ 0.5: Passeio aleatório (D ≈ 1.5)
+        - H > 0.5: Série persistente/trending (D < 1.5)
+        - H < 0.5: Série anti-persistente/mean-reverting (D > 1.5)
+
+        Retorna o Expoente de Hurst (0 a 1).
+        """
+        n = len(series)
+        if n < min_window * 2:
+            return 0.5  # Default para dados insuficientes
+
+        # Calcular retornos (diferenças) da série
+        returns = np.diff(series)
+        if len(returns) < min_window:
+            return 0.5
+
+        n_returns = len(returns)
+
+        # Gerar tamanhos de janela
+        max_window = n_returns // 2
+        window_sizes = []
+        w = min_window
+        while w <= max_window:
+            window_sizes.append(w)
+            w = int(w * 1.4)  # Crescimento moderado
+
+        if len(window_sizes) < 3:
+            return 0.5
+
+        rs_values = []
+        valid_sizes = []
+
+        for window_size in window_sizes:
+            n_windows = n_returns // window_size
+            if n_windows < 2:
+                continue
+
+            rs_list = []
+
+            for i in range(n_windows):
+                start = i * window_size
+                end = start + window_size
+                window = returns[start:end]
+
+                if len(window) < 3:
+                    continue
+
+                # Média e desvio padrão da janela de retornos
+                mean = np.mean(window)
+                std = np.std(window, ddof=1)  # Sample std
+
+                if std < self.eps:
+                    continue
+
+                # Série de desvios cumulativos
+                cumsum = np.cumsum(window - mean)
+
+                # Range (max - min dos desvios cumulativos)
+                R = np.max(cumsum) - np.min(cumsum)
+
+                # R/S (Rescaled Range)
+                rs = R / std
+                rs_list.append(rs)
+
+            if rs_list:
+                rs_values.append(np.mean(rs_list))
+                valid_sizes.append(window_size)
+
+        if len(valid_sizes) < 3:
+            return 0.5
+
+        # Regressão log-log: log(R/S) vs log(n)
+        log_n = np.log(np.array(valid_sizes))
+        log_rs = np.log(np.array(rs_values))
+
+        try:
+            coeffs = np.polyfit(log_n, log_rs, 1)
+            hurst = coeffs[0]  # Slope = Hurst exponent
+        except:
+            hurst = 0.5
+
+        # Limitar a valores válidos [0.01, 0.99]
+        hurst = np.clip(hurst, 0.01, 0.99)
+
+        return hurst
+
     def calculate_box_counting_dimension(self, curve: np.ndarray,
                                           n_scales: int = 20) -> float:
         """
-        Para evitar falsos positivos, aplicaremos a geometria fractal sobre a
-        frequência instantânea, não sobre o preço.
+        Calcula a Dimensão Fractal usando Expoente de Hurst (R/S Analysis).
 
-        Calcule a Dimensão Fractal de Box-Counting da curva ω(t).
+        Esta implementação usa D = 2 - H onde H é o Expoente de Hurst,
+        que é mais robusto para séries temporais financeiras do que
+        o box counting tradicional.
 
         Lógica:
         - Dimensão ≈ 1.5: Passeio aleatório de frequência. (Ignorar).
@@ -560,60 +654,19 @@ class RessonadorHilbertHuangFractal:
         abaixo de 1.2, significa que a instabilidade é direcionada.
         """
         n = len(curve)
-        if n < 10:
+        if n < 16:
             return 1.5  # Default para dados insuficientes
 
-        # Normalizar curva para [0, 1]
-        curve_min = np.min(curve)
-        curve_max = np.max(curve)
-        curve_range = curve_max - curve_min
-
+        # Verificar se a curva é constante
+        curve_range = np.max(curve) - np.min(curve)
         if curve_range < self.eps:
             return 1.0  # Curva constante = linha
 
-        curve_norm = (curve - curve_min) / curve_range
+        # Calcular Hurst exponent
+        hurst = self.calculate_hurst_exponent(curve)
 
-        # Escalas (tamanhos de box)
-        min_scale = 1
-        max_scale = n // 4
-        scales = np.logspace(np.log10(min_scale), np.log10(max(max_scale, 2)), n_scales)
-        scales = np.unique(scales.astype(int))
-        scales = scales[scales > 0]
-
-        if len(scales) < 3:
-            return 1.5
-
-        counts = []
-
-        for scale in scales:
-            # Número de boxes em cada dimensão
-            n_boxes_t = int(np.ceil(n / scale))
-            n_boxes_y = int(np.ceil(1.0 / (scale / n)))  # Escalar Y também
-
-            if n_boxes_y < 1:
-                n_boxes_y = 1
-
-            # Contar boxes ocupados
-            occupied = set()
-
-            for i in range(n):
-                box_t = int(i / scale)
-                box_y = int(curve_norm[i] * n_boxes_y)
-                box_y = min(box_y, n_boxes_y - 1)  # Evitar overflow
-                occupied.add((box_t, box_y))
-
-            counts.append(len(occupied))
-
-        # Regressão log-log para estimar dimensão
-        log_scales = np.log(scales)
-        log_counts = np.log(np.array(counts) + 1)  # +1 para evitar log(0)
-
-        # Fit linear
-        try:
-            coeffs = np.polyfit(log_scales, log_counts, 1)
-            dimension = -coeffs[0]  # Dimensão = -slope
-        except:
-            dimension = 1.5
+        # Converter para dimensão fractal: D = 2 - H
+        dimension = 2.0 - hurst
 
         # Limitar a valores razoáveis [1, 2]
         dimension = np.clip(dimension, 1.0, 2.0)
