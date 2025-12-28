@@ -1,0 +1,76 @@
+{
+  "strategy": "FIFN-FisherNavier-M30-LongOnly",
+  "symbol": "EURUSD",
+  "periodicity": "M30",
+  "optimized_at": "2025-12-28",
+  "version": "3.0",
+  "mode": "LONG_ONLY",
+  "parameters": {
+    "window_size": 40,
+    "kl_lookback": 10,
+    "reynolds_sweet_low": 2521.0,
+    "reynolds_sweet_high": 3786.0,
+    "skewness_threshold": 0.3091,
+    "stop_loss_pips": 15.0,
+    "take_profit_pips": 30.0
+  },
+  "filters": {
+    "session_hours": [8, 20],
+    "ema_fast": 12,
+    "ema_slow": 26,
+    "rsi_period": 14,
+    "rsi_long_range": [35, 75],
+    "require_trend_alignment": false,
+    "allow_neutral_trend": true
+  },
+  "performance_1_year": {
+    "test_period": "2024-12 to 2025-12 (381 dias)",
+    "trades": 55,
+    "win_rate": 0.40,
+    "breakeven_rate": 0.333,
+    "edge": 0.067,
+    "profit_factor": 1.13,
+    "total_pnl_pips": 71.5,
+    "max_drawdown_pips": 157.7
+  },
+  "walk_forward_4_folds": {
+    "Q1": {"trades": 15, "edge": 0.133, "pf": 1.48, "status": "OK"},
+    "Q2": {"trades": 7, "edge": -0.19, "pf": 0.28, "status": "FAIL"},
+    "Q3": {"trades": 21, "edge": 0.048, "pf": 1.04, "status": "OK"},
+    "Q4": {"trades": 12, "edge": 0.167, "pf": 1.69, "status": "OK"},
+    "positive_folds": "3/4"
+  },
+  "monthly_analysis": {
+    "profitable_months": 7,
+    "total_months": 13,
+    "percentage": 54
+  },
+  "validation_criteria": {
+    "edge_positive": true,
+    "profit_factor_above_1": true,
+    "folds_positive_3_of_4": true,
+    "months_profitable_50pct": true,
+    "max_drawdown_under_100": false,
+    "trades_above_30": true,
+    "passed": "5/6"
+  },
+  "comparison_with_both_directions": {
+    "both_edge": -0.019,
+    "both_pf": 0.78,
+    "both_pnl": -273.6,
+    "longonly_improvement": "Edge +8.6%, PnL +345 pips"
+  },
+  "recommendations": {
+    "status": "APPROVED_FOR_PAPER_TRADING",
+    "mode": "LONG_ONLY",
+    "lotage_per_1000": 0.01,
+    "max_daily_trades": 2,
+    "paper_trading_months": 2,
+    "notes": [
+      "LONG-only e essencial - SHORT trades tem edge negativo",
+      "Q2 foi o pior trimestre - monitorar periodos de baixa",
+      "Session filter (8-20 UTC) obrigatorio",
+      "Max DD 157 pips - usar lotagem conservadora"
+    ]
+  }
+}
