@@ -1,0 +1,36 @@
+{
+  "strategy": "H2PLO_V2_Robust",
+  "symbol": "EURUSD",
+  "timeframe": "H1",
+  "volatility_regime": "medium",
+  "parameters": {
+    "smooth_size": 20,
+    "lock_z_threshold": 1.5,
+    "direction_mode": "original"
+  },
+  "risk_management": {
+    "stop_loss_pips": 40,
+    "take_profit_pips": 80,
+    "cooldown_bars": 12
+  },
+  "validation": {
+    "walk_forward": {
+      "n_folds": 5,
+      "folds_positive": 3,
+      "total_trades": 107,
+      "overall_edge": 4.05,
+      "total_pnl": 438.6
+    },
+    "monte_carlo": {
+      "percentile": 95.7
+    },
+    "full_period": {
+      "trades": 501,
+      "pnl_pips": 1140.7,
+      "profit_factor": 1.09
+    }
+  },
+  "criteria_passed": 5,
+  "approved": true,
+  "test_date": "2025-12-29 11:40"
+}
