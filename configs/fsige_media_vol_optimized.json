@@ -1,0 +1,34 @@
+{
+  "strategy": "FSIGE",
+  "symbol": "EURUSD",
+  "timeframe": "H1",
+  "volatility_regime": "medium",
+  "parameters": {
+    "kde_window": 120,
+    "tension_threshold": 0.7,
+    "min_entropy_gradient": 0.0
+  },
+  "risk_management": {
+    "stop_loss_pips": 50,
+    "take_profit_pips": 60,
+    "cooldown_bars": 15
+  },
+  "validation": {
+    "optimization": {
+      "trades": 170,
+      "win_rate": 51.76,
+      "pnl_pips": 1064.6
+    },
+    "out_of_sample": {
+      "trades": 78,
+      "win_rate": 55.13,
+      "pnl_pips": 775.0,
+      "profit_factor": 1.44,
+      "edge": 9.67
+    },
+    "breakeven_wr": 45.5
+  },
+  "approved": true,
+  "notes": "Config otimizada via grid search. Remove filtro de confiança, usa janela KDE maior (120) e threshold de tensão mais restritivo (0.7). OOS com +9.7% de edge sobre breakeven.",
+  "test_date": "2025-12-29"
+}
