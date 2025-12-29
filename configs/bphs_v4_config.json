@@ -1,0 +1,36 @@
+{
+  "strategy": "BPHS_V4_Robust",
+  "symbol": "EURUSD",
+  "timeframe": "H1",
+  "volatility_regime": "medium",
+  "parameters": {
+    "window": 20,
+    "direction_mode": "betti_original",
+    "betti_z_threshold": 1.0
+  },
+  "risk_management": {
+    "stop_loss_pips": 40,
+    "take_profit_pips": 80,
+    "cooldown_bars": 15
+  },
+  "validation": {
+    "walk_forward": {
+      "n_folds": 5,
+      "folds_positive": 4,
+      "total_trades": 159,
+      "overall_edge": 5.03,
+      "total_pnl": 838.8
+    },
+    "monte_carlo": {
+      "percentile": 98.3
+    },
+    "full_period": {
+      "trades": 671,
+      "pnl_pips": 1289.5,
+      "profit_factor": 1.07
+    }
+  },
+  "criteria_passed": 5,
+  "approved": true,
+  "test_date": "2025-12-29 11:23"
+}
