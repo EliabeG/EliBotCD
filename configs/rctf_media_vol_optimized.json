@@ -1,0 +1,33 @@
+{
+  "strategy": "RCTF",
+  "symbol": "EURUSD",
+  "timeframe": "H1",
+  "volatility_regime": "medium",
+  "parameters": {
+    "window": 20,
+    "use_zscore": true,
+    "zscore_threshold": 1.5
+  },
+  "risk_management": {
+    "stop_loss_pips": 40,
+    "take_profit_pips": 40,
+    "cooldown_bars": 10
+  },
+  "validation": {
+    "optimization": {
+      "trades": 56,
+      "win_rate": 57.14,
+      "pnl_pips": 267.4
+    },
+    "out_of_sample": {
+      "trades": 69,
+      "win_rate": 60.87,
+      "pnl_pips": 553.1,
+      "profit_factor": 1.5,
+      "edge": 10.87
+    },
+    "breakeven_wr": 50.0
+  },
+  "approved": true,
+  "test_date": "2025-12-29"
+}
