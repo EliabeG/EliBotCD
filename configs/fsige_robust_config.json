@@ -1,0 +1,41 @@
+{
+  "strategy": "FSIGE_Robust",
+  "symbol": "EURUSD",
+  "timeframe": "H1",
+  "volatility_regime": "medium",
+  "parameters": {
+    "kde_window": 120,
+    "tension_threshold": 0.7,
+    "min_entropy_gradient": 0.0
+  },
+  "risk_management": {
+    "stop_loss_pips": 50,
+    "take_profit_pips": 60,
+    "cooldown_bars": 15
+  },
+  "validation": {
+    "walk_forward": {
+      "n_folds": 5,
+      "folds_positive": 4,
+      "total_trades": 131,
+      "overall_wr": 53.44,
+      "overall_edge": 7.98,
+      "total_pnl": 1042.6
+    },
+    "monte_carlo": {
+      "n_shuffles": 500,
+      "percentile": 95.2
+    },
+    "full_period": {
+      "trades": 580,
+      "win_rate": 48.62,
+      "pnl_pips": 1551.7,
+      "profit_factor": 1.1
+    },
+    "breakeven_wr": 45.45
+  },
+  "criteria_passed": 5,
+  "criteria_total": 5,
+  "approved": true,
+  "test_date": "2025-12-29 10:39"
+}
