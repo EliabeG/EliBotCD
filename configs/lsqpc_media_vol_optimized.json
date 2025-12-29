@@ -1,5 +1,5 @@
 {
-  "strategy": "LSQPC",
+  "strategy": "LSQPC_Robust",
   "symbol": "EURUSD",
   "timeframe": "H1",
   "volatility_regime": "medium",
@@ -8,25 +8,33 @@
     "phase_threshold": 0.4
   },
   "risk_management": {
-    "stop_loss_pips": 20,
-    "take_profit_pips": 100,
-    "cooldown_bars": 10
+    "stop_loss_pips": 30,
+    "take_profit_pips": 90,
+    "cooldown_bars": 15
   },
   "validation": {
-    "optimization": {
-      "trades": 25,
-      "win_rate": 24.0,
-      "pnl_pips": 195.8
+    "walk_forward": {
+      "n_folds": 4,
+      "folds_positive": 4,
+      "total_trades": 26,
+      "overall_wr": 38.46,
+      "overall_edge": 13.46,
+      "total_pnl": 402.4
     },
-    "out_of_sample": {
-      "trades": 19,
-      "win_rate": 42.11,
-      "pnl_pips": 565.5,
-      "profit_factor": 3.46,
-      "edge": 25.44
+    "monte_carlo": {
+      "n_shuffles": 500,
+      "percentile": 97.2
     },
-    "breakeven_wr": 16.67
+    "full_period": {
+      "trades": 107,
+      "win_rate": 31.78,
+      "pnl_pips": 783.8,
+      "profit_factor": 1.35
+    },
+    "breakeven_wr": 25.0
   },
+  "criteria_passed": 5,
+  "criteria_total": 5,
   "approved": true,
-  "test_date": "2025-12-29"
+  "test_date": "2025-12-29 10:07"
 }
