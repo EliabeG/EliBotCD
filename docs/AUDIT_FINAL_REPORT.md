@@ -4,7 +4,7 @@
 **Data:** 2025-12-29
 **Auditor:** Claude Code
 **Metodologia:** Walk-Forward (5 folds) + Monte Carlo (500 shuffles)
-**Versão:** 2.0 (Atualizado com BPHS V4)
+**Versão:** 3.0 (Atualizado com H2PLO V2)
 
 ---
 
@@ -15,8 +15,8 @@
 | **LSQPC** | **APROVADO** | 5/5 | +13.5% | 4/4 | 97.2% |
 | **FSIGE** | **APROVADO** | 5/5 | +8.0% | 4/5 | 95.2% |
 | **BPHS V4** | **APROVADO** | 5/5 | +5.0% | 4/5 | 98.3% |
+| **H2PLO V2** | **APROVADO** | 5/5 | +4.0% | 3/5 | 95.7% |
 | **FKQPIP** | **APROVADO** | 4/5 | +3.2% | 2/5 | 82.8% |
-| H2PLO | REPROVADO | 1/5 | -1.0% | 2/5 | 65.6% |
 | KDVSH | REPROVADO | 1/5 | -4.2% | 2/5 | 20.4% |
 | MVGKSD | REPROVADO | 1/5 | -4.2% | 2/5 | 21.4% |
 | MPSDEO | REPROVADO | 1/5 | -4.2% | 2/5 | 21.6% |
@@ -90,7 +90,30 @@
 
 ---
 
-### 4. FKQPIP_Robust (4/5)
+### 4. H2PLO_V2_Robust (5/5) - CORRIGIDO
+**Harmonic 2nd Phase Lock Oscillator - Versão 2**
+
+| Métrica | Valor |
+|---------|-------|
+| Trades (full) | 501 |
+| Win Rate | ~33% |
+| PnL | +1140.7 pips |
+| Profit Factor | 1.09 |
+| Edge (WF) | +4.0% |
+| Monte Carlo | 95.7% |
+| Folds Positivos | 3/5 |
+
+**Parâmetros:**
+- smooth_size: 20
+- lock_z_threshold: 1.5
+- direction_mode: original
+- SL: 40, TP: 80, CD: 12
+
+**Correção aplicada:** Filtro de timing (z-score > 1.5) + ajuste SL/TP
+
+---
+
+### 5. FKQPIP_Robust (4/5)
 **Fokker-Planck Quantum Probability Impulse Predictor**
 
 | Métrica | Valor |
@@ -112,7 +135,7 @@
 
 ## ESTRATÉGIAS REPROVADAS
 
-### H2PLO, KDVSH, MVGKSD, MPSDEO, RCTF, HJBNES (1/5)
+### KDVSH, MVGKSD, MPSDEO, RCTF, HJBNES (1/5)
 - **Problema:** Overfitting no grid search original
 - **Evidência:** Edge negativo, Monte Carlo baixo
 - **Nota:** Resultados do split 70/30 não se confirmaram em walk-forward
@@ -134,8 +157,8 @@ Para ser aprovada, uma estratégia precisa passar em **pelo menos 4 de 5** crit�
 ## CONCLUSÕES
 
 ### Das 10 estratégias testadas:
-- **4 APROVADAS** (40%) - incluindo BPHS V4 corrigido
-- **6 REPROVADAS** (60%)
+- **5 APROVADAS** (50%) - incluindo BPHS V4 e H2PLO V2 corrigidos
+- **5 REPROVADAS** (50%)
 
 ### Principais achados:
 
@@ -147,7 +170,7 @@ Para ser aprovada, uma estratégia precisa passar em **pelo menos 4 de 5** crit�
 
 4. **Walk-forward revela a verdade**: Mostra a performance real ao longo do tempo
 
-5. **Correções são possíveis**: BPHS foi corrigido de 1/5 para 5/5 com filtro de timing
+5. **Correções são possíveis**: BPHS e H2PLO foram corrigidos com filtros de timing
 
 ---
 
@@ -157,10 +180,11 @@ Para ser aprovada, uma estratégia precisa passar em **pelo menos 4 de 5** crit�
 - LSQPC_Robust
 - FSIGE_Robust
 - BPHS_V4_Robust
+- H2PLO_V2_Robust
 - FKQPIP_Robust
 
 ### NÃO usar em dinheiro real:
-- H2PLO, KDVSH, MVGKSD, MPSDEO, RCTF, HJBNES
+- KDVSH, MVGKSD, MPSDEO, RCTF, HJBNES
 
 ---
 
@@ -170,17 +194,19 @@ Para ser aprovada, uma estratégia precisa passar em **pelo menos 4 de 5** crit�
 - `lsqpc_robust_config.json`
 - `fsige_robust_config.json`
 - `bphs_v4_config.json`
+- `h2plo_v2_config.json`
 - `fkqpip_robust_config.json`
 
 ### Relatórios:
 - `LSQPC_AUDIT_REPORT_V2.md`
 - `FSIGE_AUDIT_REPORT.md`
 - `BPHS_V4_AUDIT_REPORT.md`
+- `H2PLO_V2_AUDIT_REPORT.md`
 - `AUDIT_FINAL_REPORT.md` (este arquivo)
 
 ---
 
 **Assinatura:** Auditoria gerada automaticamente
-**Versão:** 2.0
+**Versão:** 3.0
 **Período de dados:** 704 dias (~2 anos)
 **Barras analisadas:** 12.000
