@@ -44,9 +44,9 @@ class FluxoInformacaoFisherNavier:
                  kl_lookback: int = 10,
                  reynolds_laminar: float = 2000,
                  reynolds_turbulent: float = 4000,
-                 reynolds_sweet_low: float = 2300,
-                 reynolds_sweet_high: float = 4000,
-                 skewness_threshold: float = 0.5,
+                 reynolds_sweet_low: float = 2521.0,  # OPTIMIZED (was 2300)
+                 reynolds_sweet_high: float = 3786.0,  # OPTIMIZED (was 4000)
+                 skewness_threshold: float = 0.31,  # OPTIMIZED (was 0.5)
                  characteristic_length: float = 1.0,
                  density_rho: float = 1.0,
                  crank_nicolson_theta: float = 0.5,

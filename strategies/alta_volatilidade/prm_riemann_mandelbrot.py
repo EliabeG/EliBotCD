@@ -77,8 +77,8 @@ class ProtocoloRiemannMandelbrot:
 
     def __init__(self,
                  n_states: int = 3,
-                 hmm_threshold: float = 0.85,
-                 lyapunov_threshold_k: float = 0.5,
+                 hmm_threshold: float = 0.7,  # OPTIMIZED (was 0.85)
+                 lyapunov_threshold_k: float = 0.04,  # OPTIMIZED (was 0.5)
                  wavelet_mother: str = 'cmor1.5-1.0',
                  garch_omega: float = 0.00001,
                  garch_alpha: float = 0.1,

@@ -42,14 +42,14 @@ class RessonadorHilbertHuangFractal:
     """
 
     def __init__(self,
-                 n_ensembles: int = 100,
+                 n_ensembles: int = 12,  # OPTIMIZED (was 100)
                  noise_amplitude: float = 0.2,
                  n_imfs: int = None,
                  mirror_extension: int = 50,
                  use_predictive_extension: bool = True,
                  ar_order: int = 20,
                  chirp_threshold: float = 0.0,
-                 fractal_threshold: float = 1.35,
+                 fractal_threshold: float = 1.3,  # OPTIMIZED (was 1.35)
                  energy_percentile: float = 70,
                  smoothing_sigma: float = 3):
         """

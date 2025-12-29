@@ -675,7 +675,7 @@ class OracloDerivativosMalliavinNash:
     def __init__(self,
                  lookback_window: int = 100,
                  fragility_threshold: float = 2.0,
-                 mfg_direction_threshold: float = 0.1,
+                 mfg_direction_threshold: float = 0.08,  # OPTIMIZED (was 0.1)
                  confidence_decay: float = 0.95,
                  use_deep_galerkin: bool = False,
                  malliavin_paths: int = 2000,

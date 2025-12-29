@@ -617,7 +617,7 @@ class SintetizadorEvolutivoEstruturasDissipativas:
     """
 
     def __init__(self,
-                 critical_sigma: float = 1.5,
+                 critical_sigma: float = 0.6,  # OPTIMIZED (was 1.5)
                  slaving_threshold: float = 0.15,
                  dominance_threshold: float = 0.5,
                  fitness_window: int = 20,

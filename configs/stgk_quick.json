@@ -1,0 +1,24 @@
+{
+  "strategy": "STGK-QUICK",
+  "symbol": "EURUSD",
+  "periodicity": "H1",
+  "optimized_at": "2025-12-29T06:28:27.960404+00:00",
+  "mode": "LONG_ONLY",
+  "parameters": {
+    "stop_loss_pips": 25,
+    "take_profit_pips": 50,
+    "cooldown_bars": 5
+  },
+  "performance": {
+    "trades": 150,
+    "win_rate": 42.66666666666667,
+    "edge": 9.333333333333343,
+    "profit_factor": 1.3002811142346016,
+    "pnl_pips": 705.0000000000003
+  },
+  "walk_forward": {
+    "folds_positive": 4,
+    "folds_total": 4,
+    "edge": 9.333333333333343
+  }
+}

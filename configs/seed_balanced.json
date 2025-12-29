@@ -1,0 +1,31 @@
+{
+  "strategy": "SEED-BALANCED",
+  "symbol": "EURUSD",
+  "periodicity": "H1",
+  "optimized_at": "2025-12-29T05:45:22.538651+00:00",
+  "mode": "LONG_ONLY",
+  "focus": "BALANCED_VOLUME_AND_ASSERTIVENESS",
+  "parameters": {
+    "critical_sigma": 0.6,
+    "signal_confidence": 0.45,
+    "signal_step": 5,
+    "stop_loss_pips": 30,
+    "take_profit_pips": 55,
+    "cooldown_bars": 6,
+    "trade_confidence": 0.55
+  },
+  "performance": {
+    "trades": 59,
+    "win_rate": 47.45762711864407,
+    "edge": 12.163509471585243,
+    "profit_factor": 1.4736842105263175,
+    "pnl_pips": 474.2999999999997
+  },
+  "walk_forward": {
+    "folds_positive": 4,
+    "folds_total": 4,
+    "edge": 12.163509471585243,
+    "profit_factor": 1.4736842105263175
+  },
+  "balance_score": 55.332754368473545
+}

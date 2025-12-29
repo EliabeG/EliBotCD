@@ -1,0 +1,24 @@
+{
+  "strategy": "DSG-QUICK",
+  "symbol": "EURUSD",
+  "periodicity": "H1",
+  "optimized_at": "2025-12-29T06:23:23.617926+00:00",
+  "mode": "LONG_ONLY",
+  "parameters": {
+    "stop_loss_pips": 30,
+    "take_profit_pips": 60,
+    "cooldown_bars": 6
+  },
+  "performance": {
+    "trades": 39,
+    "win_rate": 38.46153846153847,
+    "edge": 5.128205128205138,
+    "profit_factor": 1.116486068111456,
+    "pnl_pips": 90.29999999999993
+  },
+  "walk_forward": {
+    "folds_positive": 3,
+    "folds_total": 4,
+    "edge": 5.128205128205138
+  }
+}
