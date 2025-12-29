@@ -1,0 +1,33 @@
+{
+  "strategy": "FKQPIP",
+  "symbol": "EURUSD",
+  "timeframe": "H1",
+  "volatility_regime": "medium",
+  "parameters": {
+    "lookback": 20,
+    "path_count": 100,
+    "probability_threshold": 0.6
+  },
+  "risk_management": {
+    "stop_loss_pips": 20,
+    "take_profit_pips": 60,
+    "cooldown_bars": 10
+  },
+  "validation": {
+    "optimization": {
+      "trades": 196,
+      "win_rate": 26.53,
+      "pnl_pips": 58.0
+    },
+    "out_of_sample": {
+      "trades": 118,
+      "win_rate": 35.59,
+      "pnl_pips": 923.9,
+      "profit_factor": 1.59,
+      "edge": 10.59
+    },
+    "breakeven_wr": 25.0
+  },
+  "approved": true,
+  "test_date": "2025-12-29"
+}
