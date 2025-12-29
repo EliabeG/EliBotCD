@@ -1,0 +1,25 @@
+{
+  "strategy": "SEED-RELAXED",
+  "symbol": "EURUSD",
+  "periodicity": "H1",
+  "optimized_at": "2025-12-29T04:28:13.322020+00:00",
+  "mode": "LONG_ONLY",
+  "note": "Configuracao com condicoes relaxadas - REQUER VALIDACAO ADICIONAL",
+  "parameters": {
+    "critical_sigma": 0.5,
+    "slaving_threshold": 0.2,
+    "dominance_threshold": 0.5,
+    "fitness_window": 15,
+    "stop_loss_pips": 30,
+    "take_profit_pips": 50,
+    "cooldown_bars": 6
+  },
+  "performance": {
+    "trades": 103,
+    "win_rate": 44.66019417475729,
+    "edge": 7.160194174757287,
+    "profit_factor": 1.1917875183314337,
+    "walk_forward_folds": 2,
+    "walk_forward_total": 4
+  }
+}
