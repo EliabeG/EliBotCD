@@ -1,37 +1,41 @@
 {
-  "strategy": "HJBNES_V2_Robust",
+  "strategy": "HJBNES_V2_Audited",
   "symbol": "EURUSD",
   "timeframe": "H1",
   "volatility_regime": "medium",
   "parameters": {
-    "horizon": 20,
-    "risk_aversion": 1.5,
-    "pos_z_threshold": 0.5,
-    "direction_mode": "optimal"
+    "horizon": 30,
+    "risk_aversion": 2.0,
+    "pos_z_threshold": 0.3,
+    "direction_mode": "contrarian"
   },
   "risk_management": {
-    "stop_loss_pips": 50,
+    "stop_loss_pips": 40,
     "take_profit_pips": 50,
-    "cooldown_bars": 8
+    "cooldown_bars": 12
   },
   "validation": {
     "walk_forward": {
       "n_folds": 5,
-      "folds_positive": 5,
-      "total_trades": 157,
-      "overall_edge": 4.14,
-      "total_pnl": 552.3
+      "folds_positive": 3,
+      "total_trades": 102,
+      "overall_edge": 9.48,
+      "total_pnl": 768.0
     },
     "monte_carlo": {
-      "percentile": 81.7
+      "percentile": 96.5
     },
     "full_period": {
-      "trades": 730,
-      "pnl_pips": 852.2,
-      "profit_factor": 1.05
+      "trades": 477,
+      "pnl_pips": 158.0,
+      "profit_factor": 1.01
+    },
+    "bias_check": {
+      "buy_percentage": 49.3,
+      "within_range": true
     }
   },
   "criteria_passed": 5,
   "approved": true,
-  "test_date": "2025-12-29 13:45"
+  "audit_date": "2025-12-29 15:01"
 }
