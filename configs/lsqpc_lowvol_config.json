@@ -1,0 +1,40 @@
+{
+  "strategy": "LSQPC_V2_LowVol_Audited",
+  "symbol": "EURUSD",
+  "timeframe": "H1",
+  "volatility_regime": "low",
+  "parameters": {
+    "coherence_window": 20,
+    "coherence_z_threshold": 0.5,
+    "direction_mode": "contrarian"
+  },
+  "risk_management": {
+    "stop_loss_pips": 40,
+    "take_profit_pips": 60,
+    "cooldown_bars": 10
+  },
+  "validation": {
+    "walk_forward": {
+      "n_folds": 5,
+      "folds_positive": 3,
+      "total_trades": 22,
+      "overall_edge": 19.09,
+      "total_pnl": 406.2
+    },
+    "monte_carlo": {
+      "percentile": 94.0
+    },
+    "full_period": {
+      "trades": 105,
+      "pnl_pips": 727.0,
+      "profit_factor": 1.32
+    },
+    "bias_check": {
+      "buy_percentage": 43.4,
+      "within_range": true
+    }
+  },
+  "criteria_passed": 4,
+  "approved": true,
+  "audit_date": "2025-12-29 15:24"
+}
