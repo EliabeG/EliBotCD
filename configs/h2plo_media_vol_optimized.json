@@ -1,0 +1,33 @@
+{
+  "strategy": "H2PLO",
+  "symbol": "EURUSD",
+  "timeframe": "H1",
+  "volatility_regime": "medium",
+  "parameters": {
+    "smooth_size": 20,
+    "phase_peak": 0.9,
+    "phase_trough": 0.5
+  },
+  "risk_management": {
+    "stop_loss_pips": 50,
+    "take_profit_pips": 60,
+    "cooldown_bars": 10
+  },
+  "validation": {
+    "optimization": {
+      "trades": 179,
+      "win_rate": 51.4,
+      "pnl_pips": 1057.5
+    },
+    "out_of_sample": {
+      "trades": 103,
+      "win_rate": 59.22,
+      "pnl_pips": 1460.6,
+      "profit_factor": 1.68,
+      "edge": 13.77
+    },
+    "breakeven_wr": 45.45
+  },
+  "approved": true,
+  "test_date": "2025-12-29"
+}
