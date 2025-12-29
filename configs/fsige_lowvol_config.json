@@ -1,0 +1,40 @@
+{
+  "strategy": "FSIGE_V2_LowVol_Audited",
+  "symbol": "EURUSD",
+  "timeframe": "H1",
+  "volatility_regime": "low",
+  "parameters": {
+    "kde_window": 50,
+    "tension_z_threshold": 1.0,
+    "direction_mode": "entropy_gradient"
+  },
+  "risk_management": {
+    "stop_loss_pips": 40,
+    "take_profit_pips": 50,
+    "cooldown_bars": 6
+  },
+  "validation": {
+    "walk_forward": {
+      "n_folds": 5,
+      "folds_positive": 4,
+      "total_trades": 9,
+      "overall_edge": 33.33,
+      "total_pnl": 263.9
+    },
+    "monte_carlo": {
+      "percentile": 99.3
+    },
+    "full_period": {
+      "trades": 91,
+      "pnl_pips": 519.5,
+      "profit_factor": 1.29
+    },
+    "bias_check": {
+      "buy_percentage": 54.5,
+      "within_range": true
+    }
+  },
+  "criteria_passed": 4,
+  "approved": true,
+  "audit_date": "2025-12-29 15:30"
+}
