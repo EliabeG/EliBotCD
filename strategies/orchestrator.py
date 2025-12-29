@@ -302,6 +302,12 @@ class StrategyOrchestrator:
             stop_loss = min(stop_losses) if stop_losses else None  # Mais proximo
             take_profit = max(take_profits) if take_profits else None  # Mais proximo
 
+        # Preserva stop_loss_pips e take_profit_pips dos sinais originais
+        sl_pips_list = [getattr(s, 'stop_loss_pips', None) for s in winning_signals if getattr(s, 'stop_loss_pips', None)]
+        tp_pips_list = [getattr(s, 'take_profit_pips', None) for s in winning_signals if getattr(s, 'take_profit_pips', None)]
+        stop_loss_pips = max(sl_pips_list) if sl_pips_list else None
+        take_profit_pips = min(tp_pips_list) if tp_pips_list else None
+
         # Gera razao
         strategy_names = [s.strategy_name for s in winning_signals]
         reason = f"Agregado de {len(winning_signals)} estrategias ({volatility_level}): {', '.join(strategy_names)}"
@@ -314,7 +320,9 @@ class StrategyOrchestrator:
             confidence=avg_confidence,
             stop_loss=stop_loss,
             take_profit=take_profit,
-            reason=reason
+            reason=reason,
+            stop_loss_pips=stop_loss_pips,
+            take_profit_pips=take_profit_pips
         )
 
     def get_state(self) -> OrchestratorState:

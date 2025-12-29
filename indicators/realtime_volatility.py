@@ -161,9 +161,12 @@ class RealtimeVolatility:
         h = high[-window:]
         l = low[-window:]
 
-        # Evita divisão por zero
-        ratio = h / l
-        ratio = np.clip(ratio, 1.0001, None)
+        # Evita divisão por zero apenas quando low é zero
+        l_safe = np.where(l == 0, 1e-10, l)
+        ratio = h / l_safe
+
+        # Clip mínimo muito pequeno para evitar log(1) = 0, mas não inflar volatilidade
+        ratio = np.maximum(ratio, 1.0000001)
 
         log_hl_sq = np.log(ratio) ** 2
         return np.sqrt(np.sum(log_hl_sq) / (4 * len(h) * np.log(2)))
