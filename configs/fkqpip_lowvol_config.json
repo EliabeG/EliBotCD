@@ -1,0 +1,40 @@
+{
+  "strategy": "FKQPIP_V2_LowVol_Audited",
+  "symbol": "EURUSD",
+  "timeframe": "H1",
+  "volatility_regime": "low",
+  "parameters": {
+    "window": 20,
+    "action_z_threshold": 0.5,
+    "direction_mode": "contrarian"
+  },
+  "risk_management": {
+    "stop_loss_pips": 40,
+    "take_profit_pips": 50,
+    "cooldown_bars": 12
+  },
+  "validation": {
+    "walk_forward": {
+      "n_folds": 5,
+      "folds_positive": 3,
+      "total_trades": 22,
+      "overall_edge": 5.56,
+      "total_pnl": 95.9
+    },
+    "monte_carlo": {
+      "percentile": 70.0
+    },
+    "full_period": {
+      "trades": 137,
+      "pnl_pips": 90.0,
+      "profit_factor": 1.03
+    },
+    "bias_check": {
+      "buy_percentage": 34.6,
+      "within_range": true
+    }
+  },
+  "criteria_passed": 5,
+  "approved": true,
+  "audit_date": "2025-12-29 15:27"
+}
