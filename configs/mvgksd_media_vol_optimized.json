@@ -1,0 +1,32 @@
+{
+  "strategy": "MVGKSD",
+  "symbol": "EURUSD",
+  "timeframe": "H1",
+  "volatility_regime": "medium",
+  "parameters": {
+    "vg_window": 20,
+    "sync_threshold": 0.4
+  },
+  "risk_management": {
+    "stop_loss_pips": 50,
+    "take_profit_pips": 80,
+    "cooldown_bars": 30
+  },
+  "validation": {
+    "optimization": {
+      "trades": 98,
+      "win_rate": 42.86,
+      "pnl_pips": 414.2
+    },
+    "out_of_sample": {
+      "trades": 41,
+      "win_rate": 48.78,
+      "pnl_pips": 524.7,
+      "profit_factor": 1.49,
+      "edge": 10.32
+    },
+    "breakeven_wr": 38.46
+  },
+  "approved": true,
+  "test_date": "2025-12-29"
+}
