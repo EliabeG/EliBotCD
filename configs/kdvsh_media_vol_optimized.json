@@ -1,0 +1,33 @@
+{
+  "strategy": "KDVSH",
+  "symbol": "EURUSD",
+  "timeframe": "H1",
+  "volatility_regime": "medium",
+  "parameters": {
+    "wave_window": 30,
+    "symmetry_threshold": 0.4,
+    "peak_std_multiplier": 1.0
+  },
+  "risk_management": {
+    "stop_loss_pips": 50,
+    "take_profit_pips": 100,
+    "cooldown_bars": 10
+  },
+  "validation": {
+    "optimization": {
+      "trades": 236,
+      "win_rate": 34.32,
+      "pnl_pips": 33.6
+    },
+    "out_of_sample": {
+      "trades": 113,
+      "win_rate": 37.17,
+      "pnl_pips": 551.4,
+      "profit_factor": 1.15,
+      "edge": 3.83
+    },
+    "breakeven_wr": 33.33
+  },
+  "approved": true,
+  "test_date": "2025-12-29"
+}
