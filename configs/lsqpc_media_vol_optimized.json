@@ -1,0 +1,32 @@
+{
+  "strategy": "LSQPC",
+  "symbol": "EURUSD",
+  "timeframe": "H1",
+  "volatility_regime": "medium",
+  "parameters": {
+    "coherence_window": 20,
+    "phase_threshold": 0.4
+  },
+  "risk_management": {
+    "stop_loss_pips": 20,
+    "take_profit_pips": 100,
+    "cooldown_bars": 10
+  },
+  "validation": {
+    "optimization": {
+      "trades": 25,
+      "win_rate": 24.0,
+      "pnl_pips": 195.8
+    },
+    "out_of_sample": {
+      "trades": 19,
+      "win_rate": 42.11,
+      "pnl_pips": 565.5,
+      "profit_factor": 3.46,
+      "edge": 25.44
+    },
+    "breakeven_wr": 16.67
+  },
+  "approved": true,
+  "test_date": "2025-12-29"
+}
