@@ -1,0 +1,40 @@
+{
+  "strategy": "MPSDEO_V2_LowVol_Audited",
+  "symbol": "EURUSD",
+  "timeframe": "H1",
+  "volatility_regime": "low",
+  "parameters": {
+    "window": 30,
+    "eig_z_threshold": 0.5,
+    "direction_mode": "mean_reversion"
+  },
+  "risk_management": {
+    "stop_loss_pips": 40,
+    "take_profit_pips": 50,
+    "cooldown_bars": 12
+  },
+  "validation": {
+    "walk_forward": {
+      "n_folds": 5,
+      "folds_positive": 3,
+      "total_trades": 25,
+      "overall_edge": 11.56,
+      "total_pnl": 243.8
+    },
+    "monte_carlo": {
+      "percentile": 86.0
+    },
+    "full_period": {
+      "trades": 128,
+      "pnl_pips": 464.2,
+      "profit_factor": 1.18
+    },
+    "bias_check": {
+      "buy_percentage": 37.8,
+      "within_range": true
+    }
+  },
+  "criteria_passed": 5,
+  "approved": true,
+  "audit_date": "2025-12-29 15:27"
+}
