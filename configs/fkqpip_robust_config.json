@@ -1,0 +1,35 @@
+{
+  "strategy": "FKQPIP_Robust",
+  "symbol": "EURUSD",
+  "timeframe": "H1",
+  "volatility_regime": "medium",
+  "parameters": {
+    "window": 20,
+    "threshold": 0.4
+  },
+  "risk_management": {
+    "stop_loss_pips": 30,
+    "take_profit_pips": 90,
+    "cooldown_bars": 15
+  },
+  "validation": {
+    "walk_forward": {
+      "n_folds": 5,
+      "folds_positive": 2,
+      "total_trades": 39,
+      "overall_edge": 3.21
+    },
+    "monte_carlo": {
+      "percentile": 82.8
+    },
+    "full_period": {
+      "trades": 161,
+      "pnl_pips": 429.4,
+      "profit_factor": 1.12
+    },
+    "breakeven_wr": 25.0
+  },
+  "criteria_passed": 4,
+  "approved": true,
+  "test_date": "2025-12-29 10:44"
+}
