@@ -1,0 +1,50 @@
+{
+  "strategy": "RHHF-ROBUST-ANTI-OVERFITTING",
+  "symbol": "EURUSD",
+  "periodicity": "H4",
+  "optimized_at": "2025-12-29T02:22:46.335075+00:00",
+  "mode": "LONG_ONLY",
+  "anti_overfitting": {
+    "min_trades": 50,
+    "walk_forward_folds": 5,
+    "monte_carlo_runs": 100,
+    "oos_ratio": 0.2,
+    "spread_pips": 1.5,
+    "slippage_pips": 0.8
+  },
+  "parameters": {
+    "n_ensembles": 12,
+    "fractal_threshold": 1.3,
+    "noise_amplitude": 0.2,
+    "min_conditions": 2,
+    "stop_loss_pips": 35,
+    "take_profit_pips": 50,
+    "cooldown_bars": 6
+  },
+  "performance": {
+    "in_sample": {
+      "trades": 82,
+      "edge": 8.82352941176471,
+      "profit_factor": 1.2788203753351224
+    },
+    "out_of_sample_wf": {
+      "trades": 56,
+      "edge": 12.39495798319328,
+      "profit_factor": 1.4755619715405253,
+      "folds_positive": 4,
+      "folds_total": 4
+    },
+    "final_oos": {
+      "trades": 10,
+      "edge": 8.82352941176471,
+      "profit_factor": 1.2788203753351206
+    },
+    "expected_edge": 10.609243697478995,
+    "monte_carlo_stability": 0.7689231764005817,
+    "robust_score": 43.66121776301104
+  },
+  "validation": {
+    "final_oos_passed": true,
+    "overfitting_risk": "LOW"
+  }
+}
