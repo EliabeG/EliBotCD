@@ -1,0 +1,32 @@
+{
+  "strategy": "MPSDEO",
+  "symbol": "EURUSD",
+  "timeframe": "H1",
+  "volatility_regime": "medium",
+  "parameters": {
+    "window": 30,
+    "eigen_threshold": 1.2
+  },
+  "risk_management": {
+    "stop_loss_pips": 50,
+    "take_profit_pips": 40,
+    "cooldown_bars": 10
+  },
+  "validation": {
+    "optimization": {
+      "trades": 199,
+      "win_rate": 59.8,
+      "pnl_pips": 510.1
+    },
+    "out_of_sample": {
+      "trades": 79,
+      "win_rate": 65.82,
+      "pnl_pips": 650.9,
+      "profit_factor": 1.47,
+      "edge": 10.27
+    },
+    "breakeven_wr": 55.56
+  },
+  "approved": true,
+  "test_date": "2025-12-29"
+}
