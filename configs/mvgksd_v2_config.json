@@ -1,0 +1,36 @@
+{
+  "strategy": "MVGKSD_V2_Robust",
+  "symbol": "EURUSD",
+  "timeframe": "H1",
+  "volatility_regime": "medium",
+  "parameters": {
+    "window": 20,
+    "sync_z_threshold": 0.5,
+    "direction_mode": "sync"
+  },
+  "risk_management": {
+    "stop_loss_pips": 50,
+    "take_profit_pips": 60,
+    "cooldown_bars": 10
+  },
+  "validation": {
+    "walk_forward": {
+      "n_folds": 5,
+      "folds_positive": 5,
+      "total_trades": 263,
+      "overall_edge": 5.88,
+      "total_pnl": 1491.8
+    },
+    "monte_carlo": {
+      "percentile": 90.0
+    },
+    "full_period": {
+      "trades": 1085,
+      "pnl_pips": 255.5,
+      "profit_factor": 1.01
+    }
+  },
+  "criteria_passed": 5,
+  "approved": true,
+  "test_date": "2025-12-29 12:44"
+}
