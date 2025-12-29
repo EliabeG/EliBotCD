@@ -1,0 +1,36 @@
+{
+  "strategy": "MPSDEO_V2_Robust",
+  "symbol": "EURUSD",
+  "timeframe": "H1",
+  "volatility_regime": "medium",
+  "parameters": {
+    "window": 20,
+    "eig_z_threshold": 0.3,
+    "direction_mode": "eigenvector"
+  },
+  "risk_management": {
+    "stop_loss_pips": 40,
+    "take_profit_pips": 70,
+    "cooldown_bars": 8
+  },
+  "validation": {
+    "walk_forward": {
+      "n_folds": 5,
+      "folds_positive": 5,
+      "total_trades": 105,
+      "overall_edge": 8.4,
+      "total_pnl": 898.4
+    },
+    "monte_carlo": {
+      "percentile": 94.3
+    },
+    "full_period": {
+      "trades": 519,
+      "pnl_pips": 685.9,
+      "profit_factor": 1.05
+    }
+  },
+  "criteria_passed": 5,
+  "approved": true,
+  "test_date": "2025-12-29 13:27"
+}
