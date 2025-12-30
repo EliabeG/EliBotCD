@@ -1,0 +1,48 @@
+{
+  "strategy": "BPHS_V2_LowVol_Audited",
+  "symbol": "EURUSD",
+  "timeframe": "H1",
+  "volatility_regime": "low",
+  "parameters": {
+    "embed_dim": 3,
+    "embed_delay": 5,
+    "window": 20,
+    "betti_z_threshold": 1.5,
+    "direction_mode": "topology"
+  },
+  "risk_management": {
+    "stop_loss_pips": 30,
+    "take_profit_pips": 40,
+    "cooldown_bars": 10
+  },
+  "validation": {
+    "walk_forward": {
+      "n_folds": 5,
+      "folds_positive": 4,
+      "total_trades": 15,
+      "overall_edge": 23.81,
+      "total_pnl": 236.8
+    },
+    "monte_carlo": {
+      "percentile": 94.0
+    },
+    "full_period": {
+      "trades": 81,
+      "pnl_pips": 601.2,
+      "profit_factor": 1.53
+    },
+    "bias_check": {
+      "buy_percentage": 55.6,
+      "within_range": true
+    }
+  },
+  "data_integrity": {
+    "source": "FXOpen API",
+    "ask_bid_separate": true,
+    "spread_real": true,
+    "slippage_pips": 0.5
+  },
+  "criteria_passed": 5,
+  "approved": true,
+  "audit_date": "2025-12-30 01:49"
+}
