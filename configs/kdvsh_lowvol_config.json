@@ -1,0 +1,46 @@
+{
+  "strategy": "KDVSH_V2_LowVol_Audited",
+  "symbol": "EURUSD",
+  "timeframe": "H1",
+  "volatility_regime": "low",
+  "parameters": {
+    "wave_window": 20,
+    "symmetry_z_threshold": 1.5,
+    "direction_mode": "contrarian"
+  },
+  "risk_management": {
+    "stop_loss_pips": 40,
+    "take_profit_pips": 50,
+    "cooldown_bars": 10
+  },
+  "validation": {
+    "walk_forward": {
+      "n_folds": 5,
+      "folds_positive": 4,
+      "total_trades": 8,
+      "overall_edge": 30.56,
+      "total_pnl": 211.6
+    },
+    "monte_carlo": {
+      "percentile": 96.0
+    },
+    "full_period": {
+      "trades": 38,
+      "pnl_pips": 432.8,
+      "profit_factor": 1.67
+    },
+    "bias_check": {
+      "buy_percentage": 33.3,
+      "within_range": true
+    }
+  },
+  "data_integrity": {
+    "source": "FXOpen API",
+    "ask_bid_separate": true,
+    "spread_real": true,
+    "slippage_pips": 0.5
+  },
+  "criteria_passed": 4,
+  "approved": true,
+  "audit_date": "2025-12-30 02:37"
+}
